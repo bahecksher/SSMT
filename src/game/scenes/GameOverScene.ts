@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { SCENE_KEYS, GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
+import { SCENE_KEYS, COLORS } from '../constants';
 import { SaveSystem } from '../systems/SaveSystem';
+import { getLayout, setLayoutSize } from '../layout';
 
 interface GameOverData {
   score: number;
@@ -13,7 +14,9 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   create(data: GameOverData): void {
-    const centerX = GAME_WIDTH / 2;
+    setLayoutSize(this.scale.width, this.scale.height);
+    const layout = getLayout();
+    const centerX = layout.centerX;
     const cause = data.cause ?? 'death';
     const score = data.score ?? 0;
     const save = new SaveSystem();
@@ -23,7 +26,7 @@ export class GameOverScene extends Phaser.Scene {
     const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
     const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
 
-    this.add.text(centerX, GAME_HEIGHT * 0.25, titleText, {
+    this.add.text(centerX, layout.gameHeight * 0.25, titleText, {
       fontFamily: 'monospace',
       fontSize: '40px',
       color: `#${titleColor.toString(16).padStart(6, '0')}`,
@@ -31,14 +34,14 @@ export class GameOverScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     if (!isDeath) {
-      this.add.text(centerX, GAME_HEIGHT * 0.37, `SCORE: ${Math.floor(score)}`, {
+      this.add.text(centerX, layout.gameHeight * 0.37, `SCORE: ${Math.floor(score)}`, {
         fontFamily: 'monospace',
         fontSize: '28px',
         color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
         align: 'center',
       }).setOrigin(0.5);
     } else {
-      this.add.text(centerX, GAME_HEIGHT * 0.37, 'SCORE LOST', {
+      this.add.text(centerX, layout.gameHeight * 0.37, 'SCORE LOST', {
         fontFamily: 'monospace',
         fontSize: '22px',
         color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
@@ -47,7 +50,7 @@ export class GameOverScene extends Phaser.Scene {
     }
 
     if (best > 0) {
-      this.add.text(centerX, GAME_HEIGHT * 0.48, `BEST: ${Math.floor(best)}`, {
+      this.add.text(centerX, layout.gameHeight * 0.48, `BEST: ${Math.floor(best)}`, {
         fontFamily: 'monospace',
         fontSize: '18px',
         color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -55,7 +58,7 @@ export class GameOverScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
-    const tapText = this.add.text(centerX, GAME_HEIGHT * 0.65, 'TAP TO RETRY', {
+    const tapText = this.add.text(centerX, layout.gameHeight * 0.65, 'TAP TO RETRY', {
       fontFamily: 'monospace',
       fontSize: '24px',
       color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
@@ -70,7 +73,7 @@ export class GameOverScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    this.add.text(centerX, GAME_HEIGHT * 0.75, 'MENU', {
+    this.add.text(centerX, layout.gameHeight * 0.75, 'MENU', {
       fontFamily: 'monospace',
       fontSize: '18px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,

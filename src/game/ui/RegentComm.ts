@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH } from '../constants';
+import { getLayout } from '../layout';
 
 const REGENT_COLOR = 0xff3366;
 const REGENT_ACCENT = 0xff0044;
@@ -27,10 +27,11 @@ export class RegentComm {
   constructor(scene: Phaser.Scene, options: RegentCommOptions = {}) {
     this.scene = scene;
     this.autoHideMs = options.autoHideMs ?? 4600;
+    const layout = getLayout();
 
-    const width = options.width ?? Math.min(GAME_WIDTH - 72, 360);
+    const width = options.width ?? Math.min(layout.gameWidth - 72, 420);
     const height = 70;
-    const x = (GAME_WIDTH - width) / 2;
+    const x = (layout.gameWidth - width) / 2;
     const y = 8;
     const depth = options.depth ?? 150;
     this.defaultY = y;

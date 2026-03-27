@@ -95,3 +95,24 @@ Persistent leaderboard using Supabase. Daily (24h) and weekly (7d) tabs on the m
 Score submission and leaderboard fetching are non-blocking. If network fails, game still works — menu shows "OFFLINE" and scores save locally only. No retry logic.
 ### 2026-03-27 - Callsign format: 2 letters + 3 digits
 Player identity now uses two player-chosen uppercase letters plus a persistent random three-digit suffix (example: "AB123"). Existing saved callsigns are migrated to the new format by keeping the first two letters and last three digits when possible.
+
+### 2026-03-27 - Arena layout: viewport-responsive canvas and bounds
+The Phaser canvas now resizes to the browser viewport instead of staying at a fixed 540x960 portrait surface. Arena bounds, spawns, HUD placement, overlays, and starfields read runtime layout metrics so the starfield fills the page and the arena shape adapts to the device/browser size.
+
+### 2026-03-27 - Pause control: bottom button with abandon option
+The run can now be paused from a bottom-centered screen button during countdown and gameplay. The pause menu offers `RESUME` and `ABANDON RUN`, and abandoning returns directly to the main menu without banking the current run.
+
+### 2026-03-27 - Pause button label uses the pause symbol
+The bottom in-run pause control now shows `||` instead of the word `PAUSE`. The paused-state toggle still reads `RESUME` so the recovery action stays explicit.
+
+### 2026-03-27 - Pause resume uses a frozen 3-2-1-GO countdown
+Leaving the pause menu does not resume immediately. The game now stays frozen through a centered `3`, `2`, `1`, `GO` countdown and only then restores the previously paused run state.
+
+### 2026-03-27 - Pause is now crawl-speed danger, not a true freeze
+The pause menu no longer fully freezes the run and no longer uses a resume countdown. While paused, the simulation continues at an extremely slow crawl with player control disabled, so hazards can still drift into lethal collisions but the slowed state is not practical for real play.
+
+### 2026-03-27 - Post-run progression freezes while background motion continues
+After death or extraction, phase timers, gate progression, spawns, and reactive phase/gate lines stop advancing. The background keeps already-spawned objects moving visually behind the overlay, but the run state itself is frozen at the moment it ended.
+
+### 2026-03-27 - Callsign format restored to AAA-###
+Player identity now uses three editable uppercase letters plus a persistent three-digit suffix, displayed as `AAA-###`. Existing saved callsigns migrate by preserving available letters and the last three digits, padding a missing third letter when needed.

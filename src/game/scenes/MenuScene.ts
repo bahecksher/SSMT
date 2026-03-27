@@ -1,13 +1,16 @@
 import Phaser from 'phaser';
-import { SCENE_KEYS, GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
+import { SCENE_KEYS, COLORS } from '../constants';
 import { SaveSystem } from '../systems/SaveSystem';
 import { fetchLeaderboard, type LeaderboardEntry } from '../services/LeaderboardService';
 import { SalvageDebris } from '../entities/SalvageDebris';
 import { DrifterHazard } from '../entities/DrifterHazard';
 import { NPCShip } from '../entities/NPCShip';
 import { HologramOverlay } from '../ui/HologramOverlay';
+import { SlickComm } from '../ui/SlickComm';
 import { DRIFTER_SPEED_BASE } from '../data/tuning';
 import { pickAsteroidSize } from '../data/phaseConfig';
+import { getSlickLine } from '../data/slickLines';
+import { getLayout, setLayoutSize } from '../layout';
 
 type Period = 'daily' | 'weekly';
 
@@ -34,6 +37,7 @@ export class MenuScene extends Phaser.Scene {
   private bgDrifters: DrifterHazard[] = [];
   private bgNpcs: NPCShip[] = [];
   private hologramOverlay!: HologramOverlay;
+  private slickComm!: SlickComm;
   private drifterTimer = 0;
   private debrisTimer = 0;
   private npcTimer = 0;
@@ -43,7 +47,10 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create(): void {
-    const centerX = GAME_WIDTH / 2;
+    this.events.once('shutdown', this.cleanup, this);
+    setLayoutSize(this.scale.width, this.scale.height);
+    const layout = getLayout();
+    const centerX = layout.centerX;
     const save = new SaveSystem();
     const best = save.getBestScore();
     const playerName = save.getPlayerName();
@@ -56,12 +63,12 @@ export class MenuScene extends Phaser.Scene {
     starfield.fillRect(
       -MENU_STARFIELD_OVERSCAN,
       -MENU_STARFIELD_OVERSCAN,
-      GAME_WIDTH + MENU_STARFIELD_OVERSCAN * 2,
-      GAME_HEIGHT + MENU_STARFIELD_OVERSCAN * 2,
+      layout.gameWidth + MENU_STARFIELD_OVERSCAN * 2,
+      layout.gameHeight + MENU_STARFIELD_OVERSCAN * 2,
     );
     for (let i = 0; i < MENU_STARFIELD_COUNT; i++) {
-      const sx = Phaser.Math.Between(-MENU_STARFIELD_OVERSCAN, GAME_WIDTH + MENU_STARFIELD_OVERSCAN);
-      const sy = Phaser.Math.Between(-MENU_STARFIELD_OVERSCAN, GAME_HEIGHT + MENU_STARFIELD_OVERSCAN);
+      const sx = Phaser.Math.Between(-MENU_STARFIELD_OVERSCAN, layout.gameWidth + MENU_STARFIELD_OVERSCAN);
+      const sy = Phaser.Math.Between(-MENU_STARFIELD_OVERSCAN, layout.gameHeight + MENU_STARFIELD_OVERSCAN);
       const brightness = Phaser.Math.FloatBetween(0.1, 0.4);
       const size = Phaser.Math.FloatBetween(0.5, 1.2);
       const starColor = Math.random() < 0.6 ? COLORS.PLAYER : 0xffffff;
@@ -88,24 +95,24 @@ export class MenuScene extends Phaser.Scene {
     // Semi-transparent backing so text is readable over the simulation
     const backing = this.add.graphics().setDepth(uiDepth);
     backing.fillStyle(COLORS.BG, 0.7);
-    backing.fillRoundedRect(20, GAME_HEIGHT * 0.06, GAME_WIDTH - 40, GAME_HEIGHT * 0.88, 12);
+    backing.fillRoundedRect(20, layout.gameHeight * 0.06, layout.gameWidth - 40, layout.gameHeight * 0.88, 12);
 
     // Title block
-    this.add.text(centerX, GAME_HEIGHT * 0.12, "SLICK'S", {
+    this.add.text(centerX, layout.gameHeight * 0.12, "SLICK'S", {
       fontFamily: 'monospace',
       fontSize: '40px',
       color: `#${COLORS.PLAYER.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
 
-    this.add.text(centerX, GAME_HEIGHT * 0.19, 'SALVAGE & MINING', {
+    this.add.text(centerX, layout.gameHeight * 0.19, 'SALVAGE & MINING', {
       fontFamily: 'monospace',
       fontSize: '24px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
 
-    this.add.text(centerX, GAME_HEIGHT * 0.24, 'OPERATION TRAINING MODULE', {
+    this.add.text(centerX, layout.gameHeight * 0.24, 'REMOTE PILOT INTERFACE', {
       fontFamily: 'monospace',
       fontSize: '14px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -113,7 +120,7 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(uiDepth);
 
     // Player name and best score
-    this.pilotText = this.add.text(centerX, GAME_HEIGHT * 0.30, `PILOT: ${playerName}`, {
+    this.pilotText = this.add.text(centerX, layout.gameHeight * 0.30, `PILOT: ${playerName}`, {
       fontFamily: 'monospace',
       fontSize: '14px',
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
@@ -122,8 +129,8 @@ export class MenuScene extends Phaser.Scene {
 
     this.pilotText.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       pointer.event.stopPropagation();
-      const currentInitials = save.getPlayerName().slice(0, 2);
-      const nextInitials = window.prompt('Choose 2 letters for your callsign', currentInitials);
+      const currentInitials = save.getPlayerName().split('-')[0];
+      const nextInitials = window.prompt('Choose 3 letters for your callsign', currentInitials);
       if (nextInitials === null) return;
 
       const updatedName = save.setPlayerInitials(nextInitials);
@@ -131,7 +138,7 @@ export class MenuScene extends Phaser.Scene {
       this.pilotText.setText(`PILOT: ${updatedName}`);
     });
 
-    this.add.text(centerX, GAME_HEIGHT * 0.33, 'TAP CALLSIGN TO EDIT 2 LETTERS', {
+    this.add.text(centerX, layout.gameHeight * 0.33, 'TAP CALLSIGN TO EDIT 3 LETTERS', {
       fontFamily: 'monospace',
       fontSize: '10px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -139,7 +146,7 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(uiDepth).setAlpha(0.7);
 
     if (best > 0) {
-      this.add.text(centerX, GAME_HEIGHT * 0.37, `BEST: ${Math.floor(best)}`, {
+      this.add.text(centerX, layout.gameHeight * 0.37, `BEST: ${Math.floor(best)}`, {
         fontFamily: 'monospace',
         fontSize: '16px',
         color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
@@ -148,7 +155,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     // Leaderboard section
-    const lbTop = GAME_HEIGHT * 0.42;
+    const lbTop = layout.gameHeight * 0.42;
     const tabY = lbTop;
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
@@ -191,7 +198,7 @@ export class MenuScene extends Phaser.Scene {
     divider.lineBetween(centerX - 120, tabY + 14, centerX + 120, tabY + 14);
 
     // Status text (loading / offline)
-    this.statusText = this.add.text(centerX, GAME_HEIGHT * 0.55, 'LOADING...', {
+    this.statusText = this.add.text(centerX, layout.gameHeight * 0.55, 'LOADING...', {
       fontFamily: 'monospace',
       fontSize: '14px',
       color: hudColor,
@@ -199,7 +206,7 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(uiDepth);
 
     // How to play
-    this.add.text(centerX, GAME_HEIGHT * 0.78, [
+    this.add.text(centerX, layout.gameHeight * 0.78, [
       'COLLECT SALVAGE FOR CREDITS',
       'DODGE ASTEROIDS & HAZARDS',
       'EXTRACT AT THE GATE TO BANK',
@@ -212,7 +219,7 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(uiDepth);
 
     // TAP TO START
-    const tapText = this.add.text(centerX, GAME_HEIGHT * 0.88, 'TAP TO START', {
+    const tapText = this.add.text(centerX, layout.gameHeight * 0.88, 'TAP TO START', {
       fontFamily: 'monospace',
       fontSize: '24px',
       color: gateColor,
@@ -229,6 +236,10 @@ export class MenuScene extends Phaser.Scene {
 
     // Hologram overlay on top of everything
     this.hologramOverlay = new HologramOverlay(this);
+    this.slickComm = new SlickComm(this, { depth: uiDepth + 1 });
+    if (Math.random() < 0.45) {
+      this.slickComm.show(getSlickLine('menuIntro'));
+    }
 
     // Start game on tap (ignore tab taps)
     this.input.on('pointerdown', (_pointer: Phaser.Input.Pointer, targets: Phaser.GameObjects.GameObject[]) => {
@@ -369,6 +380,12 @@ export class MenuScene extends Phaser.Scene {
     this.hologramOverlay.destroy();
   }
 
+  private cleanup(): void {
+    this.input.removeAllListeners();
+    this.cleanupBackground();
+    this.slickComm.destroy();
+  }
+
   private updateTabStyles(): void {
     const active = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
     const inactive = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
@@ -395,8 +412,9 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private renderLeaderboard(entries: LeaderboardEntry[]): void {
-    const centerX = GAME_WIDTH / 2;
-    const startY = GAME_HEIGHT * 0.45;
+    const layout = getLayout();
+    const centerX = layout.centerX;
+    const startY = layout.gameHeight * 0.45;
     const rowHeight = 22;
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const salvageColor = `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`;

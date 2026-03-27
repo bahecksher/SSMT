@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
+import { COLORS } from '../constants';
 import {
   SALVAGE_RADIUS,
   SALVAGE_DRIFT_SPEED_MIN,
@@ -7,6 +7,7 @@ import {
   SALVAGE_MAX_HP,
   HP_DEPLETED_WARN_TIME,
 } from '../data/tuning';
+import { getLayout } from '../layout';
 
 function rotatePoint(px: number, py: number, angle: number): [number, number] {
   const cos = Math.cos(angle);
@@ -80,6 +81,7 @@ export class SalvageDebris {
   }
 
   constructor(scene: Phaser.Scene, config?: SalvageDebrisConfig) {
+    const layout = getLayout();
     const cfg = config ?? {};
     this.isRare = cfg.isRare ?? false;
     this.pointsMultiplier = cfg.pointsMultiplier ?? 1;
@@ -103,28 +105,28 @@ export class SalvageDebris {
 
     switch (edge) {
       case 0: // top
-        this.x = Phaser.Math.Between(margin, GAME_WIDTH - margin);
+        this.x = Phaser.Math.Between(margin, layout.gameWidth - margin);
         this.y = -margin;
-        targetX = Phaser.Math.Between(margin, GAME_WIDTH - margin);
-        targetY = Phaser.Math.Between(GAME_HEIGHT * 0.3, GAME_HEIGHT * 0.7);
+        targetX = Phaser.Math.Between(margin, layout.gameWidth - margin);
+        targetY = Phaser.Math.Between(layout.gameHeight * 0.3, layout.gameHeight * 0.7);
         break;
       case 1: // bottom
-        this.x = Phaser.Math.Between(margin, GAME_WIDTH - margin);
-        this.y = GAME_HEIGHT + margin;
-        targetX = Phaser.Math.Between(margin, GAME_WIDTH - margin);
-        targetY = Phaser.Math.Between(GAME_HEIGHT * 0.3, GAME_HEIGHT * 0.7);
+        this.x = Phaser.Math.Between(margin, layout.gameWidth - margin);
+        this.y = layout.gameHeight + margin;
+        targetX = Phaser.Math.Between(margin, layout.gameWidth - margin);
+        targetY = Phaser.Math.Between(layout.gameHeight * 0.3, layout.gameHeight * 0.7);
         break;
       case 2: // left
         this.x = -margin;
-        this.y = Phaser.Math.Between(margin, GAME_HEIGHT - margin);
-        targetX = Phaser.Math.Between(GAME_WIDTH * 0.3, GAME_WIDTH * 0.7);
-        targetY = Phaser.Math.Between(margin, GAME_HEIGHT - margin);
+        this.y = Phaser.Math.Between(margin, layout.gameHeight - margin);
+        targetX = Phaser.Math.Between(layout.gameWidth * 0.3, layout.gameWidth * 0.7);
+        targetY = Phaser.Math.Between(margin, layout.gameHeight - margin);
         break;
       default: // right
-        this.x = GAME_WIDTH + margin;
-        this.y = Phaser.Math.Between(margin, GAME_HEIGHT - margin);
-        targetX = Phaser.Math.Between(GAME_WIDTH * 0.3, GAME_WIDTH * 0.7);
-        targetY = Phaser.Math.Between(margin, GAME_HEIGHT - margin);
+        this.x = layout.gameWidth + margin;
+        this.y = Phaser.Math.Between(margin, layout.gameHeight - margin);
+        targetX = Phaser.Math.Between(layout.gameWidth * 0.3, layout.gameWidth * 0.7);
+        targetY = Phaser.Math.Between(margin, layout.gameHeight - margin);
         break;
     }
 
@@ -199,11 +201,12 @@ export class SalvageDebris {
 
     // Check if fully offscreen (with margin)
     const offMargin = this.salvageRadius + 40;
+    const layout = getLayout();
     if (
       this.x < -offMargin ||
-      this.x > GAME_WIDTH + offMargin ||
+      this.x > layout.gameWidth + offMargin ||
       this.y < -offMargin ||
-      this.y > GAME_HEIGHT + offMargin
+      this.y > layout.gameHeight + offMargin
     ) {
       this.active = false;
     }

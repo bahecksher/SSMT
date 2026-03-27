@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ARENA_LEFT, ARENA_TOP, ARENA_RIGHT, ARENA_BOTTOM, COLORS } from '../constants';
+import { COLORS } from '../constants';
 import {
   PLAYER_FOLLOW_SPEED,
   PLAYER_MAX_SPEED,
@@ -8,6 +8,7 @@ import {
   PLAYER_DISTANCE_SCALE,
 } from '../data/tuning';
 import type { SwipeInput } from '../systems/InputSystem';
+import { getLayout } from '../layout';
 
 export class Player {
   graphic: Phaser.GameObjects.Graphics;
@@ -85,8 +86,9 @@ export class Player {
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
-    this.x = Phaser.Math.Clamp(this.x, ARENA_LEFT + PLAYER_RADIUS, ARENA_RIGHT - PLAYER_RADIUS);
-    this.y = Phaser.Math.Clamp(this.y, ARENA_TOP + PLAYER_RADIUS, ARENA_BOTTOM - PLAYER_RADIUS);
+    const layout = getLayout();
+    this.x = Phaser.Math.Clamp(this.x, layout.arenaLeft + PLAYER_RADIUS, layout.arenaRight - PLAYER_RADIUS);
+    this.y = Phaser.Math.Clamp(this.y, layout.arenaTop + PLAYER_RADIUS, layout.arenaBottom - PLAYER_RADIUS);
 
     this.graphic.setPosition(this.x, this.y);
 

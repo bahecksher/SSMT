@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { ARENA_LEFT, ARENA_TOP, ARENA_RIGHT, ARENA_BOTTOM, COLORS } from '../constants';
+import { COLORS } from '../constants';
 import { EXIT_GATE_RADIUS, EXIT_GATE_DURATION, EXIT_GATE_INSET, EXIT_GATE_GRACE_DELAY } from '../data/tuning';
+import { getLayout } from '../layout';
 
 export class ExitGate {
   graphic: Phaser.GameObjects.Graphics;
@@ -25,24 +26,25 @@ export class ExitGate {
       this.x = fixedPosition.x;
       this.y = fixedPosition.y;
     } else {
+      const layout = getLayout();
       // Spawn along a random arena edge
       const edge = Phaser.Math.Between(0, 3);
       switch (edge) {
         case 0: // top
-          this.x = Phaser.Math.Between(ARENA_LEFT + EXIT_GATE_INSET, ARENA_RIGHT - EXIT_GATE_INSET);
-          this.y = ARENA_TOP + EXIT_GATE_INSET;
+          this.x = Phaser.Math.Between(layout.arenaLeft + EXIT_GATE_INSET, layout.arenaRight - EXIT_GATE_INSET);
+          this.y = layout.arenaTop + EXIT_GATE_INSET;
           break;
         case 1: // bottom
-          this.x = Phaser.Math.Between(ARENA_LEFT + EXIT_GATE_INSET, ARENA_RIGHT - EXIT_GATE_INSET);
-          this.y = ARENA_BOTTOM - EXIT_GATE_INSET;
+          this.x = Phaser.Math.Between(layout.arenaLeft + EXIT_GATE_INSET, layout.arenaRight - EXIT_GATE_INSET);
+          this.y = layout.arenaBottom - EXIT_GATE_INSET;
           break;
         case 2: // left
-          this.x = ARENA_LEFT + EXIT_GATE_INSET;
-          this.y = Phaser.Math.Between(ARENA_TOP + EXIT_GATE_INSET, ARENA_BOTTOM - EXIT_GATE_INSET);
+          this.x = layout.arenaLeft + EXIT_GATE_INSET;
+          this.y = Phaser.Math.Between(layout.arenaTop + EXIT_GATE_INSET, layout.arenaBottom - EXIT_GATE_INSET);
           break;
         default: // right
-          this.x = ARENA_RIGHT - EXIT_GATE_INSET;
-          this.y = Phaser.Math.Between(ARENA_TOP + EXIT_GATE_INSET, ARENA_BOTTOM - EXIT_GATE_INSET);
+          this.x = layout.arenaRight - EXIT_GATE_INSET;
+          this.y = Phaser.Math.Between(layout.arenaTop + EXIT_GATE_INSET, layout.arenaBottom - EXIT_GATE_INSET);
           break;
       }
     }
@@ -67,6 +69,12 @@ export class ExitGate {
       this.extractable = true;
     }
 
+    this.draw();
+  }
+
+  updateVisual(delta: number): void {
+    if (!this.active) return;
+    this.ringPulse += delta * 0.005;
     this.draw();
   }
 

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
+import { getLayout } from '../layout';
 
 /** Number of fragments a destroyed ship breaks into. */
 const FRAGMENT_COUNT = 5;
@@ -78,13 +78,14 @@ export class ShipDebris {
     const g = this.graphic;
     g.clear();
 
+    const layout = getLayout();
     for (const f of this.fragments) {
       f.x += f.vx * dt;
       f.y += f.vy * dt;
       f.angle += f.spin * dt;
 
       // Skip drawing if offscreen
-      if (f.x < -50 || f.x > GAME_WIDTH + 50 || f.y < -50 || f.y > GAME_HEIGHT + 50) continue;
+      if (f.x < -50 || f.x > layout.gameWidth + 50 || f.y < -50 || f.y > layout.gameHeight + 50) continue;
 
       g.lineStyle(1.2, this.color, alpha * 0.85);
 

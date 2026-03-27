@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, COLORS } from '../constants';
+import { COLORS } from '../constants';
+import { getLayout } from '../layout';
 
 export class Hud {
   private scoreText: Phaser.GameObjects.Text;
@@ -15,6 +16,7 @@ export class Hud {
   private lastShield = false;
 
   constructor(scene: Phaser.Scene) {
+    const layout = getLayout();
     const textStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: 'monospace',
       fontSize: '20px',
@@ -26,17 +28,17 @@ export class Hud {
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
     }).setDepth(100);
 
-    this.bestText = scene.add.text(GAME_WIDTH - 16, 16, 'BEST: 0', {
+    this.bestText = scene.add.text(layout.gameWidth - 16, 16, 'BEST: 0', {
       ...textStyle,
       fontSize: '14px',
     }).setOrigin(1, 0).setDepth(100);
 
-    this.timerText = scene.add.text(GAME_WIDTH / 2, 16, 'GATE: --', {
+    this.timerText = scene.add.text(layout.centerX, 16, 'GATE: --', {
       ...textStyle,
       fontSize: '16px',
     }).setOrigin(0.5, 0).setDepth(100);
 
-    this.phaseText = scene.add.text(GAME_WIDTH / 2, 38, 'PHASE 1', {
+    this.phaseText = scene.add.text(layout.centerX, 38, 'PHASE 1', {
       ...textStyle,
       fontSize: '12px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,

@@ -1,8 +1,6 @@
 import Phaser from 'phaser';
 import {
-  SCENE_KEYS, COLORS, GAME_WIDTH, GAME_HEIGHT,
-  ARENA_LEFT, ARENA_TOP, ARENA_RIGHT, ARENA_BOTTOM,
-  ARENA_WIDTH, ARENA_HEIGHT,
+  SCENE_KEYS, COLORS,
 } from '../constants';
 import { GameState } from '../types';
 import { SALVAGE_RESPAWN_DELAY, PLAYER_RADIUS, PLAYER_SHIELD_BREAK_INVULN_MS, NPC_BUMP_FORCE, NPC_BUMP_RADIUS } from '../data/tuning';
@@ -29,11 +27,13 @@ import { SlickComm } from '../ui/SlickComm';
 import { RegentComm } from '../ui/RegentComm';
 import { getSlickLine } from '../data/slickLines';
 import { getRegentLine } from '../data/regentLines';
+import { getLayout, setLayoutSize } from '../layout';
 
 interface MenuHandoff {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
   debrisState?: { x: number; y: number; vx: number; vy: number }[];
   npcState?: { x: number; y: number; vx: number; vy: number }[];
+  retryFromDeath?: boolean;
 }
 
 interface StarfieldStar {
@@ -53,7 +53,9 @@ interface ResultData {
 type DeathCause = 'asteroid' | 'enemy' | 'laser';
 
 export class GameScene extends Phaser.Scene {
-  private static readonly START_COUNTDOWN_MS = 3000;
+  private static readonly COUNTDOWN_PHRASES = ['STAY ALIVE', 'GET PAID', 'GET OUT', 'GO'];
+  private static readonly START_COUNTDOWN_MS = GameScene.COUNTDOWN_PHRASES.length * 1000;
+  private static readonly PAUSE_SLOW_SCALE = 0.025;
   private static readonly STARFIELD_OVERSCAN = 96;
   private static readonly STARFIELD_COUNT = 170;
 
@@ -81,6 +83,7 @@ export class GameScene extends Phaser.Scene {
   private entryGate: ExitGate | null = null;
   private slickComm!: SlickComm;
   private regentComm!: RegentComm;
+  private regentIntroduced = false;
   private regentEnemyAnnounced = false;
   private regentBeamAnnounced = false;
   private regentLastPhase = 0;
@@ -91,6 +94,11 @@ export class GameScene extends Phaser.Scene {
   private resultUi: Phaser.GameObjects.GameObject[] = [];
   private resultInputLocked = false;
   private lastGateActive = false;
+  private pauseButtonBg!: Phaser.GameObjects.Graphics;
+  private pauseButtonText!: Phaser.GameObjects.Text;
+  private pauseButtonHit!: Phaser.GameObjects.Zone;
+  private pauseUi: Phaser.GameObjects.GameObject[] = [];
+  private pausedFromState: GameState = GameState.PLAYING;
 
   constructor() {
     super(SCENE_KEYS.GAME);
@@ -98,6 +106,8 @@ export class GameScene extends Phaser.Scene {
 
   create(data?: MenuHandoff): void {
     this.events.once('shutdown', this.cleanup, this);
+    setLayoutSize(this.scale.width, this.scale.height);
+    const layout = getLayout();
     this.state = GameState.COUNTDOWN;
     this.rareSalvageTimer = 0;
     this.countdownTimer = GameScene.START_COUNTDOWN_MS;
@@ -105,6 +115,9 @@ export class GameScene extends Phaser.Scene {
     this.resultUi = [];
     this.resultInputLocked = false;
     this.lastGateActive = false;
+    this.pauseUi = [];
+    this.pausedFromState = GameState.COUNTDOWN;
+    this.regentIntroduced = false;
     this.regentEnemyAnnounced = false;
     this.regentBeamAnnounced = false;
     this.regentLastPhase = 0;
@@ -120,8 +133,8 @@ export class GameScene extends Phaser.Scene {
     this.starfieldStars = [];
     for (let i = 0; i < GameScene.STARFIELD_COUNT; i++) {
       this.starfieldStars.push({
-        x: Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, GAME_WIDTH + GameScene.STARFIELD_OVERSCAN),
-        y: Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, GAME_HEIGHT + GameScene.STARFIELD_OVERSCAN),
+        x: Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, layout.gameWidth + GameScene.STARFIELD_OVERSCAN),
+        y: Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, layout.gameHeight + GameScene.STARFIELD_OVERSCAN),
         speed: Phaser.Math.FloatBetween(3, 12),
         alpha: Phaser.Math.FloatBetween(0.1, 0.4),
         size: Phaser.Math.FloatBetween(0.5, 1.2),
@@ -135,21 +148,21 @@ export class GameScene extends Phaser.Scene {
 
     // Subtle grid inside arena
     this.arenaBorder.lineStyle(1, COLORS.GRID, 0.04);
-    for (let x = ARENA_LEFT + 40; x < ARENA_RIGHT; x += 40) {
-      this.arenaBorder.lineBetween(x, ARENA_TOP, x, ARENA_BOTTOM);
+    for (let x = layout.arenaLeft + 40; x < layout.arenaRight; x += 40) {
+      this.arenaBorder.lineBetween(x, layout.arenaTop, x, layout.arenaBottom);
     }
-    for (let y = ARENA_TOP + 40; y < ARENA_BOTTOM; y += 40) {
-      this.arenaBorder.lineBetween(ARENA_LEFT, y, ARENA_RIGHT, y);
+    for (let y = layout.arenaTop + 40; y < layout.arenaBottom; y += 40) {
+      this.arenaBorder.lineBetween(layout.arenaLeft, y, layout.arenaRight, y);
     }
 
     // Arena border
     this.arenaBorder.lineStyle(1, COLORS.HUD, 0.12);
-    this.arenaBorder.strokeRect(ARENA_LEFT, ARENA_TOP, ARENA_WIDTH, ARENA_HEIGHT);
+    this.arenaBorder.strokeRect(layout.arenaLeft, layout.arenaTop, layout.arenaWidth, layout.arenaHeight);
     const cm = 12;
     this.arenaBorder.lineStyle(1.5, COLORS.HUD, 0.3);
-    for (const [cx, cy] of [[ARENA_LEFT, ARENA_TOP], [ARENA_RIGHT, ARENA_TOP], [ARENA_LEFT, ARENA_BOTTOM], [ARENA_RIGHT, ARENA_BOTTOM]]) {
-      const sx = cx === ARENA_LEFT ? 1 : -1;
-      const sy = cy === ARENA_TOP ? 1 : -1;
+    for (const [cx, cy] of [[layout.arenaLeft, layout.arenaTop], [layout.arenaRight, layout.arenaTop], [layout.arenaLeft, layout.arenaBottom], [layout.arenaRight, layout.arenaBottom]]) {
+      const sx = cx === layout.arenaLeft ? 1 : -1;
+      const sy = cy === layout.arenaTop ? 1 : -1;
       this.arenaBorder.lineBetween(cx, cy, cx + cm * sx, cy);
       this.arenaBorder.lineBetween(cx, cy, cx, cy + cm * sy);
     }
@@ -159,8 +172,8 @@ export class GameScene extends Phaser.Scene {
     this.slickComm = new SlickComm(this);
     this.regentComm = new RegentComm(this);
 
-    const spawnX = ARENA_LEFT + ARENA_WIDTH / 2;
-    const spawnY = ARENA_TOP + ARENA_HEIGHT * 0.75;
+    const spawnX = layout.arenaLeft + layout.arenaWidth / 2;
+    const spawnY = layout.arenaTop + layout.arenaHeight * 0.75;
     this.player = new Player(this, spawnX, spawnY);
 
     // Entry gate — player appears inside a closing gate
@@ -199,17 +212,20 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.hud = new Hud(this);
+    this.createPauseButton();
     this.countdownText = this.add.text(
-      GAME_WIDTH / 2,
-      GAME_HEIGHT / 2,
-      '3',
+      layout.centerX,
+      layout.centerY,
+      GameScene.COUNTDOWN_PHRASES[0],
       {
         fontFamily: 'monospace',
-        fontSize: '96px',
+        fontSize: '44px',
         fontStyle: 'bold',
         color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
         stroke: `#${COLORS.GRID.toString(16).padStart(6, '0')}`,
         strokeThickness: 4,
+        align: 'center',
+        wordWrap: { width: 320 },
         shadow: {
           offsetX: 0,
           offsetY: 0,
@@ -219,7 +235,9 @@ export class GameScene extends Phaser.Scene {
         },
       },
     ).setOrigin(0.5).setDepth(120).setAlpha(0.9);
-    this.slickComm.show(getSlickLine('runStart'));
+    const openingLineKey = handoff.retryFromDeath && Math.random() < 0.45 ? 'gameOverRetry' : 'runStart';
+    this.showSlickExclusive(getSlickLine(openingLineKey));
+    this.refreshPauseUi();
 
     this.input.on('pointerdown', this.handlePointerDown, this);
   }
@@ -227,23 +245,34 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (
       this.state !== GameState.COUNTDOWN &&
+      this.state !== GameState.PAUSED &&
       this.state !== GameState.PLAYING &&
       this.state !== GameState.RESULTS &&
       this.state !== GameState.DEAD &&
       this.state !== GameState.EXTRACTING
     ) return;
 
-    const gameplayActive = this.state === GameState.PLAYING;
+    const paused = this.state === GameState.PAUSED;
+    const runFrozen = (
+      this.state === GameState.DEAD ||
+      this.state === GameState.EXTRACTING ||
+      this.state === GameState.RESULTS
+    );
+    const effectiveDelta = paused ? delta * GameScene.PAUSE_SLOW_SCALE : delta;
+    const activeState = paused ? this.pausedFromState : this.state;
+    const gameplayActive = activeState === GameState.PLAYING;
+    const countdownActive = activeState === GameState.COUNTDOWN;
 
-    this.updateEntryGate(delta);
+    if (!runFrozen) {
+      this.updateEntryGate(effectiveDelta);
+    }
 
     if (gameplayActive) {
-      this.inputSystem.update();
-      const target = this.inputSystem.getTarget();
-      const swipe = this.inputSystem.getSwipe();
-      this.player.update(delta, target, swipe);
+      const target = paused ? null : (this.inputSystem.update(), this.inputSystem.getTarget());
+      const swipe = paused ? null : this.inputSystem.getSwipe();
+      this.player.update(effectiveDelta, target, swipe);
       if (this.invulnerableTimer > 0) {
-        this.invulnerableTimer -= delta;
+        this.invulnerableTimer -= effectiveDelta;
         // Flicker player to indicate invulnerability
         const blink = Math.sin(this.invulnerableTimer * 0.012) > 0;
         this.player.graphic.setAlpha(blink ? 1 : 0.3);
@@ -255,10 +284,11 @@ export class GameScene extends Phaser.Scene {
     // Update all debris
     for (let i = this.debrisList.length - 1; i >= 0; i--) {
       const d = this.debrisList[i];
-      d.update(delta);
+      d.update(effectiveDelta);
       if (!d.active) {
         // Shatter effect if depleted/expired (not just drifting offscreen)
-        const onScreen = d.x > -40 && d.x < GAME_WIDTH + 40 && d.y > -40 && d.y < GAME_HEIGHT + 40;
+        const layout = getLayout();
+        const onScreen = d.x > -40 && d.x < layout.gameWidth + 40 && d.y > -40 && d.y < layout.gameHeight + 40;
         if (onScreen) {
           const color = d.isRare ? 0xff44ff : COLORS.SALVAGE;
           this.playerDebris.push(new ShipDebris(this, d.x, d.y, d.driftVx, d.driftVy, color, 20));
@@ -266,7 +296,7 @@ export class GameScene extends Phaser.Scene {
         this.salvageSystem.removeDebris(d);
         d.destroy();
         this.debrisList.splice(i, 1);
-        if (!d.isRare) {
+        if (!runFrozen && !d.isRare) {
           this.scheduleDebrisRespawn();
         }
       }
@@ -274,14 +304,14 @@ export class GameScene extends Phaser.Scene {
 
     // Ensure at least one normal debris exists or is scheduled
     const hasNormal = this.debrisList.some(d => !d.isRare);
-    if (!hasNormal && !this.debrisRespawnTimer) {
+    if (!runFrozen && !hasNormal && !this.debrisRespawnTimer) {
       this.scheduleDebrisRespawn();
     }
 
     // Update shield pickups
     for (let i = this.shields.length - 1; i >= 0; i--) {
       const s = this.shields[i];
-      s.update(delta);
+      s.update(effectiveDelta);
       if (!s.active) {
         s.destroy();
         this.shields.splice(i, 1);
@@ -292,6 +322,7 @@ export class GameScene extends Phaser.Scene {
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, s.x, s.y);
         if (dist < PLAYER_RADIUS + s.radius) {
           this.player.hasShield = true;
+          this.tryShowSlick('shieldPickup', 0.4);
           s.active = false;
           s.destroy();
           this.shields.splice(i, 1);
@@ -316,7 +347,7 @@ export class GameScene extends Phaser.Scene {
 
     for (let i = this.bonusPickups.length - 1; i >= 0; i--) {
       const pickup = this.bonusPickups[i];
-      pickup.update(delta);
+      pickup.update(effectiveDelta);
       if (!pickup.active) {
         pickup.destroy();
         this.bonusPickups.splice(i, 1);
@@ -354,25 +385,42 @@ export class GameScene extends Phaser.Scene {
     const prevPhase = this.extractionSystem.getPhaseCount();
 
     // Extraction
-    this.extractionSystem.update(delta);
+    if (runFrozen) {
+      this.extractionSystem.updateVisual(effectiveDelta);
+    } else {
+      this.extractionSystem.update(effectiveDelta);
+    }
 
     // Phase advanced — update difficulty
     const currentPhase = this.extractionSystem.getPhaseCount();
-    if (gameplayActive && currentPhase !== prevPhase) {
+    if (!runFrozen && !paused && gameplayActive && currentPhase !== prevPhase) {
       this.difficultySystem.setPhase(currentPhase);
+      const slickPhaseLine = Math.random() < 0.28 ? getSlickLine('phaseAdvance') : null;
+      let regentPhaseLine: string | null = null;
 
-      // Regent: "why won't you die" every phase after 7
-      if (currentPhase > 7 && currentPhase > this.regentLastPhase) {
-        this.regentComm.show(getRegentLine('whyWontYouDie'));
-      } else if (currentPhase >= 3) {
-        this.regentComm.show(getRegentLine('gateClose'), 2600);
+      if (currentPhase >= 3 && !this.regentIntroduced) {
+        this.regentIntroduced = true;
+        regentPhaseLine = getRegentLine('gateClose');
+      } else if (this.regentIntroduced) {
+        if (currentPhase > 7 && currentPhase > this.regentLastPhase) {
+          regentPhaseLine = Math.random() < 0.45 ? getRegentLine('whyWontYouDie') : null;
+        } else if (currentPhase >= 3) {
+          regentPhaseLine = Math.random() < 0.3 ? getRegentLine('gateClose') : null;
+        }
       }
+
+      if (regentPhaseLine) {
+        this.showRegentExclusive(regentPhaseLine, 2600);
+      } else if (slickPhaseLine) {
+        this.showSlickExclusive(slickPhaseLine);
+      }
+
       this.regentLastPhase = currentPhase;
     }
 
     // Rare salvage spawning (phase 2+)
-    if (currentPhase >= 2) {
-      this.rareSalvageTimer += delta;
+    if (!runFrozen && currentPhase >= 2) {
+      this.rareSalvageTimer += effectiveDelta;
       const rareInterval = Math.max(8000, 18000 - currentPhase * 2000);
       if (this.rareSalvageTimer >= rareInterval) {
         this.spawnRareDebris(currentPhase);
@@ -431,30 +479,36 @@ export class GameScene extends Phaser.Scene {
     // Difficulty system manages hazard spawning + updating
     const enemiesBefore = this.difficultySystem.getEnemies().length;
     const beamsBefore = this.difficultySystem.getBeams().length;
-    this.difficultySystem.update(delta, this.player.x, this.player.y);
+    if (runFrozen) {
+      this.difficultySystem.updateVisualOnly(effectiveDelta, this.player.x, this.player.y);
+    } else {
+      this.difficultySystem.update(effectiveDelta, this.player.x, this.player.y);
+    }
 
     // Regent: announce first enemy arrival
-    if (!this.regentEnemyAnnounced && enemiesBefore === 0 && this.difficultySystem.getEnemies().length > 0) {
+    if (!runFrozen && this.regentIntroduced && !this.regentEnemyAnnounced && enemiesBefore === 0 && this.difficultySystem.getEnemies().length > 0) {
       this.regentEnemyAnnounced = true;
-      this.regentComm.show(getRegentLine('enemyEnter'));
+      this.showRegentExclusive(getRegentLine('enemyEnter'));
     }
     // Regent: announce first beam activation (phase 7)
-    if (!this.regentBeamAnnounced && beamsBefore === 0 && this.difficultySystem.getBeams().length > 0) {
+    if (!runFrozen && this.regentIntroduced && !this.regentBeamAnnounced && beamsBefore === 0 && this.difficultySystem.getBeams().length > 0) {
       this.regentBeamAnnounced = true;
-      this.regentComm.show(getRegentLine('beamUnlock'));
+      this.showRegentExclusive(getRegentLine('beamUnlock'));
     }
 
     // NPC salvage depletion — NPCs drain salvage HP when close
-    for (const npc of npcs) {
-      if (!npc.active || !npc.isSalvaging()) continue;
-      for (const d of this.debrisList) {
-        if (!d.active || d.depleted) continue;
-        const dist = Phaser.Math.Distance.Between(npc.x, npc.y, d.x, d.y);
-        if (dist < d.salvageRadius) {
-          d.hp -= delta / 1000;
-          if (d.hp <= 0) {
-            d.hp = 0;
-            d.depleted = true;
+    if (!runFrozen) {
+      for (const npc of npcs) {
+        if (!npc.active || !npc.isSalvaging()) continue;
+        for (const d of this.debrisList) {
+          if (!d.active || d.depleted) continue;
+          const dist = Phaser.Math.Distance.Between(npc.x, npc.y, d.x, d.y);
+          if (dist < d.salvageRadius) {
+            d.hp -= effectiveDelta / 1000;
+            if (d.hp <= 0) {
+              d.hp = 0;
+              d.depleted = true;
+            }
           }
         }
       }
@@ -489,17 +543,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Spawn shields from dead NPCs — inherit NPC velocity so they drift
-    const deadNPCs = this.difficultySystem.consumeDeadNPCs();
-    for (const pos of deadNPCs) {
-      if (this.shields.length < 3) {
-        const shield = new ShieldPickup(this, pos.x, pos.y, pos.vx * 0.5, pos.vy * 0.5);
-        this.shields.push(shield);
+    if (!runFrozen) {
+      const deadNPCs = this.difficultySystem.consumeDeadNPCs();
+      for (const pos of deadNPCs) {
+        if (this.shields.length < 3) {
+          const shield = new ShieldPickup(this, pos.x, pos.y, pos.vx * 0.5, pos.vy * 0.5);
+          this.shields.push(shield);
+        }
       }
-    }
 
-    const bonusDrops = this.difficultySystem.consumeBonusDrops();
-    for (const drop of bonusDrops) {
-      this.bonusPickups.push(new BonusPickup(this, drop.x, drop.y, drop.points, drop.vx, drop.vy));
+      const bonusDrops = this.difficultySystem.consumeBonusDrops();
+      for (const drop of bonusDrops) {
+        this.bonusPickups.push(new BonusPickup(this, drop.x, drop.y, drop.points, drop.vx, drop.vy));
+      }
     }
 
     // Check extraction — player can extract any time they enter the active gate
@@ -548,32 +604,34 @@ export class GameScene extends Phaser.Scene {
 
     // Update player death debris
     for (let i = this.playerDebris.length - 1; i >= 0; i--) {
-      this.playerDebris[i].update(delta);
+      this.playerDebris[i].update(effectiveDelta);
       if (!this.playerDebris[i].active) {
         this.playerDebris[i].destroy();
         this.playerDebris.splice(i, 1);
       }
     }
 
-    this.updateStarfield(delta);
-    if (this.state === GameState.COUNTDOWN) {
-      this.updateCountdown(delta);
+    this.updateStarfield(effectiveDelta);
+    if (countdownActive) {
+      this.updateCountdown(effectiveDelta, paused);
     }
 
     // Hologram overlay
-    this.hologramOverlay.update(delta);
+    this.hologramOverlay.update(effectiveDelta);
 
     // HUD
     const timeToGate = this.extractionSystem.getTimeToGate();
     const gateActive = this.extractionSystem.isGateActive();
-    if (gateActive && !this.lastGateActive && Math.random() < 0.55) {
-      this.slickComm.show(getSlickLine('gateOpen'));
+    if (!runFrozen && !paused && gateActive && !this.lastGateActive && Math.random() < 0.55) {
+      this.showSlickExclusive(getSlickLine('gateOpen'));
     }
     // Gate just closed — occasionally comment on the player staying
-    if (!gateActive && this.lastGateActive && Math.random() < 0.5) {
-      this.slickComm.show(getSlickLine('gateClose'), 2400);
+    if (!runFrozen && !paused && !gateActive && this.lastGateActive && Math.random() < 0.5) {
+      this.showSlickExclusive(getSlickLine('gateClose'), 2400);
     }
-    this.lastGateActive = gateActive;
+    if (!runFrozen) {
+      this.lastGateActive = gateActive;
+    }
 
     let gateText: string;
     if (gateActive) {
@@ -620,7 +678,11 @@ export class GameScene extends Phaser.Scene {
 
   private scheduleDebrisRespawn(): void {
     this.debrisRespawnTimer = this.time.delayedCall(SALVAGE_RESPAWN_DELAY, () => {
-      if (this.state !== GameState.EXTRACTING && this.state !== GameState.DEAD) {
+      if (
+        this.state === GameState.COUNTDOWN ||
+        this.state === GameState.PLAYING ||
+        this.state === GameState.PAUSED
+      ) {
         this.spawnDebris();
       }
       this.debrisRespawnTimer = null;
@@ -631,12 +693,16 @@ export class GameScene extends Phaser.Scene {
     const lostScore = this.scoreSystem.getUnbanked();
     this.resultData = { score: lostScore, cause: 'death' };
     this.state = GameState.DEAD;
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    this.hidePauseMenu();
+    this.refreshPauseUi();
     if (cause === 'enemy' || cause === 'laser') {
       this.slickComm.hide();
-      this.regentComm.show(getRegentLine('killTaunt'), 0);
+      this.showRegentExclusive(getRegentLine('killTaunt'), 0);
     } else {
-      this.regentComm.hide();
-      this.slickComm.show(getSlickLine('hazardDeath'), 0);
+      const slickDeathKey = Math.random() < 0.35 ? 'death' : 'hazardDeath';
+      this.showSlickExclusive(getSlickLine(slickDeathKey), 0);
     }
     this.playerDebris.push(new ShipDebris(
       this, this.player.x, this.player.y,
@@ -657,15 +723,41 @@ export class GameScene extends Phaser.Scene {
 
   private handleExtraction(): void {
     this.state = GameState.EXTRACTING;
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    this.hidePauseMenu();
+    this.refreshPauseUi();
     const score = this.scoreSystem.getBanked();
     this.resultData = { score, cause: 'extract' };
+    this.tryShowSlick('extraction', 0.55, 0);
     Overlays.screenWipe(this, 0x44ff88, 0.5, () => {
       this.enterResultsState();
     });
   }
 
+  private tryShowSlick(
+    key: Parameters<typeof getSlickLine>[0],
+    chance: number,
+    autoHideMs?: number,
+  ): void {
+    if (Math.random() >= chance) return;
+    this.showSlickExclusive(getSlickLine(key), autoHideMs);
+  }
+
+  private showSlickExclusive(message: string, autoHideMs?: number): void {
+    this.regentComm.hide();
+    this.slickComm.show(message, autoHideMs);
+  }
+
+  private showRegentExclusive(message: string, autoHideMs?: number): void {
+    this.slickComm.hide();
+    this.regentComm.show(message, autoHideMs);
+  }
+
   private cleanup(): void {
     this.input.off('pointerdown', this.handlePointerDown, this);
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
     this.inputSystem.destroy();
     this.scoreSystem.destroy();
     this.salvageSystem.destroy();
@@ -694,6 +786,10 @@ export class GameScene extends Phaser.Scene {
       this.countdownText.destroy();
       this.countdownText = null;
     }
+    this.hidePauseMenu();
+    this.pauseButtonBg.destroy();
+    this.pauseButtonText.destroy();
+    this.pauseButtonHit.destroy();
     this.clearResultUi();
     this.hud.destroy();
     this.slickComm.destroy();
@@ -704,12 +800,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateStarfield(delta: number): void {
+    const layout = getLayout();
     const dt = delta / 1000;
     for (const star of this.starfieldStars) {
       star.y += star.speed * dt;
-      if (star.y > GAME_HEIGHT + GameScene.STARFIELD_OVERSCAN + star.size) {
+      if (star.y > layout.gameHeight + GameScene.STARFIELD_OVERSCAN + star.size) {
         star.y = -GameScene.STARFIELD_OVERSCAN - star.size;
-        star.x = Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, GAME_WIDTH + GameScene.STARFIELD_OVERSCAN);
+        star.x = Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, layout.gameWidth + GameScene.STARFIELD_OVERSCAN);
       }
     }
     this.drawStarfield();
@@ -725,10 +822,14 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private updateCountdown(delta: number): void {
+  private updateCountdown(delta: number, paused = false): void {
     this.countdownTimer = Math.max(0, this.countdownTimer - delta);
-    const remaining = Math.max(1, Math.ceil(this.countdownTimer / 1000));
-    this.countdownText?.setText(String(remaining));
+    const elapsed = GameScene.START_COUNTDOWN_MS - this.countdownTimer;
+    const phraseIndex = Math.min(
+      Math.floor(elapsed / 1000),
+      GameScene.COUNTDOWN_PHRASES.length - 1,
+    );
+    this.countdownText?.setText(GameScene.COUNTDOWN_PHRASES[phraseIndex]);
 
     const secondProgress = 1 - ((this.countdownTimer % 1000) / 1000);
     const scale = 0.9 + secondProgress * 0.45;
@@ -738,18 +839,24 @@ export class GameScene extends Phaser.Scene {
     if (this.countdownTimer <= 0) {
       this.countdownText?.destroy();
       this.countdownText = null;
-      this.state = GameState.PLAYING;
+      if (paused && this.state === GameState.PAUSED) {
+        this.pausedFromState = GameState.PLAYING;
+      } else {
+        this.state = GameState.PLAYING;
+      }
+      this.refreshPauseUi();
     }
   }
 
   private drawStarfield(): void {
+    const layout = getLayout();
     this.starfield.clear();
     this.starfield.fillStyle(0x020806, 1);
     this.starfield.fillRect(
       -GameScene.STARFIELD_OVERSCAN,
       -GameScene.STARFIELD_OVERSCAN,
-      GAME_WIDTH + GameScene.STARFIELD_OVERSCAN * 2,
-      GAME_HEIGHT + GameScene.STARFIELD_OVERSCAN * 2,
+      layout.gameWidth + GameScene.STARFIELD_OVERSCAN * 2,
+      layout.gameHeight + GameScene.STARFIELD_OVERSCAN * 2,
     );
     for (const star of this.starfieldStars) {
       this.starfield.fillStyle(star.color, star.alpha);
@@ -762,6 +869,8 @@ export class GameScene extends Phaser.Scene {
 
     this.state = GameState.RESULTS;
     this.resultInputLocked = true;
+    this.hidePauseMenu();
+    this.refreshPauseUi();
     this.showResultUi(this.resultData);
     this.time.delayedCall(500, () => {
       this.resultInputLocked = false;
@@ -770,13 +879,14 @@ export class GameScene extends Phaser.Scene {
 
   private showResultUi(data: ResultData): void {
     this.clearResultUi();
+    const layout = getLayout();
 
-    const centerX = GAME_WIDTH / 2;
+    const centerX = layout.centerX;
     const cause = data.cause;
     const isDeath = cause === 'death';
-    const deathCommY = GAME_HEIGHT * 0.53;
-    const panelTop = GAME_HEIGHT * 0.18;
-    const panelHeight = GAME_HEIGHT * (isDeath ? 0.64 : 0.58);
+    const deathCommY = layout.gameHeight * 0.53;
+    const panelTop = layout.gameHeight * 0.18;
+    const panelHeight = layout.gameHeight * (isDeath ? 0.64 : 0.58);
     const panelBottom = panelTop + panelHeight;
     const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
     const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
@@ -785,12 +895,12 @@ export class GameScene extends Phaser.Scene {
 
     const backing = this.add.graphics().setDepth(205);
     backing.fillStyle(COLORS.BG, 0.78);
-    backing.fillRoundedRect(28, panelTop, GAME_WIDTH - 56, panelHeight, 16);
+    backing.fillRoundedRect(28, panelTop, layout.gameWidth - 56, panelHeight, 16);
     backing.lineStyle(1.5, titleColor, 0.4);
-    backing.strokeRoundedRect(28, panelTop, GAME_WIDTH - 56, panelHeight, 16);
+    backing.strokeRoundedRect(28, panelTop, layout.gameWidth - 56, panelHeight, 16);
     this.resultUi.push(backing);
 
-    const title = this.add.text(centerX, GAME_HEIGHT * 0.29, titleText, {
+    const title = this.add.text(centerX, layout.gameHeight * 0.29, titleText, {
       fontFamily: 'monospace',
       fontSize: '40px',
       color: `#${titleColor.toString(16).padStart(6, '0')}`,
@@ -800,7 +910,7 @@ export class GameScene extends Phaser.Scene {
 
     const scoreText = this.add.text(
       centerX,
-      GAME_HEIGHT * 0.40,
+      layout.gameHeight * 0.40,
       isDeath ? `CREDITS LOST: ${Math.floor(data.score)}` : `SCORE: ${Math.floor(data.score)}`,
       {
         fontFamily: 'monospace',
@@ -820,7 +930,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (best > 0) {
-      const bestText = this.add.text(centerX, isDeath ? GAME_HEIGHT * 0.64 : GAME_HEIGHT * 0.49, `BEST: ${Math.floor(best)}`, {
+      const bestText = this.add.text(centerX, isDeath ? layout.gameHeight * 0.64 : layout.gameHeight * 0.49, `BEST: ${Math.floor(best)}`, {
         fontFamily: 'monospace',
         fontSize: '18px',
         color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -829,7 +939,7 @@ export class GameScene extends Phaser.Scene {
       this.resultUi.push(bestText);
     }
 
-    const retryText = this.add.text(centerX, isDeath ? GAME_HEIGHT * 0.71 : GAME_HEIGHT * 0.61, 'TAP TO RETRY', {
+    const retryText = this.add.text(centerX, isDeath ? layout.gameHeight * 0.71 : layout.gameHeight * 0.61, 'TAP TO RETRY', {
       fontFamily: 'monospace',
       fontSize: '24px',
       color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
@@ -845,7 +955,7 @@ export class GameScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    const menuText = this.add.text(centerX, isDeath ? panelBottom - 30 : GAME_HEIGHT * 0.70, 'MENU', {
+    const menuText = this.add.text(centerX, isDeath ? panelBottom - 30 : layout.gameHeight * 0.70, 'MENU', {
       fontFamily: 'monospace',
       fontSize: '18px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -866,12 +976,229 @@ export class GameScene extends Phaser.Scene {
     this.resultUi = [];
   }
 
+  private createPauseButton(): void {
+    const layout = getLayout();
+    const buttonWidth = Math.min(layout.gameWidth - 32, 156);
+    const buttonHeight = 34;
+    const buttonY = layout.gameHeight - 26;
+
+    this.pauseButtonBg = this.add.graphics().setDepth(230);
+    this.pauseButtonText = this.add.text(layout.centerX, buttonY, 'PAUSE', {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(231);
+
+    this.pauseButtonHit = this.add.zone(
+      layout.centerX - buttonWidth / 2,
+      buttonY - buttonHeight / 2,
+      buttonWidth,
+      buttonHeight,
+    ).setOrigin(0, 0).setDepth(232).setInteractive({ useHandCursor: true });
+    this.pauseButtonHit.on(
+      'pointerdown',
+      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+        event.stopPropagation();
+        this.togglePause();
+      },
+    );
+  }
+
+  private togglePause(): void {
+    if (this.state === GameState.PAUSED) {
+      this.resumeGame();
+      return;
+    }
+
+    if (this.state !== GameState.COUNTDOWN && this.state !== GameState.PLAYING) {
+      return;
+    }
+
+    this.pauseGame();
+  }
+
+  private pauseGame(): void {
+    this.pausedFromState = this.state;
+    this.inputSystem.clear();
+    this.state = GameState.PAUSED;
+    this.time.timeScale = GameScene.PAUSE_SLOW_SCALE;
+    this.tweens.timeScale = GameScene.PAUSE_SLOW_SCALE;
+    this.showPauseMenu();
+    this.refreshPauseUi();
+  }
+
+  private resumeGame(): void {
+    if (this.state !== GameState.PAUSED) return;
+
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    this.hidePauseMenu();
+    this.inputSystem.clear();
+    this.state = this.pausedFromState;
+    this.refreshPauseUi();
+  }
+
+  private showPauseMenu(): void {
+    this.hidePauseMenu();
+    const layout = getLayout();
+    const centerX = layout.centerX;
+    const panelTop = layout.gameHeight * 0.28;
+    const panelHeight = layout.gameHeight * 0.26;
+
+    const blocker = this.add.zone(0, 0, layout.gameWidth, layout.gameHeight)
+      .setOrigin(0, 0)
+      .setDepth(218)
+      .setInteractive({ useHandCursor: false });
+    blocker.on(
+      'pointerdown',
+      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+        event.stopPropagation();
+      },
+    );
+    this.pauseUi.push(blocker);
+
+    const dim = this.add.graphics().setDepth(217);
+    dim.fillStyle(COLORS.BG, 0.78);
+    dim.fillRect(0, 0, layout.gameWidth, layout.gameHeight);
+    this.pauseUi.push(dim);
+
+    const panel = this.add.graphics().setDepth(220);
+    panel.fillStyle(COLORS.BG, 0.92);
+    panel.fillRoundedRect(28, panelTop, layout.gameWidth - 56, panelHeight, 16);
+    panel.lineStyle(1.5, COLORS.GATE, 0.45);
+    panel.strokeRoundedRect(28, panelTop, layout.gameWidth - 56, panelHeight, 16);
+    this.pauseUi.push(panel);
+
+    const title = this.add.text(centerX, panelTop + 42, 'PAUSED', {
+      fontFamily: 'monospace',
+      fontSize: '34px',
+      color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(221);
+    this.pauseUi.push(title);
+
+    const subtitle = this.add.text(centerX, panelTop + 82, 'RUN AT CRAWL // DANGER LIVE', {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(221).setAlpha(0.8);
+    this.pauseUi.push(subtitle);
+
+    const resumeText = this.add.text(centerX, panelTop + 132, 'RESUME', {
+      fontFamily: 'monospace',
+      fontSize: '22px',
+      color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
+    resumeText.on(
+      'pointerdown',
+      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+        event.stopPropagation();
+        this.resumeGame();
+      },
+    );
+    this.pauseUi.push(resumeText);
+
+    const abandonText = this.add.text(centerX, panelTop + 176, 'ABANDON RUN', {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
+    abandonText.on(
+      'pointerdown',
+      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+        event.stopPropagation();
+        this.abandonRun();
+      },
+    );
+    this.pauseUi.push(abandonText);
+
+    const abandonHint = this.add.text(centerX, panelTop + 206, 'RETURN TO MENU WITHOUT BANKING', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(221).setAlpha(0.65);
+    this.pauseUi.push(abandonHint);
+  }
+
+  private hidePauseMenu(): void {
+    for (const obj of this.pauseUi) {
+      obj.destroy();
+    }
+    this.pauseUi = [];
+  }
+
+  private abandonRun(): void {
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    this.hidePauseMenu();
+    this.inputSystem.clear();
+    this.scene.start(SCENE_KEYS.MENU);
+  }
+
+  private refreshPauseUi(): void {
+    const layout = getLayout();
+    const buttonWidth = Math.min(layout.gameWidth - 32, 156);
+    const buttonHeight = 34;
+    const buttonY = layout.gameHeight - 26;
+    const buttonVisible = (
+      this.state === GameState.COUNTDOWN ||
+      this.state === GameState.PLAYING ||
+      this.state === GameState.PAUSED
+    );
+    const paused = this.state === GameState.PAUSED;
+    const fillColor = paused ? COLORS.GATE : COLORS.BG;
+    const lineColor = paused ? COLORS.GATE : COLORS.HUD;
+    const textColor = paused ? `#${COLORS.BG.toString(16).padStart(6, '0')}` : `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
+
+    this.pauseButtonBg.clear();
+    if (buttonVisible) {
+      this.pauseButtonBg.fillStyle(fillColor, paused ? 0.88 : 0.82);
+      this.pauseButtonBg.lineStyle(1.25, lineColor, paused ? 0.95 : 0.5);
+      this.pauseButtonBg.fillRoundedRect(
+        layout.centerX - buttonWidth / 2,
+        buttonY - buttonHeight / 2,
+        buttonWidth,
+        buttonHeight,
+        12,
+      );
+      this.pauseButtonBg.strokeRoundedRect(
+        layout.centerX - buttonWidth / 2,
+        buttonY - buttonHeight / 2,
+        buttonWidth,
+        buttonHeight,
+        12,
+      );
+    }
+
+    this.pauseButtonBg.setVisible(buttonVisible);
+    this.pauseButtonText
+      .setVisible(buttonVisible)
+      .setPosition(layout.centerX, buttonY)
+      .setText(paused ? 'RESUME' : '||')
+      .setColor(textColor);
+    this.pauseButtonHit
+      .setVisible(buttonVisible)
+      .setPosition(layout.centerX - buttonWidth / 2, buttonY - buttonHeight / 2)
+      .setSize(buttonWidth, buttonHeight);
+
+    if (this.pauseButtonHit.input) {
+      this.pauseButtonHit.input.enabled = buttonVisible;
+    }
+  }
+
   private handlePointerDown(
     _pointer: Phaser.Input.Pointer,
     targets: Phaser.GameObjects.GameObject[],
   ): void {
     if (this.state !== GameState.RESULTS || this.resultInputLocked) return;
     if (targets.length > 0) return;
-    this.scene.start(SCENE_KEYS.GAME);
+    this.scene.start(SCENE_KEYS.GAME, {
+      retryFromDeath: this.resultData?.cause === 'death',
+    } satisfies MenuHandoff);
   }
 }

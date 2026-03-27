@@ -1,9 +1,6 @@
 import Phaser from 'phaser';
-import {
-  GAME_WIDTH, GAME_HEIGHT,
-  ARENA_LEFT, ARENA_TOP, ARENA_RIGHT, ARENA_BOTTOM,
-} from '../constants';
 import { NPC_RADIUS, NPC_SPEED, NPC_TURN_RATE } from '../data/tuning';
+import { getLayout } from '../layout';
 
 const NPC_COLOR = 0xffcc44; // amber/yellow — friendly but distinct
 
@@ -33,31 +30,32 @@ export class NPCShip {
   private salvageTimer = 0;
 
   constructor(scene: Phaser.Scene) {
+    const layout = getLayout();
     const margin = NPC_RADIUS + 20;
 
     // Spawn from a random edge
     const edge = Phaser.Math.Between(0, 3);
     switch (edge) {
       case 0:
-        this.x = Phaser.Math.Between(0, GAME_WIDTH);
+        this.x = Phaser.Math.Between(0, layout.gameWidth);
         this.y = -margin;
         break;
       case 1:
-        this.x = Phaser.Math.Between(0, GAME_WIDTH);
-        this.y = GAME_HEIGHT + margin;
+        this.x = Phaser.Math.Between(0, layout.gameWidth);
+        this.y = layout.gameHeight + margin;
         break;
       case 2:
         this.x = -margin;
-        this.y = Phaser.Math.Between(0, GAME_HEIGHT);
+        this.y = Phaser.Math.Between(0, layout.gameHeight);
         break;
       default:
-        this.x = GAME_WIDTH + margin;
-        this.y = Phaser.Math.Between(0, GAME_HEIGHT);
+        this.x = layout.gameWidth + margin;
+        this.y = Phaser.Math.Between(0, layout.gameHeight);
         break;
     }
 
     // Initial heading toward center
-    this.heading = Math.atan2(GAME_HEIGHT / 2 - this.y, GAME_WIDTH / 2 - this.x);
+    this.heading = Math.atan2(layout.centerY - this.y, layout.centerX - this.x);
     this.vx = Math.cos(this.heading) * NPC_SPEED;
     this.vy = Math.sin(this.heading) * NPC_SPEED;
 
@@ -136,9 +134,8 @@ export class NPCShip {
       desiredAngle = Math.atan2(this.targetY - this.y, this.targetX - this.x);
     } else {
       // Drift toward arena center if no target
-      const cx = (ARENA_LEFT + ARENA_RIGHT) / 2;
-      const cy = (ARENA_TOP + ARENA_BOTTOM) / 2;
-      desiredAngle = Math.atan2(cy - this.y, cx - this.x);
+      const layout = getLayout();
+      desiredAngle = Math.atan2(layout.centerY - this.y, layout.centerX - this.x);
     }
 
     // Steer with turn rate limit
@@ -180,11 +177,12 @@ export class NPCShip {
 
     // Deactivate if way offscreen
     const offMargin = 250;
+    const layout = getLayout();
     if (
       this.x < -offMargin ||
-      this.x > GAME_WIDTH + offMargin ||
+      this.x > layout.gameWidth + offMargin ||
       this.y < -offMargin ||
-      this.y > GAME_HEIGHT + offMargin
+      this.y > layout.gameHeight + offMargin
     ) {
       this.active = false;
     }

@@ -99,7 +99,13 @@ export class InputSystem {
     return { x: this.anchorX, y: this.anchorY };
   }
 
+  clear(): void {
+    this.anchorX = null;
+    this.anchorY = null;
+    this.swipe = null;
+  }
+
   destroy(): void {
-    // No cleanup needed
+    this.clear();
   }
 }

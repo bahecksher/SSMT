@@ -1,125 +1,75 @@
 # State
-_Last updated: 2026-03-27 1530_
+_Last updated: 2026-03-27 1652_
 
 ## Current focus
-Gameplay polish pass is centered on making the arena feel alive from the first moment, with readable telegraphing, cleaner death feedback, tighter result-screen presentation, and steadier visuals.
+Gameplay usability polish, currently centered on responsive layout follow-through, live pause behavior, and restoring the arcade-style callsign format.
 
 ## What's working
-- Full scene flow: Boot -> Menu -> Game (in-scene results, no separate GameOver scene)
-- Core salvage-risk loop is playable and readable
-- Live menu simulation now includes salvage, asteroids, and NPC scavengers moving through the field
-- Menu NPCs can chase salvage and die to hazards, but menu mode does not spawn shields or bonus-point pickups
-- Seamless transition: menu background entities carry into gameplay, including NPCs
-- Menu and gameplay starfields now use overscan coverage so the whole visible field stays filled with stars
-- Letterboxed space outside the game canvas now renders as a matching starfield background instead of black bars
-- Hologram flicker has been removed from the overlay and gameplay entities for a steadier image
-- Slick and Regent comm body text is larger for readability
-- Slick and Regent comms stay open longer to give more time to read
-- Player gets 0.5 seconds of invulnerability after a shield absorbs a hit
-- Shielded NPCs destroy an unshielded player on contact
-- Shielded players destroy unshielded NPCs on contact and lose their shield
-- Player/NPC collisions still bump normally when both are shielded or both are unshielded
-- 3-2-1 countdown with gate sync before active play begins
-- NPC ships are now present from phase 1 instead of waiting until phase 2
-- 2-second invulnerability on run start with blinking visual indicator
-- Arena simulation continues during countdown, death wipe, and result overlays
-- Players can tap their menu callsign and choose the 2-letter prefix
-- Callsign format: chosen 2 letters + persistent 3-digit suffix
-- Existing saved callsigns migrate automatically to the new 2-letter/3-digit format
-- Semi-live death/extraction result overlays (arena keeps moving in background)
-- Slick/Regent death comms now pin in the center of the death result screen and stay visible until reset
-- Death result actions now stay inside the framed result box, including `MENU`
-- Death result label now reads `CREDITS LOST` to match the HUD language
-- Ship destruction debris: all ships (player, NPC, enemy) break apart into fragments carrying inertia
-- Death: immediate red wipe, player ship shatters, fragments drift with momentum
-- Death results now show the actual credits lost instead of a generic label
-- Death comms split by cause: Slick covers asteroid crashes, Regent taunts enemy/laser kills
-- Salvage is now a pure floating scoring zone; player and NPCs can fly through it freely
-- Salvage scoring is flat across the whole salvage ring instead of proximity-based
-- Only ringed asteroids can be mined; unringed red asteroids remain hazards only
-- Mineable asteroids now appear less often, but keep the same red asteroid bodies
-- Salvage shatter: depleted/expired salvage breaks apart with debris effect
-- Shield drops inherit NPC velocity and drift realistically during gameplay
-- Enemy ships always drop collectible bonus-point pickups when destroyed in the arena
-- NPC hazard deaths sometimes drop collectible bonus-point pickups alongside existing shield logic during gameplay
-- Bonus-point pickups drift and expire, but do not magnetize toward the player
-- NPCs can target and collect shield drops and bonus collectibles during gameplay
-- NPC-held shields absorb one hazard hit and can pop enemies/asteroids instead of killing the NPC immediately
-- Proximity-based asteroid mining: 1 pts/sec at edge, up to 15 pts/sec danger-close
-- Rare salvage still multiplies rewards inside the flat salvage scoring zone
-- How-to-play instructions on menu screen
-- Hologram visual style and in-world training-module framing without random alpha popping
-- Online leaderboard on menu screen with daily/weekly tabs (Supabase)
-- Score submission on extraction only, fire-and-forget (works offline)
-- Slick comms overlay: smaller top-center panel with slimmer footprint during gameplay
-- Regent comms overlay: smaller top-center panel in the same slot as Slick during gameplay
-- Slick speaks on run start, occasionally on gate open, and occasionally on gate close
-- Regent announces first enemy arrival (phase 5+), beam activation (phase 7), and starts gate-close pressure lines from phase 3 onward
-- Starfield drifts subtly downward for ambient motion
-- Entry gate: player spawns inside a closing exit gate synced to countdown
-- Health system: salvage (15s HP, rare 7.5s) and asteroids (10s*scale HP) deplete while collected
-- Overlapping mining/salvage gain feedback reflects actual stacked score
-- Depleted entities flash for 3s then shatter with debris effect
-- Polygon-based hitboxes: collision uses actual geometry for asteroids and enemies
-- Player hitbox is center point only (extremely small); PLAYER_RADIUS=5 for beams
-- Screen wipe transitions: green wipe-down on extraction, red wipe-down on death
-- Exit gate: 50px visual, 20px hitbox, 2s warmup then 3s extractable with pulsing animation
-- Mobile input: invisible virtual joystick with inertia
-- Desktop input: pointer-follow (unchanged)
-- Ship is a small triangle that rotates to face heading; center dot shows hitbox
-- Asteroid mining zones clearly visible with orange pulsing fill + dashed ring
-- Salvage debris drifts in from edge, despawns offscreen, respawns after ~1.5s
-- Rare salvage (purple, phase 2+): smaller radius, higher points, 12s lifetime with blink
-- Drifter asteroids split or shatter on collision; sizes vary per phase
-- Shield power-up spawns near salvage during gameplay only
-- Enemy ships (phase 5+) steer toward player, smash through asteroids
-- Beam hazards (phase 7+) fire 1-3 volleys with double red flash warning
-- NPC ships navigate to salvage, deplete HP, and are killed by asteroids/enemies
-- NPC bump: player can push NPCs away from salvage except in the shield-vs-no-shield kill cases above
-- NPC death drops shields only when the drop would land fully inside the arena during gameplay
-- Enemies hunt NPCs: enemy ships target nearby NPCs when closer than player
-- Difficulty scales per phase with gentler ramp
-- Exit gate spawns every 30s, open 5s (2s warmup + 3s active), extraction banks score
-- Best score persists in localStorage
-- HUD: CREDITS, best score, gate countdown, phase counter, shield status
-- GitHub Pages deployment: https://bahecksher.github.io/SSMT/
+- Full scene flow: Boot -> Menu -> Game with in-scene results
+- Core salvage/extract loop, hazards, leaderboard, comms, and HUD remain intact
+- Phaser canvas now resizes to the browser viewport instead of staying fixed at `540x960`
+- Runtime layout metrics now drive arena bounds, starfields, gate placement, spawns, overlays, and key UI positioning
+- Menu and gameplay starfields cover the current viewport with no forced portrait letterboxing
+- Arena frame now changes shape with the browser/device size
+- Bottom-screen pause button is available during countdown and live gameplay
+- The live pause button now uses the `||` pause symbol instead of the word `PAUSE`
+- Pause menu now offers `RESUME` and `ABANDON RUN`
+- Pause no longer fully freezes the run; it now slows the simulation to a near-stop crawl
+- Player control is disabled while paused, but collisions can still kill during the slowed state
+- After death or extraction, phases/gates/spawns now freeze while the existing background motion keeps drifting visually
+- Abandoning from pause returns directly to the main menu without banking the current run
+- Player callsigns now use the `AAA-###` format again
+- The menu callsign editor is back to 3 editable letters
+- Older saved callsigns now normalize automatically into the restored `AAA-###` format
+- Existing menu-to-game background handoff still works with responsive bounds
+- Production build passes
 
 ## In progress
 Nothing active.
 
 ## Known issues
+- Responsive arena balance may need playtest tuning on very wide or very tall displays
+- Mid-run resize/rotation has not been deeply playtested yet
+- Pause interactions have not been deeply playtested on mobile touch edge cases yet
+- Crawl-speed pause factor may still need feel tuning after playtests
+- Result-screen background feel may still need tuning if full-speed motion feels too busy after progression freeze
+- Beam hazards still span full screen width/height, not clipped to arena
 - No audio or voiced delivery for Slick/Regent yet
 - No settings screen (Phase 6)
 - No screen shake on death or extraction flash polish
-- Beam hazards still span full screen width/height, not clipped to arena
-- NPC spawn rates, NPC bonus drop chance, bonus-point values, and pickup targeting may need playtest tuning
-- Mineable asteroid share may still need playtest tuning if the field feels too stingy or too busy
-- Menu NPC density may need playtest tuning if the title screen feels too crowded or too empty
-- Save key changed to `ssmt_save` - existing best scores under old key are lost
-- `node`/`npm` not on PowerShell PATH; use `npm.cmd` or set PATH in Git Bash
-- Windows Firewall may block port 5173 for LAN phone testing
-- Supabase `scores` table must be created manually (SQL in plan doc)
-- Chunk size warning on build (1.45MB) - Phaser is large, not actionable without code splitting
-- Game-facing title may still be too long; naming direction for Slick's business is not finalized
-- Slick/Regent line frequency and shared-slot presentation may still need playtest tuning on mobile
+- NPC spawn rates, bonus drop values/chances, and pickup targeting may still need tuning
+- Save key changed to `ssmt_save` so older local best scores are not migrated
+- `node`/`npm` not on PowerShell PATH; use `npm.cmd` or set PATH explicitly
+- Windows Firewall may block port `5173` for LAN phone testing
+- Supabase `scores` table must be created manually (see leaderboard plan)
+- Build still warns about large chunk size because Phaser is bundled as one large client chunk
 
 ## Next actions
-1. Playtest shield-vs-NPC collision feel on desktop and mobile
-2. Verify the starfield page background feels seamless on taller and wider displays
-3. Continue into audio and settings screen (phase 6 items)
+1. Playtest callsign editing and saved-name migration so restored `AAA-###` identities read well in the menu and leaderboard
+2. Playtest crawl-speed pause and abandon flow on desktop and mobile
+3. Playtest death/extraction result screens to confirm phase count, gate state, and comm triggers stay frozen
 
 ## Active plan
-docs/plans/2026-03-27 0020 Plan - Slick Character Voice.md
+docs/plans/2026-03-27 1652 Plan - Callsign Format Restore.md
 
 ## How to verify
-1. Run `npm.cmd run dev -- --host 0.0.0.0` or `npm.cmd run build`
-2. Open the game on a display that previously showed top/bottom bars and confirm the surrounding area now shows stars instead of black letterboxing
-3. Let a shielded player hit an unshielded NPC and confirm the NPC dies, the player loses the shield, and the player survives
-4. Let a shielded NPC hit an unshielded player and confirm the player dies
-5. Test shield-vs-shield and no-shield-vs-no-shield contacts and confirm they still just bump
+1. Run `npm.cmd run build` or `npm.cmd run dev -- --host 0.0.0.0`
+2. Start a run and use the bottom button to pause during countdown and during live play
+3. Confirm the game slows to an extreme crawl instead of freezing fully
+4. Confirm player control is effectively unusable while paused, but a hazard can still kill on collision
+5. Press `RESUME` and confirm gameplay returns immediately to full speed with no `3 2 1 GO` countdown
+6. Choose `ABANDON RUN` and confirm it returns to the main menu without banking the run
+7. Die or extract and confirm the background still moves, but the phase number and gate state stop advancing
+8. Confirm no new phase-change or gate-change comm lines fire after the run has ended
+9. Confirm result screens and menu navigation still behave normally after using pause
+10. Confirm the menu displays the callsign as `AAA-###` and editing requires exactly 3 letters
 
 ## Recent logs
-- docs/log/2026-03-27 1530 Starfield Page Background.md - Replaced visible letterbox bars with a matching starfield page background
-- docs/log/2026-03-27 1525 NPC Shield Collision.md - Added shield-vs-no-shield player/NPC contact rules
-- docs/log/2026-03-27 1523 Shield Break Grace.md - Added a 0.5s invulnerability window after shield absorption
-- docs/log/2026-03-27 1519 Longer Comm Duration.md - Increased comm auto-hide timing for better readability
+- docs/log/2026-03-27 1652 Callsign Format Restore.md — Restored three-letter arcade callsigns and reformatted them as `AAA-###`
+- docs/log/2026-03-27 1646 Post-run Progression Freeze.md — Froze phases, gates, spawns, and reactive lines after death/extraction while keeping background motion alive
+- docs/log/2026-03-27 1641 Crawl Pause Behavior.md — Replaced hard pause and resume countdown with an ultra-slow danger-live pause state
+- docs/log/2026-03-27 1630 Pause Resume Countdown.md — Added a frozen `3 2 1 GO` countdown before gameplay resumes from pause
+- docs/log/2026-03-27 1626 Pause Symbol Label.md — Swapped the bottom pause button text from `PAUSE` to `||`
+- docs/log/2026-03-27 1623 Pause Feature.md — Added a bottom pause button and pause menu with abandon-run flow
+- docs/log/2026-03-27 1609 Responsive Arena Layout.md — Switched the game from fixed portrait sizing to viewport-responsive arena bounds
+- docs/log/2026-03-27 1555 Exclusive Comms and Line Refresh.md — Refreshed remaining Slick sim-flavored lines and made Slick/Regent comms mutually exclusive

@@ -13,8 +13,8 @@ export type SlickLineKey =
 const SLICK_LINES: Record<SlickLineKey, string[]> = {
   menuIntro: [
     "You're in Slick's yard now. Try not to decorate it with your hull.",
-    'Training module is hot. Earn clean, extract cleaner.',
-    "I teach two things here: staying alive and getting paid.",
+    'Drone link is hot. Earn clean, extract cleaner.',
+    "Two rules in this yard: stay alive and get paid.",
   ],
   runStart: [
     'Eyes up, pilot. The field never misses a lazy turn.',
@@ -53,11 +53,11 @@ const SLICK_LINES: Record<SlickLineKey, string[]> = {
   extraction: [
     "Now that's a payday. Clean run.",
     "That's how you leave a wreck field: richer than you arrived.",
-    "Money's banked. You're learning.",
+    "Money's banked. That's how you work the interface.",
   ],
   death: [
     'Well. That asteroid just filed a complaint about your parking.',
-    'Shake it off, pilot. Better to learn in the sim than out in the black.',
+    'Shake it off, pilot. Better to lose a drone here than your ship out in the black.',
     'Ugly end. Useful lesson.',
   ],
   gameOverRetry: [

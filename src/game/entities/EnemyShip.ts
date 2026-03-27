@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
 import { ENEMY_RADIUS, ENEMY_SPEED, ENEMY_TURN_RATE } from '../data/tuning';
+import { getLayout } from '../layout';
 
 const ENEMY_COLOR = 0xff00ff; // magenta
 
@@ -23,6 +23,7 @@ export class EnemyShip {
   private heading: number; // current facing angle in radians
 
   constructor(scene: Phaser.Scene) {
+    const layout = getLayout();
     const margin = ENEMY_RADIUS + 20;
 
     // Spawn from a random edge
@@ -32,28 +33,28 @@ export class EnemyShip {
 
     switch (edge) {
       case 0: // top
-        this.x = Phaser.Math.Between(0, GAME_WIDTH);
+        this.x = Phaser.Math.Between(0, layout.gameWidth);
         this.y = -margin;
-        targetX = GAME_WIDTH / 2;
-        targetY = GAME_HEIGHT / 2;
+        targetX = layout.centerX;
+        targetY = layout.centerY;
         break;
       case 1: // bottom
-        this.x = Phaser.Math.Between(0, GAME_WIDTH);
-        this.y = GAME_HEIGHT + margin;
-        targetX = GAME_WIDTH / 2;
-        targetY = GAME_HEIGHT / 2;
+        this.x = Phaser.Math.Between(0, layout.gameWidth);
+        this.y = layout.gameHeight + margin;
+        targetX = layout.centerX;
+        targetY = layout.centerY;
         break;
       case 2: // left
         this.x = -margin;
-        this.y = Phaser.Math.Between(0, GAME_HEIGHT);
-        targetX = GAME_WIDTH / 2;
-        targetY = GAME_HEIGHT / 2;
+        this.y = Phaser.Math.Between(0, layout.gameHeight);
+        targetX = layout.centerX;
+        targetY = layout.centerY;
         break;
       default: // right
-        this.x = GAME_WIDTH + margin;
-        this.y = Phaser.Math.Between(0, GAME_HEIGHT);
-        targetX = GAME_WIDTH / 2;
-        targetY = GAME_HEIGHT / 2;
+        this.x = layout.gameWidth + margin;
+        this.y = Phaser.Math.Between(0, layout.gameHeight);
+        targetX = layout.centerX;
+        targetY = layout.centerY;
         break;
     }
 
@@ -95,11 +96,12 @@ export class EnemyShip {
 
     // Deactivate if way offscreen (overshot and left the arena area)
     const offMargin = 200;
+    const layout = getLayout();
     if (
       this.x < -offMargin ||
-      this.x > GAME_WIDTH + offMargin ||
+      this.x > layout.gameWidth + offMargin ||
       this.y < -offMargin ||
-      this.y > GAME_HEIGHT + offMargin
+      this.y > layout.gameHeight + offMargin
     ) {
       this.active = false;
     }

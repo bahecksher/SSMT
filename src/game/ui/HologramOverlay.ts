@@ -1,14 +1,15 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
+import { getLayout } from '../layout';
 
 export class HologramOverlay {
   private scanlines: Phaser.GameObjects.Graphics;
 
   constructor(scene: Phaser.Scene) {
+    const layout = getLayout();
     this.scanlines = scene.add.graphics().setDepth(100);
     this.scanlines.lineStyle(1, 0x000000, 0.08);
-    for (let y = 0; y < GAME_HEIGHT; y += 3) {
-      this.scanlines.lineBetween(0, y, GAME_WIDTH, y);
+    for (let y = 0; y < layout.gameHeight; y += 3) {
+      this.scanlines.lineBetween(0, y, layout.gameWidth, y);
     }
   }
 

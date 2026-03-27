@@ -20,6 +20,7 @@ export interface PhaseConfig {
 export const GameState = {
   COUNTDOWN: 'COUNTDOWN',
   PLAYING: 'PLAYING',
+  PAUSED: 'PAUSED',
   RESULTS: 'RESULTS',
   EXTRACTING: 'EXTRACTING',
   DEATH_FREEZE: 'DEATH_FREEZE',

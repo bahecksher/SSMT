@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
+import { COLORS } from '../constants';
 import { BEAM_WARNING_DURATION, BEAM_ACTIVE_DURATION, BEAM_WIDTH } from '../data/tuning';
+import { getLayout } from '../layout';
 
 export class BeamHazard {
   graphic: Phaser.GameObjects.Graphics;
@@ -17,21 +18,22 @@ export class BeamHazard {
   readonly isHorizontal: boolean;
 
   constructor(scene: Phaser.Scene) {
+    const layout = getLayout();
     // Randomly choose horizontal or vertical
     this.isHorizontal = Math.random() < 0.5;
 
     if (this.isHorizontal) {
-      const y = Phaser.Math.Between(80, GAME_HEIGHT - 80);
+      const y = Phaser.Math.Between(80, layout.gameHeight - 80);
       this.x1 = 0;
       this.y1 = y;
-      this.x2 = GAME_WIDTH;
+      this.x2 = layout.gameWidth;
       this.y2 = y;
     } else {
-      const x = Phaser.Math.Between(40, GAME_WIDTH - 40);
+      const x = Phaser.Math.Between(40, layout.gameWidth - 40);
       this.x1 = x;
       this.y1 = 0;
       this.x2 = x;
-      this.y2 = GAME_HEIGHT;
+      this.y2 = layout.gameHeight;
     }
 
     this.totalDuration = BEAM_WARNING_DURATION + BEAM_ACTIVE_DURATION;

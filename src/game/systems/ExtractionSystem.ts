@@ -40,6 +40,10 @@ export class ExtractionSystem {
     }
   }
 
+  updateVisual(delta: number): void {
+    this.gate?.updateVisual(delta);
+  }
+
   /** Returns the gate that just closed this frame (if any). */
   getClosingGate(): ExitGate | null {
     return this.closingGate;

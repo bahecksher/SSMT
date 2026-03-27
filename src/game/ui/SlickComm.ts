@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { COLORS, GAME_WIDTH } from '../constants';
+import { COLORS } from '../constants';
+import { getLayout } from '../layout';
 
 interface SlickCommOptions {
   width?: number;
@@ -24,10 +25,11 @@ export class SlickComm {
   constructor(scene: Phaser.Scene, options: SlickCommOptions = {}) {
     this.scene = scene;
     this.autoHideMs = options.autoHideMs ?? 4200;
+    const layout = getLayout();
 
-    const width = options.width ?? Math.min(GAME_WIDTH - 72, 360);
+    const width = options.width ?? Math.min(layout.gameWidth - 72, 420);
     const height = 70;
-    const x = (GAME_WIDTH - width) / 2;
+    const x = (layout.gameWidth - width) / 2;
     const y = 8;
     const depth = options.depth ?? 150;
     this.defaultY = y;

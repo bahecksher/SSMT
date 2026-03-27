@@ -13,10 +13,10 @@ import { DrifterHazard } from '../entities/DrifterHazard';
 import { BeamHazard } from '../entities/BeamHazard';
 import { EnemyShip } from '../entities/EnemyShip';
 import { NPCShip } from '../entities/NPCShip';
-import { ARENA_LEFT, ARENA_TOP, ARENA_RIGHT, ARENA_BOTTOM } from '../constants';
 import { SHIELD_PICKUP_RADIUS } from '../entities/ShieldPickup';
 import { ShipDebris } from '../entities/ShipDebris';
 import { Overlays } from '../ui/Overlays';
+import { getLayout } from '../layout';
 
 export class DifficultySystem {
   private scene: Phaser.Scene;
@@ -144,9 +144,10 @@ export class DifficultySystem {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       if (!enemy.active) {
+        const layout = getLayout();
         if (
-          enemy.x >= ARENA_LEFT - 50 && enemy.x <= ARENA_RIGHT + 50 &&
-          enemy.y >= ARENA_TOP - 50 && enemy.y <= ARENA_BOTTOM + 50
+          enemy.x >= layout.arenaLeft - 50 && enemy.x <= layout.arenaRight + 50 &&
+          enemy.y >= layout.arenaTop - 50 && enemy.y <= layout.arenaBottom + 50
         ) {
           this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), 0xff00ff, enemy.radius));
           if (this.canDropBonusAt(enemy.x, enemy.y)) {
@@ -183,6 +184,63 @@ export class DifficultySystem {
           }
         }
         npc.destroy();
+        this.npcs.splice(i, 1);
+      }
+    }
+
+    for (let i = this.beams.length - 1; i >= 0; i--) {
+      const b = this.beams[i];
+      b.update(delta);
+      if (!b.active) {
+        b.destroy();
+        this.beams.splice(i, 1);
+      }
+    }
+
+    for (let i = this.shipDebris.length - 1; i >= 0; i--) {
+      const d = this.shipDebris[i];
+      d.update(delta);
+      if (!d.active) {
+        d.destroy();
+        this.shipDebris.splice(i, 1);
+      }
+    }
+  }
+
+  updateVisualOnly(delta: number, playerX = 0, playerY = 0): void {
+    for (const d of this.drifters) d.update(delta);
+    for (const npc of this.npcs) npc.update(delta);
+
+    for (const e of this.enemies) {
+      const npcTarget = this.findClosestNPC(e.x, e.y);
+      if (npcTarget) {
+        const distToPlayer = Math.sqrt((playerX - e.x) ** 2 + (playerY - e.y) ** 2);
+        const distToNpc = Math.sqrt((npcTarget.x - e.x) ** 2 + (npcTarget.y - e.y) ** 2);
+        if (distToNpc < distToPlayer * 0.8) {
+          e.update(delta, npcTarget.x, npcTarget.y);
+          continue;
+        }
+      }
+      e.update(delta, playerX, playerY);
+    }
+
+    for (let i = this.drifters.length - 1; i >= 0; i--) {
+      if (!this.drifters[i].active) {
+        this.drifters[i].destroy();
+        this.drifters.splice(i, 1);
+      }
+    }
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      if (!this.enemies[i].active) {
+        this.enemies[i].destroy();
+        this.enemies.splice(i, 1);
+      }
+    }
+
+    for (let i = this.npcs.length - 1; i >= 0; i--) {
+      if (!this.npcs[i].active) {
+        this.npcs[i].destroy();
         this.npcs.splice(i, 1);
       }
     }
@@ -404,20 +462,22 @@ export class DifficultySystem {
   }
 
   private canDropShieldAt(x: number, y: number): boolean {
+    const layout = getLayout();
     return (
-      x >= ARENA_LEFT + SHIELD_PICKUP_RADIUS &&
-      x <= ARENA_RIGHT - SHIELD_PICKUP_RADIUS &&
-      y >= ARENA_TOP + SHIELD_PICKUP_RADIUS &&
-      y <= ARENA_BOTTOM - SHIELD_PICKUP_RADIUS
+      x >= layout.arenaLeft + SHIELD_PICKUP_RADIUS &&
+      x <= layout.arenaRight - SHIELD_PICKUP_RADIUS &&
+      y >= layout.arenaTop + SHIELD_PICKUP_RADIUS &&
+      y <= layout.arenaBottom - SHIELD_PICKUP_RADIUS
     );
   }
 
   private canDropBonusAt(x: number, y: number): boolean {
+    const layout = getLayout();
     return (
-      x >= ARENA_LEFT + BONUS_PICKUP_RADIUS &&
-      x <= ARENA_RIGHT - BONUS_PICKUP_RADIUS &&
-      y >= ARENA_TOP + BONUS_PICKUP_RADIUS &&
-      y <= ARENA_BOTTOM - BONUS_PICKUP_RADIUS
+      x >= layout.arenaLeft + BONUS_PICKUP_RADIUS &&
+      x <= layout.arenaRight - BONUS_PICKUP_RADIUS &&
+      y >= layout.arenaTop + BONUS_PICKUP_RADIUS &&
+      y <= layout.arenaBottom - BONUS_PICKUP_RADIUS
     );
   }
 

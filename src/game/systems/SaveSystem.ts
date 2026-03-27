@@ -2,21 +2,25 @@ import { SAVE_KEY, PLAYER_NAME_KEY } from '../constants';
 import type { SaveData } from '../types';
 
 const DEFAULT_SAVE: SaveData = { bestScore: 0 };
-const LETTER_COUNT = 2;
+const LETTER_COUNT = 3;
 const DIGIT_COUNT = 3;
+const CALLSIGN_SEPARATOR = '-';
+
+function randomLetters(count: number): string {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let value = '';
+  for (let i = 0; i < count; i++) {
+    value += letters[Math.floor(Math.random() * 26)];
+  }
+  return value;
+}
 
 function randomDigits(): string {
   return String(Math.floor(Math.random() * (10 ** DIGIT_COUNT))).padStart(DIGIT_COUNT, '0');
 }
 
 function generatePlayerName(): string {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let name = '';
-  for (let i = 0; i < LETTER_COUNT; i++) {
-    name += letters[Math.floor(Math.random() * 26)];
-  }
-  name += randomDigits();
-  return name;
+  return formatPlayerName(randomLetters(LETTER_COUNT), randomDigits());
 }
 
 function normalizeInitials(value: string): string {
@@ -31,12 +35,14 @@ function extractDigits(name: string): string {
   return digitMatches.join('').slice(-DIGIT_COUNT).padStart(DIGIT_COUNT, '0');
 }
 
+function formatPlayerName(initials: string, digits: string): string {
+  return `${initials}${CALLSIGN_SEPARATOR}${digits}`;
+}
+
 function migratePlayerName(name: string): string {
   const normalizedLetters = normalizeInitials(name);
-  if (normalizedLetters.length !== LETTER_COUNT) {
-    return generatePlayerName();
-  }
-  return `${normalizedLetters}${extractDigits(name)}`;
+  const paddedLetters = normalizedLetters + randomLetters(Math.max(0, LETTER_COUNT - normalizedLetters.length));
+  return formatPlayerName(paddedLetters, extractDigits(name));
 }
 
 export class SaveSystem {
@@ -104,7 +110,7 @@ export class SaveSystem {
     if (normalized.length !== LETTER_COUNT) return null;
 
     const existing = this.getPlayerName();
-    const playerName = `${normalized}${extractDigits(existing)}`;
+    const playerName = formatPlayerName(normalized, extractDigits(existing));
     try {
       localStorage.setItem(PLAYER_NAME_KEY, playerName);
     } catch {

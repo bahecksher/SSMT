@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
+import { COLORS } from '../constants';
 import { DRIFTER_RADIUS, DRIFTER_MINING_RADIUS_MULT, DRIFTER_MAX_HP, DRIFTER_SPEED_MAX, HP_DEPLETED_WARN_TIME } from '../data/tuning';
+import { getLayout } from '../layout';
 
 function rotatePoint(px: number, py: number, angle: number): [number, number] {
   const cos = Math.cos(angle);
@@ -50,6 +51,7 @@ export class DrifterHazard {
   }
 
   constructor(scene: Phaser.Scene, speed: number, radiusScale = 1, isMineable = false) {
+    const layout = getLayout();
     this.radiusScale = radiusScale;
     this.radius = DRIFTER_RADIUS * radiusScale;
     this.miningRadius = this.radius * DRIFTER_MINING_RADIUS_MULT;
@@ -68,28 +70,28 @@ export class DrifterHazard {
 
     switch (edge) {
       case 0: // top
-        this.x = Phaser.Math.Between(0, GAME_WIDTH);
+        this.x = Phaser.Math.Between(0, layout.gameWidth);
         this.y = -margin;
-        targetX = Phaser.Math.Between(0, GAME_WIDTH);
-        targetY = GAME_HEIGHT + margin;
+        targetX = Phaser.Math.Between(0, layout.gameWidth);
+        targetY = layout.gameHeight + margin;
         break;
       case 1: // bottom
-        this.x = Phaser.Math.Between(0, GAME_WIDTH);
-        this.y = GAME_HEIGHT + margin;
-        targetX = Phaser.Math.Between(0, GAME_WIDTH);
+        this.x = Phaser.Math.Between(0, layout.gameWidth);
+        this.y = layout.gameHeight + margin;
+        targetX = Phaser.Math.Between(0, layout.gameWidth);
         targetY = -margin;
         break;
       case 2: // left
         this.x = -margin;
-        this.y = Phaser.Math.Between(0, GAME_HEIGHT);
-        targetX = GAME_WIDTH + margin;
-        targetY = Phaser.Math.Between(0, GAME_HEIGHT);
+        this.y = Phaser.Math.Between(0, layout.gameHeight);
+        targetX = layout.gameWidth + margin;
+        targetY = Phaser.Math.Between(0, layout.gameHeight);
         break;
       default: // right
-        this.x = GAME_WIDTH + margin;
-        this.y = Phaser.Math.Between(0, GAME_HEIGHT);
+        this.x = layout.gameWidth + margin;
+        this.y = Phaser.Math.Between(0, layout.gameHeight);
         targetX = -margin;
-        targetY = Phaser.Math.Between(0, GAME_HEIGHT);
+        targetY = Phaser.Math.Between(0, layout.gameHeight);
         break;
     }
 
@@ -174,11 +176,12 @@ export class DrifterHazard {
 
     // Deactivate when fully offscreen
     const offMargin = this.radius + 60;
+    const layout = getLayout();
     if (
       this.x < -offMargin ||
-      this.x > GAME_WIDTH + offMargin ||
+      this.x > layout.gameWidth + offMargin ||
       this.y < -offMargin ||
-      this.y > GAME_HEIGHT + offMargin
+      this.y > layout.gameHeight + offMargin
     ) {
       this.active = false;
     }

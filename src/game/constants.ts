@@ -1,15 +1,3 @@
-export const GAME_WIDTH = 540;
-export const GAME_HEIGHT = 960;
-
-// Arena is the playable area inset from the screen edges
-export const ARENA_INSET = 60;
-export const ARENA_LEFT = ARENA_INSET;
-export const ARENA_TOP = ARENA_INSET;
-export const ARENA_RIGHT = GAME_WIDTH - ARENA_INSET;
-export const ARENA_BOTTOM = GAME_HEIGHT - ARENA_INSET;
-export const ARENA_WIDTH = GAME_WIDTH - ARENA_INSET * 2;
-export const ARENA_HEIGHT = GAME_HEIGHT - ARENA_INSET * 2;
-
 export const SCENE_KEYS = {
   BOOT: 'BootScene',
   MENU: 'MenuScene',
