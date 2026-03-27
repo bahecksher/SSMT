@@ -8,6 +8,7 @@ import { EnemyShip } from '../entities/EnemyShip';
 import { NPCShip } from '../entities/NPCShip';
 import { ARENA_LEFT, ARENA_TOP, ARENA_RIGHT, ARENA_BOTTOM } from '../constants';
 import { SHIELD_PICKUP_RADIUS } from '../entities/ShieldPickup';
+import { ShipDebris } from '../entities/ShipDebris';
 import { Overlays } from '../ui/Overlays';
 
 export class DifficultySystem {
@@ -17,7 +18,8 @@ export class DifficultySystem {
   private beams: BeamHazard[] = [];
   private enemies: EnemyShip[] = [];
   private npcs: NPCShip[] = [];
-  private deadNPCPositions: { x: number; y: number }[] = [];
+  private deadNPCPositions: { x: number; y: number; vx: number; vy: number }[] = [];
+  private shipDebris: ShipDebris[] = [];
   private drifterTimer = 0;
   private beamTimer = 0;
   private enemyTimer = 0;
@@ -52,8 +54,8 @@ export class DifficultySystem {
     return this.npcs;
   }
 
-  /** Returns and clears positions of NPCs that died this frame. */
-  consumeDeadNPCs(): { x: number; y: number }[] {
+  /** Returns and clears positions/velocities of NPCs that died this frame. */
+  consumeDeadNPCs(): { x: number; y: number; vx: number; vy: number }[] {
     const dead = this.deadNPCPositions;
     this.deadNPCPositions = [];
     return dead;
@@ -151,19 +153,32 @@ export class DifficultySystem {
 
     // Clean inactive enemies
     for (let i = this.enemies.length - 1; i >= 0; i--) {
-      if (!this.enemies[i].active) {
-        this.enemies[i].destroy();
+      const enemy = this.enemies[i];
+      if (!enemy.active) {
+        // Spawn breakup debris if enemy was inside the arena (destroyed, not just offscreen)
+        if (
+          enemy.x >= ARENA_LEFT - 50 && enemy.x <= ARENA_RIGHT + 50 &&
+          enemy.y >= ARENA_TOP - 50 && enemy.y <= ARENA_BOTTOM + 50
+        ) {
+          this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), 0xff00ff, enemy.radius));
+        }
+        enemy.destroy();
         this.enemies.splice(i, 1);
       }
     }
 
     // Clean inactive NPCs — record positions of hazard-killed ones for shield drops
     for (let i = this.npcs.length - 1; i >= 0; i--) {
-      if (!this.npcs[i].active) {
-        if (this.npcs[i].killedByHazard && this.canDropShieldAt(this.npcs[i].x, this.npcs[i].y)) {
-          this.deadNPCPositions.push({ x: this.npcs[i].x, y: this.npcs[i].y });
+      const npc = this.npcs[i];
+      if (!npc.active) {
+        if (npc.killedByHazard) {
+          // Spawn breakup debris carrying the NPC's inertia
+          this.shipDebris.push(new ShipDebris(this.scene, npc.x, npc.y, npc.vx, npc.vy, 0xffcc44, npc.radius));
+          if (this.canDropShieldAt(npc.x, npc.y)) {
+            this.deadNPCPositions.push({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy });
+          }
         }
-        this.npcs[i].destroy();
+        npc.destroy();
         this.npcs.splice(i, 1);
       }
     }
@@ -175,6 +190,16 @@ export class DifficultySystem {
       if (!b.active) {
         b.destroy();
         this.beams.splice(i, 1);
+      }
+    }
+
+    // Update and clean ship debris effects
+    for (let i = this.shipDebris.length - 1; i >= 0; i--) {
+      const d = this.shipDebris[i];
+      d.update(delta);
+      if (!d.active) {
+        d.destroy();
+        this.shipDebris.splice(i, 1);
       }
     }
   }
@@ -254,42 +279,53 @@ export class DifficultySystem {
             a.vy -= impulse * massB * ny;
             b.vx += impulse * massA * nx;
             b.vy += impulse * massA * ny;
-          }
 
-          // Split if both are large enough
-          if (a.radiusScale > DrifterHazard.MIN_SPLIT_SCALE * 2 &&
-              b.radiusScale > DrifterHazard.MIN_SPLIT_SCALE * 2 &&
-              this.drifters.length + newFragments.length < this.config.maxConcurrentDrifters + 8) {
-            // Split the larger one
-            const toSplit = a.radiusScale >= b.radiusScale ? a : b;
-            const childScale = toSplit.radiusScale * 0.55;
+            a.bounceCount++;
+            b.bounceCount++;
 
-            if (childScale >= DrifterHazard.MIN_SPLIT_SCALE) {
-              // Kill the parent
-              toSplit.active = false;
+            // The smaller-or-equal asteroid in the pair gets destroyed or split
+            // The bigger one survives (unless both are equal, then both process)
+            const victims = a.radiusScale <= b.radiusScale && a.radiusScale !== b.radiusScale
+              ? [a]
+              : b.radiusScale < a.radiusScale
+                ? [b]
+                : [a, b]; // equal size — both get hit
 
-              // Perpendicular scatter
-              const speed = Math.sqrt(toSplit.vx * toSplit.vx + toSplit.vy * toSplit.vy);
-              const scatter = speed * 0.6;
-              const perpX = -ny;
-              const perpY = nx;
+            for (const ast of victims) {
+              if (!ast.active) continue;
+              const childScale = ast.radiusScale * 0.55;
+              const canSplit = childScale >= DrifterHazard.MIN_SPLIT_SCALE &&
+                this.drifters.length + newFragments.length < this.config.maxConcurrentDrifters + 8;
 
-              newFragments.push(DrifterHazard.createFragment(
-                this.scene,
-                toSplit.x + perpX * toSplit.radius * 0.5,
-                toSplit.y + perpY * toSplit.radius * 0.5,
-                toSplit.vx + perpX * scatter,
-                toSplit.vy + perpY * scatter,
-                childScale,
-              ));
-              newFragments.push(DrifterHazard.createFragment(
-                this.scene,
-                toSplit.x - perpX * toSplit.radius * 0.5,
-                toSplit.y - perpY * toSplit.radius * 0.5,
-                toSplit.vx - perpX * scatter,
-                toSplit.vy - perpY * scatter,
-                childScale,
-              ));
+              if (canSplit) {
+                // Split into smaller pieces
+                ast.active = false;
+                const speed = Math.sqrt(ast.vx * ast.vx + ast.vy * ast.vy);
+                const scatter = speed * 0.6;
+                const perpX = -ny;
+                const perpY = nx;
+
+                newFragments.push(DrifterHazard.createFragment(
+                  this.scene,
+                  ast.x + perpX * ast.radius * 0.5,
+                  ast.y + perpY * ast.radius * 0.5,
+                  ast.vx + perpX * scatter,
+                  ast.vy + perpY * scatter,
+                  childScale,
+                ));
+                newFragments.push(DrifterHazard.createFragment(
+                  this.scene,
+                  ast.x - perpX * ast.radius * 0.5,
+                  ast.y - perpY * ast.radius * 0.5,
+                  ast.vx - perpX * scatter,
+                  ast.vy - perpY * scatter,
+                  childScale,
+                ));
+              } else {
+                // Too small to split — destroy with debris
+                ast.active = false;
+                this.shipDebris.push(new ShipDebris(this.scene, ast.x, ast.y, ast.vx, ast.vy, 0xff3366, ast.radius));
+              }
             }
           }
         }
@@ -383,9 +419,11 @@ export class DifficultySystem {
     for (const b of this.beams) b.destroy();
     for (const e of this.enemies) e.destroy();
     for (const n of this.npcs) n.destroy();
+    for (const sd of this.shipDebris) sd.destroy();
     this.drifters = [];
     this.beams = [];
     this.enemies = [];
     this.npcs = [];
+    this.shipDebris = [];
   }
 }

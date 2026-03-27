@@ -1,38 +1,41 @@
 # State
-_Last updated: 2026-03-27 0144_
+_Last updated: 2026-03-27 1255_
 
 ## Current focus
-Session closed. Players can now choose the 3-letter prefix of their callsign from the menu instead of always getting random letters. Semi-live death/extraction overlays, no-freeze death pacing, countdown styling/gate sync, starfield drift, overlap feedback fixes, and arena-safe NPC shield drops are in place. Ready for playtesting and deploy.
+Polish pass complete. Ship debris, Regent antagonist, asteroid balancing, proximity mining, and invulnerability added. Ready for deploy and playtesting.
 
 ## What's working
-- Full scene flow: Boot -> Menu -> Game
+- Full scene flow: Boot -> Menu -> Game (in-scene results, no separate GameOver scene)
 - Core salvage-risk loop is playable and readable
-- Players can tap their menu callsign and choose the 3-letter prefix they want to use
-- Callsign format remains arcade-style: chosen 3 letters + persistent 4-digit suffix
-- Death and extraction now show in-scene semi-live result overlays instead of switching to a separate game-over scene
-- During result overlays, the arena keeps updating in the background while player consequences remain frozen
-- Death now transitions immediately into the red wipe with no dedicated hit freeze
-- Death wipe timing is fast (`350ms` wipe, `120ms` hold) so the `DESTROYED` overlay appears quickly
-- The arena now keeps moving during the death wipe itself instead of pausing
-- On fatal impact, the player ship turns red instead of disappearing immediately
-- Game start pauses player control on a large bold center-screen `3, 2, 1` countdown before active play begins
-- Countdown styling matches the HUD/scoring hologram feel more closely, with each number growing across its own second and resetting for the next beat
-- Arena simulation continues running during the countdown instead of freezing beneath it
-- Entry gate at spawn closes on the same 3-second timing as the countdown
-- Hologram visual style and in-world training-module framing are established
 - Live phase-1 simulation behind menu screen (asteroids, salvage, hologram overlay)
 - Seamless transition: menu background entities carry into gameplay
-- Starfield behind the arena now drifts subtly downward for light ambient motion
+- 3-2-1 countdown with gate sync before active play begins
+- 2-second invulnerability on run start with blinking visual indicator
+- Arena simulation continues during countdown, death wipe, and result overlays
+- Players can tap their menu callsign and choose the 3-letter prefix
+- Callsign format: chosen 3 letters + persistent 4-digit suffix
+- Semi-live death/extraction result overlays (arena keeps moving in background)
+- Ship destruction debris: all ships (player, NPC, enemy) break apart into fragments carrying inertia
+- Death: immediate red wipe, player ship shatters, fragments drift with momentum
+- Salvage shatter: depleted/expired salvage breaks apart with debris effect
+- Shield drops inherit NPC velocity and drift realistically
+- Asteroid bounce physics: smaller asteroid destroyed on collision with larger, splits or shatters into debris
+- Asteroid speed capped at 200px/s to prevent runaway momentum
+- Proximity-based asteroid mining: 1 pts/sec at edge, up to 15 pts/sec danger-close (more than salvage)
+- Rare salvage buffed: 4+phase multiplier, 12s lifetime, very high reward for chasing
 - How-to-play instructions on menu screen
+- Hologram visual style and in-world training-module framing
 - Online leaderboard on menu screen with daily/weekly tabs (Supabase)
-- Player identity: editable callsign initials + persistent 4-digit suffix
 - Score submission on extraction only, fire-and-forget (works offline)
 - Slick comms overlay: geometric AI face portrait, top-center, slides down from top
 - Slick speaks on run start, gate open, and occasionally on gate close (50% chance)
-- Entry gate: player spawns inside a closing exit gate on game start
+- Regent comms overlay: red antagonist portrait, bottom-center, slides up
+- Regent announces first enemy arrival (phase 5+), beam activation (phase 7), frustration every phase after 7
+- Starfield drifts subtly downward for ambient motion
+- Entry gate: player spawns inside a closing exit gate synced to countdown
 - Health system: salvage (15s HP, rare 7.5s) and asteroids (10s*scale HP) deplete while collected
-- Overlapping mining/salvage gain feedback now reflects the actual stacked score being earned
-- Depleted entities flash for 3s then destroyed, with HP bar indicator
+- Overlapping mining/salvage gain feedback reflects actual stacked score
+- Depleted entities flash for 3s then shatter with debris effect
 - Polygon-based hitboxes: collision uses actual geometry (point-in-polygon ray casting)
 - Player hitbox is center point only (extremely small); PLAYER_RADIUS=5 for beams
 - Screen wipe transitions: green wipe-down on extraction, red wipe-down on death
@@ -42,14 +45,14 @@ Session closed. Players can now choose the 3-letter prefix of their callsign fro
 - Ship is a small triangle that rotates to face heading; center dot shows hitbox
 - Asteroid mining zones clearly visible with orange pulsing fill + dashed ring
 - Salvage debris drifts in from edge, despawns offscreen, respawns after ~1.5s
-- Rare salvage (purple, phase 2+): smaller radius, higher points, 10s lifetime with blink
-- Drifter asteroids bounce/split on collision; sizes vary per phase
+- Rare salvage (purple, phase 2+): smaller radius, higher points, 12s lifetime with blink
+- Drifter asteroids split or shatter on collision; sizes vary per phase
 - Shield power-up spawns near salvage, absorbs one hit, destroys/splits asteroid
 - Enemy ships (phase 5+) steer toward player, smash through asteroids
 - Beam hazards (phase 7+) fire 1-3 volleys with double red flash warning
 - NPC ships (phase 2+): amber triangles navigate to salvage, deplete HP, killed by asteroids/enemies
 - NPC bump: player can push NPCs away from salvage (impulse force, no kill)
-- NPC death drops shields only when the drop would land fully inside the play arena
+- NPC death drops shields only when the drop would land fully inside the arena
 - Enemies hunt NPCs: enemy ships target nearby NPCs when closer than player
 - Difficulty scales per phase with gentler ramp
 - Exit gate spawns every 30s, open 5s (2s warmup + 3s active), extraction banks score
@@ -61,10 +64,9 @@ Session closed. Players can now choose the 3-letter prefix of their callsign fro
 Nothing active.
 
 ## Known issues
-- No audio or voiced delivery for Slick yet
+- No audio or voiced delivery for Slick/Regent yet
 - No settings screen (Phase 6)
 - No screen shake on death or extraction flash polish
-- HP values (15s salvage, 10s asteroid) may need tuning after playtesting
 - Beam hazards still span full screen width/height, not clipped to arena
 - NPC spawn rates and bump force may need tuning after playtesting
 - Save key changed to `ssmt_save` — existing best scores under old key are lost
@@ -74,10 +76,12 @@ Nothing active.
 - Chunk size warning on build (1.4MB) — Phaser is large, not actionable without code splitting
 - Game-facing title may still be too long; naming direction for Slick's business is not finalized
 - Slick portrait size and line frequency may need playtest tuning on mobile
+- Regent line frequency and portrait positioning may need mobile tuning
+- Proximity mining points curve may need playtest tuning
 
 ## Next actions
-1. Playtest editable callsigns, no-freeze death pacing, semi-live result overlays, and arena readability on desktop and mobile
-2. Deploy latest build to GitHub Pages
+1. Deploy latest build to GitHub Pages
+2. Playtest all new features on desktop and mobile
 3. Audio and settings screen (phase 6 items)
 
 ## Active plan
@@ -85,14 +89,20 @@ docs/plans/2026-03-27 0020 Plan - Slick Character Voice.md
 
 ## How to verify
 1. Run `npm.cmd run dev -- --host 0.0.0.0` or deploy to GitHub Pages
-2. On the menu, tap the pilot callsign and enter 3 letters
-3. Confirm the menu updates to the new letters while preserving the 4-digit suffix
-4. Extract a score and confirm the leaderboard submission uses the updated callsign
-5. Run `npm.cmd run build`
+2. Menu: live asteroids/salvage behind UI, how-to-play text, leaderboard, tap callsign to edit
+3. Tap to start: 3-2-1 countdown, player blinks for 2s invulnerability
+4. Play: Slick speaks on run start, gate open, ~50% on gate close
+5. Mine asteroids: closer = more points, floating text gets bigger/bolder near body
+6. Phase 5+: Regent announces enemy arrival, enemies shatter with magenta debris
+7. Phase 7: Regent announces beams ("big guns")
+8. Phase 8+: Regent frustrated each phase
+9. NPC death: amber debris + drifting shield drop
+10. Asteroid collision: smaller splits or shatters, no infinite bouncing
+11. Salvage depletion: green/purple shatter effect
+12. Death: player ship shatters into cyan debris, red wipe, result overlay
+13. Extract: green wipe, score on leaderboard
+14. Offline: leaderboard shows "OFFLINE", game still works
 
 ## Recent logs
-- docs/log/2026-03-27 0144 Editable Callsign Initials.md — Added menu editing for the 3-letter callsign prefix while keeping the 4-digit suffix
-- docs/log/2026-03-27 0141 No-Freeze Death Wipe.md — Kept the arena moving during the death wipe and turned the player ship red on fatal impact
-- docs/log/2026-03-27 0139 Faster Death Wipe.md — Accelerated the death wipe animation itself so destruction resolves more quickly
-- docs/log/2026-03-27 0137 Remove Death Hit Freeze.md — Removed the dedicated death freeze so impact flows straight into the red wipe/result overlay
-- docs/log/2026-03-27 0136 Shorter Death Hold.md — Shortened the death wipe post-hold so the result screen appears faster after impact
+- docs/log/2026-03-27 1255 Polish Pass.md — Ship debris, Regent, asteroid balancing, proximity mining, invulnerability, rare salvage buff
+- docs/log/2026-03-27 0204 Session Close.md — Full session wrap: Slick rework, live menu, seamless start, countdown, death polish, callsigns

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
-import { DRIFTER_RADIUS, DRIFTER_MINING_RADIUS_MULT, DRIFTER_MAX_HP, HP_DEPLETED_WARN_TIME } from '../data/tuning';
+import { DRIFTER_RADIUS, DRIFTER_MINING_RADIUS_MULT, DRIFTER_MAX_HP, DRIFTER_SPEED_MAX, HP_DEPLETED_WARN_TIME } from '../data/tuning';
 
 function rotatePoint(px: number, py: number, angle: number): [number, number] {
   const cos = Math.cos(angle);
@@ -25,6 +25,9 @@ export class DrifterHazard {
   maxHp: number = 0;
   depleted = false;
   private depletedTimer = 0;
+
+  /** How many asteroid-asteroid bounces this drifter has had. */
+  bounceCount = 0;
 
   private angle = 0;
   private spinSpeed: number;
@@ -149,6 +152,15 @@ export class DrifterHazard {
     }
 
     const dt = delta / 1000;
+
+    // Clamp speed after bounces
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > DRIFTER_SPEED_MAX) {
+      const scale = DRIFTER_SPEED_MAX / speed;
+      this.vx *= scale;
+      this.vy *= scale;
+    }
+
     this.x += this.vx * dt;
     this.y += this.vy * dt;
     this.angle += this.spinSpeed * dt;

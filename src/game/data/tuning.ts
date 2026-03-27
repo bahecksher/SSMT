@@ -22,9 +22,11 @@ export const EXIT_GATE_INSET = 60;
 
 // Hazards - Drifter
 export const DRIFTER_SPEED_BASE = 70;
+export const DRIFTER_SPEED_MAX = 200;  // hard cap after bounces
 export const DRIFTER_RADIUS = 16;
 export const DRIFTER_MINING_RADIUS_MULT = 3.5;  // mining zone = radius * this
-export const DRIFTER_MINING_POINTS_PER_SECOND = 1;
+export const DRIFTER_MINING_POINTS_MIN = 1;    // pts/sec at outer edge of mining zone
+export const DRIFTER_MINING_POINTS_MAX = 15;   // pts/sec when hugging the asteroid body
 export const DRIFTER_SPAWN_RATE_BASE = 600;
 
 // Salvage collision

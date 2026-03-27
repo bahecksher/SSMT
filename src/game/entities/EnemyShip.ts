@@ -174,6 +174,9 @@ export class EnemyShip {
     });
   }
 
+  getVelocityX(): number { return this.vx; }
+  getVelocityY(): number { return this.vy; }
+
   destroy(): void {
     this.graphic.destroy();
   }

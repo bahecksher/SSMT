@@ -158,6 +158,9 @@ export class Player {
     g.fillCircle(0, 0, 1.5);
   }
 
+  getVelocityX(): number { return this.vx; }
+  getVelocityY(): number { return this.vy; }
+
   destroy(): void {
     this.graphic.destroy();
   }

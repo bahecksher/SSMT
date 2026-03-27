@@ -18,12 +18,15 @@ import { Player } from '../entities/Player';
 import { SalvageDebris } from '../entities/SalvageDebris';
 import { DrifterHazard } from '../entities/DrifterHazard';
 import { ShieldPickup } from '../entities/ShieldPickup';
+import { ShipDebris } from '../entities/ShipDebris';
 import { ExitGate } from '../entities/ExitGate';
 import { Hud } from '../ui/Hud';
 import { Overlays } from '../ui/Overlays';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { SlickComm } from '../ui/SlickComm';
+import { RegentComm } from '../ui/RegentComm';
 import { getSlickLine } from '../data/slickLines';
+import { getRegentLine } from '../data/regentLines';
 
 interface MenuHandoff {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
@@ -69,6 +72,12 @@ export class GameScene extends Phaser.Scene {
   private hologramOverlay!: HologramOverlay;
   private entryGate: ExitGate | null = null;
   private slickComm!: SlickComm;
+  private regentComm!: RegentComm;
+  private regentEnemyAnnounced = false;
+  private regentBeamAnnounced = false;
+  private regentLastPhase = 0;
+  private playerDebris: ShipDebris[] = [];
+  private invulnerableTimer = 0;
   private countdownText: Phaser.GameObjects.Text | null = null;
   private resultData: ResultData | null = null;
   private resultUi: Phaser.GameObjects.GameObject[] = [];
@@ -88,6 +97,10 @@ export class GameScene extends Phaser.Scene {
     this.resultUi = [];
     this.resultInputLocked = false;
     this.lastGateActive = false;
+    this.regentEnemyAnnounced = false;
+    this.regentBeamAnnounced = false;
+    this.regentLastPhase = 0;
+    this.invulnerableTimer = 2000;
 
     this.saveSystem = new SaveSystem();
     this.inputSystem = new InputSystem(this);
@@ -136,6 +149,7 @@ export class GameScene extends Phaser.Scene {
     // Hologram scanline overlay
     this.hologramOverlay = new HologramOverlay(this);
     this.slickComm = new SlickComm(this);
+    this.regentComm = new RegentComm(this);
 
     const spawnX = ARENA_LEFT + ARENA_WIDTH / 2;
     const spawnY = ARENA_TOP + ARENA_HEIGHT * 0.75;
@@ -215,6 +229,14 @@ export class GameScene extends Phaser.Scene {
       const target = this.inputSystem.getTarget();
       const swipe = this.inputSystem.getSwipe();
       this.player.update(delta, target, swipe);
+      if (this.invulnerableTimer > 0) {
+        this.invulnerableTimer -= delta;
+        // Flicker player to indicate invulnerability
+        const blink = Math.sin(this.invulnerableTimer * 0.012) > 0;
+        this.player.graphic.setAlpha(blink ? 1 : 0.3);
+      } else {
+        this.player.graphic.setAlpha(1);
+      }
     }
 
     // Update all debris
@@ -222,6 +244,12 @@ export class GameScene extends Phaser.Scene {
       const d = this.debrisList[i];
       d.update(delta);
       if (!d.active) {
+        // Shatter effect if depleted/expired (not just drifting offscreen)
+        const onScreen = d.x > -40 && d.x < GAME_WIDTH + 40 && d.y > -40 && d.y < GAME_HEIGHT + 40;
+        if (onScreen) {
+          const color = d.isRare ? 0xff44ff : COLORS.SALVAGE;
+          this.playerDebris.push(new ShipDebris(this, d.x, d.y, d.driftVx, d.driftVy, color, 20));
+        }
         this.salvageSystem.removeDebris(d);
         d.destroy();
         this.debrisList.splice(i, 1);
@@ -268,6 +296,12 @@ export class GameScene extends Phaser.Scene {
     const currentPhase = this.extractionSystem.getPhaseCount();
     if (gameplayActive && currentPhase !== prevPhase) {
       this.difficultySystem.setPhase(currentPhase);
+
+      // Regent: "why won't you die" every phase after 7
+      if (currentPhase > 7 && currentPhase > this.regentLastPhase) {
+        this.regentComm.show(getRegentLine('whyWontYouDie'));
+      }
+      this.regentLastPhase = currentPhase;
     }
 
     // Rare salvage spawning (phase 2+)
@@ -304,7 +338,20 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Difficulty system manages hazard spawning + updating
+    const enemiesBefore = this.difficultySystem.getEnemies().length;
+    const beamsBefore = this.difficultySystem.getBeams().length;
     this.difficultySystem.update(delta, this.player.x, this.player.y);
+
+    // Regent: announce first enemy arrival
+    if (!this.regentEnemyAnnounced && enemiesBefore === 0 && this.difficultySystem.getEnemies().length > 0) {
+      this.regentEnemyAnnounced = true;
+      this.regentComm.show(getRegentLine('enemyEnter'));
+    }
+    // Regent: announce first beam activation (phase 7)
+    if (!this.regentBeamAnnounced && beamsBefore === 0 && this.difficultySystem.getBeams().length > 0) {
+      this.regentBeamAnnounced = true;
+      this.regentComm.show(getRegentLine('beamUnlock'));
+    }
 
     // NPC salvage depletion — NPCs drain salvage HP when close
     for (const npc of npcs) {
@@ -335,11 +382,11 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Spawn shields from dead NPCs
+    // Spawn shields from dead NPCs — inherit NPC velocity so they drift
     const deadNPCs = this.difficultySystem.consumeDeadNPCs();
     for (const pos of deadNPCs) {
       if (this.shields.length < 3) {
-        const shield = new ShieldPickup(this, pos.x, pos.y, 0, 0);
+        const shield = new ShieldPickup(this, pos.x, pos.y, pos.vx * 0.5, pos.vy * 0.5);
         this.shields.push(shield);
       }
     }
@@ -356,7 +403,8 @@ export class GameScene extends Phaser.Scene {
     const hitBeam = this.collisionSystem.checkBeams(this.difficultySystem.getBeams());
     const hitSalvage = this.collisionSystem.checkSalvage(this.debrisList);
     const hitEnemy = this.collisionSystem.checkEnemies(this.difficultySystem.getEnemies());
-    if (gameplayActive && (hitDrifter || hitBeam || hitSalvage || hitEnemy)) {
+    const invulnerable = this.invulnerableTimer > 0;
+    if (gameplayActive && !invulnerable && (hitDrifter || hitBeam || hitSalvage || hitEnemy)) {
       if (this.player.hasShield) {
         this.player.hasShield = false;
         // Shield destroys or splits the asteroid it hit
@@ -376,6 +424,15 @@ export class GameScene extends Phaser.Scene {
 
     if (gameplayActive) {
       this.salvageSystem.update(delta, this.difficultySystem.getDrifters());
+    }
+
+    // Update player death debris
+    for (let i = this.playerDebris.length - 1; i >= 0; i--) {
+      this.playerDebris[i].update(delta);
+      if (!this.playerDebris[i].active) {
+        this.playerDebris[i].destroy();
+        this.playerDebris.splice(i, 1);
+      }
     }
 
     this.updateStarfield(delta);
@@ -433,8 +490,8 @@ export class GameScene extends Phaser.Scene {
   private spawnRareDebris(phase: number): void {
     const debris = new SalvageDebris(this, {
       isRare: true,
-      lifetime: 10000,
-      pointsMultiplier: 2 + phase * 0.5,
+      lifetime: 12000,
+      pointsMultiplier: 4 + phase * 1.0,
       radiusScale: 0.6,
     });
     this.debrisList.push(debris);
@@ -453,6 +510,11 @@ export class GameScene extends Phaser.Scene {
   private handleDeath(): void {
     this.resultData = { score: 0, cause: 'death' };
     this.state = GameState.DEAD;
+    this.playerDebris.push(new ShipDebris(
+      this, this.player.x, this.player.y,
+      this.player.getVelocityX(), this.player.getVelocityY(),
+      COLORS.PLAYER, 8,
+    ));
     this.player.setDestroyedVisual(true);
     Overlays.screenWipe(
       this,
@@ -488,6 +550,8 @@ export class GameScene extends Phaser.Scene {
     this.debrisList = [];
     for (const s of this.shields) s.destroy();
     this.shields = [];
+    for (const pd of this.playerDebris) pd.destroy();
+    this.playerDebris = [];
     if (this.debrisRespawnTimer) {
       this.debrisRespawnTimer.destroy();
       this.debrisRespawnTimer = null;
@@ -503,6 +567,7 @@ export class GameScene extends Phaser.Scene {
     this.clearResultUi();
     this.hud.destroy();
     this.slickComm.destroy();
+    this.regentComm.destroy();
     this.hologramOverlay.destroy();
     this.starfield.destroy();
     this.arenaBorder.destroy();

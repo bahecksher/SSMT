@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import {
   SALVAGE_POINTS_PER_SECOND,
-  DRIFTER_MINING_POINTS_PER_SECOND,
+  DRIFTER_MINING_POINTS_MIN,
+  DRIFTER_MINING_POINTS_MAX,
 } from '../data/tuning';
 import { COLORS } from '../constants';
 import type { Player } from '../entities/Player';
@@ -98,8 +99,10 @@ export class SalvageSystem {
       this.salvageFloatPoints = 0;
     }
 
-    // --- Mining scoring: proximity to drifter asteroids ---
+    // --- Mining scoring: proximity to drifter asteroids (closer = more points) ---
     let miningCount = 0;
+    let totalMiningPoints = 0;
+    let dangerClose = false;
 
     for (const drifter of drifters) {
       if (!drifter.active) continue;
@@ -113,7 +116,12 @@ export class SalvageSystem {
 
       // In mining zone but not touching (touching = death handled elsewhere)
       if (dist <= drifter.miningRadius && dist > drifter.radius && !drifter.depleted) {
+        // Proximity multiplier: 0 at outer edge → 1 at asteroid body
+        const proximity = 1 - (dist - drifter.radius) / (drifter.miningRadius - drifter.radius);
+        const ptsPerSec = DRIFTER_MINING_POINTS_MIN + (DRIFTER_MINING_POINTS_MAX - DRIFTER_MINING_POINTS_MIN) * proximity * proximity;
+        totalMiningPoints += ptsPerSec * dt;
         miningCount++;
+        if (proximity > 0.7) dangerClose = true;
 
         // Deplete asteroid HP
         drifter.hp -= dt;
@@ -126,20 +134,21 @@ export class SalvageSystem {
 
     if (miningCount > 0) {
       this.inRange = true;
-      const miningPoints = DRIFTER_MINING_POINTS_PER_SECOND * miningCount * dt;
-      this.scoreSystem.addUnbanked(miningPoints);
-      this.miningFloatPoints += miningPoints;
+      this.scoreSystem.addUnbanked(totalMiningPoints);
+      this.miningFloatPoints += totalMiningPoints;
 
-      // Floating text for mining
+      // Floating text for mining — faster when danger-close
       this.miningFloatTimer += delta;
-      if (this.miningFloatTimer >= 600) {
+      const miningInterval = dangerClose ? 350 : 600;
+      if (this.miningFloatTimer >= miningInterval) {
+        const fontSize = dangerClose ? '15px' : '11px';
         this.spawnFloatingText(
           `+${Math.max(1, Math.round(this.miningFloatPoints))}`,
           `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
-          '11px',
-          false,
+          fontSize,
+          dangerClose,
         );
-        this.miningFloatTimer -= 600;
+        this.miningFloatTimer -= miningInterval;
         this.miningFloatPoints = 0;
       }
     } else {
