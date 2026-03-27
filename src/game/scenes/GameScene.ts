@@ -18,6 +18,7 @@ import { Player } from '../entities/Player';
 import { SalvageDebris } from '../entities/SalvageDebris';
 import { DrifterHazard } from '../entities/DrifterHazard';
 import { ShieldPickup } from '../entities/ShieldPickup';
+import { BonusPickup } from '../entities/BonusPickup';
 import { ShipDebris } from '../entities/ShipDebris';
 import { ExitGate } from '../entities/ExitGate';
 import { Hud } from '../ui/Hud';
@@ -61,6 +62,7 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private debrisList: SalvageDebris[] = [];
   private shields: ShieldPickup[] = [];
+  private bonusPickups: BonusPickup[] = [];
   private hud!: Hud;
   private state: GameState = GameState.PLAYING;
   private debrisRespawnTimer: Phaser.Time.TimerEvent | null = null;
@@ -282,7 +284,58 @@ export class GameScene extends Phaser.Scene {
           s.active = false;
           s.destroy();
           this.shields.splice(i, 1);
+          continue;
         }
+      }
+
+      if (gameplayActive) {
+        for (const npc of this.difficultySystem.getNPCs()) {
+          if (!npc.active || npc.hasShield) continue;
+          const dist = Phaser.Math.Distance.Between(npc.x, npc.y, s.x, s.y);
+          if (dist < npc.radius + s.radius) {
+            npc.hasShield = true;
+            s.active = false;
+            s.destroy();
+            this.shields.splice(i, 1);
+            break;
+          }
+        }
+      }
+    }
+
+    for (let i = this.bonusPickups.length - 1; i >= 0; i--) {
+      const pickup = this.bonusPickups[i];
+      pickup.update(delta);
+      if (!pickup.active) {
+        pickup.destroy();
+        this.bonusPickups.splice(i, 1);
+        continue;
+      }
+
+      if (gameplayActive) {
+        const playerDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, pickup.x, pickup.y);
+        if (playerDist < PLAYER_RADIUS + pickup.radius) {
+          this.scoreSystem.addUnbanked(pickup.points);
+          this.salvageSystem.spawnRewardText(`+${pickup.points}`, pickup.x, pickup.y - 8);
+          pickup.active = false;
+          pickup.destroy();
+          this.bonusPickups.splice(i, 1);
+          continue;
+        }
+
+        let claimedByNpc = false;
+        for (const npc of this.difficultySystem.getNPCs()) {
+          if (!npc.active) continue;
+          const npcDist = Phaser.Math.Distance.Between(npc.x, npc.y, pickup.x, pickup.y);
+          if (npcDist < npc.radius + pickup.radius) {
+            pickup.active = false;
+            pickup.destroy();
+            this.bonusPickups.splice(i, 1);
+            claimedByNpc = true;
+            break;
+          }
+        }
+        if (claimedByNpc) continue;
       }
     }
 
@@ -319,19 +372,44 @@ export class GameScene extends Phaser.Scene {
     for (const npc of npcs) {
       if (!npc.active) continue;
 
-      // Find closest active, non-depleted salvage
-      let bestDebris: SalvageDebris | null = null;
+      let bestTargetX: number | null = null;
+      let bestTargetY: number | null = null;
       let bestDist = Infinity;
+
       for (const d of this.debrisList) {
         if (!d.active || d.depleted) continue;
         const dist = Phaser.Math.Distance.Between(npc.x, npc.y, d.x, d.y);
         if (dist < bestDist) {
           bestDist = dist;
-          bestDebris = d;
+          bestTargetX = d.x;
+          bestTargetY = d.y;
         }
       }
-      if (bestDebris) {
-        npc.setTarget(bestDebris.x, bestDebris.y);
+
+      if (!npc.hasShield) {
+        for (const shield of this.shields) {
+          if (!shield.active) continue;
+          const dist = Phaser.Math.Distance.Between(npc.x, npc.y, shield.x, shield.y);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestTargetX = shield.x;
+            bestTargetY = shield.y;
+          }
+        }
+      }
+
+      for (const pickup of this.bonusPickups) {
+        if (!pickup.active) continue;
+        const dist = Phaser.Math.Distance.Between(npc.x, npc.y, pickup.x, pickup.y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestTargetX = pickup.x;
+          bestTargetY = pickup.y;
+        }
+      }
+
+      if (bestTargetX !== null && bestTargetY !== null) {
+        npc.setTarget(bestTargetX, bestTargetY);
       } else {
         npc.clearTarget();
       }
@@ -389,6 +467,11 @@ export class GameScene extends Phaser.Scene {
         const shield = new ShieldPickup(this, pos.x, pos.y, pos.vx * 0.5, pos.vy * 0.5);
         this.shields.push(shield);
       }
+    }
+
+    const bonusDrops = this.difficultySystem.consumeBonusDrops();
+    for (const drop of bonusDrops) {
+      this.bonusPickups.push(new BonusPickup(this, drop.x, drop.y, drop.points, drop.vx, drop.vy));
     }
 
     // Check extraction — player can extract any time they enter the active gate
@@ -550,6 +633,8 @@ export class GameScene extends Phaser.Scene {
     this.debrisList = [];
     for (const s of this.shields) s.destroy();
     this.shields = [];
+    for (const bonus of this.bonusPickups) bonus.destroy();
+    this.bonusPickups = [];
     for (const pd of this.playerDebris) pd.destroy();
     this.playerDebris = [];
     if (this.debrisRespawnTimer) {

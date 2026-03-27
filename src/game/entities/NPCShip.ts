@@ -23,6 +23,7 @@ export class NPCShip {
   active = true;
   inverted = false;
   killedByHazard = false;
+  hasShield = false;
 
   private heading: number;
   private targetX = 0;
@@ -93,6 +94,12 @@ export class NPCShip {
     // Briefly lose target so it drifts before re-acquiring
     this.salvaging = false;
     this.salvageTimer = 0;
+  }
+
+  consumeShield(): boolean {
+    if (!this.hasShield) return false;
+    this.hasShield = false;
+    return true;
   }
 
   update(delta: number): void {
@@ -177,6 +184,11 @@ export class NPCShip {
     // Glow ring
     g.lineStyle(1, color, 0.06);
     g.strokeCircle(0, 0, r * 2.2);
+
+    if (this.hasShield) {
+      g.lineStyle(1.25, 0x44aaff, 0.75);
+      g.strokeCircle(0, 0, r * 1.9 + Math.sin(this.salvageTimer * 0.004) * 1.5);
+    }
 
     // Triangle ship shape (similar to player but slightly different proportions)
     const triR = r * 1.2;

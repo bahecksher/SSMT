@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
+import { GAME_WIDTH } from '../constants';
 
-const REGENT_COLOR = 0xff3366; // red — hostile
+const REGENT_COLOR = 0xff3366;
 const REGENT_ACCENT = 0xff0044;
 
 interface RegentCommOptions {
@@ -26,11 +26,10 @@ export class RegentComm {
     this.scene = scene;
     this.autoHideMs = options.autoHideMs ?? 3600;
 
-    const width = options.width ?? Math.min(GAME_WIDTH - 32, 420);
-    const height = 88;
+    const width = options.width ?? Math.min(GAME_WIDTH - 72, 360);
+    const height = 70;
     const x = (GAME_WIDTH - width) / 2;
-    // Position below Slick's comm — sits lower on screen
-    const y = GAME_HEIGHT - height - 12;
+    const y = 8;
     const depth = options.depth ?? 150;
     this.baseY = y;
 
@@ -39,25 +38,25 @@ export class RegentComm {
     panel.lineStyle(1, REGENT_COLOR, 0.5);
     panel.fillRoundedRect(0, 0, width, height, 8);
     panel.strokeRoundedRect(0, 0, width, height, 8);
-    // Inner border
     panel.lineStyle(1, REGENT_ACCENT, 0.15);
     panel.strokeRoundedRect(4, 4, width - 8, height - 8, 6);
 
     this.portrait = this.createPortrait(scene);
-    this.portrait.setPosition(44, height / 2);
+    this.portrait.setPosition(38, height / 2);
+    this.portrait.setScale(0.82);
 
-    this.nameText = scene.add.text(86, 12, 'REGENT // PATROL', {
+    this.nameText = scene.add.text(72, 10, 'REGENT // PATROL', {
       fontFamily: 'monospace',
-      fontSize: '11px',
+      fontSize: '10px',
       color: `#${REGENT_COLOR.toString(16).padStart(6, '0')}`,
     });
 
-    this.text = scene.add.text(86, 30, '', {
+    this.text = scene.add.text(72, 24, '', {
       fontFamily: 'monospace',
-      fontSize: '13px',
+      fontSize: '11px',
       color: `#${REGENT_COLOR.toString(16).padStart(6, '0')}`,
-      wordWrap: { width: width - 100 },
-      lineSpacing: 3,
+      wordWrap: { width: width - 84 },
+      lineSpacing: 2,
     });
 
     this.root = scene.add.container(x, y, [panel, this.portrait, this.nameText, this.text]);
@@ -91,7 +90,7 @@ export class RegentComm {
     }
 
     this.text.setText(message);
-    this.root.setY(this.baseY + 8);
+    this.root.setY(this.baseY - 8);
     this.root.setVisible(true);
     this.scene.tweens.killTweensOf(this.root);
     this.scene.tweens.add({
@@ -122,7 +121,7 @@ export class RegentComm {
     this.scene.tweens.add({
       targets: this.root,
       alpha: 0,
-      y: this.baseY + 8,
+      y: this.baseY - 8,
       duration: 200,
       ease: 'Sine.In',
       onComplete: () => this.root.setVisible(false),
@@ -140,12 +139,10 @@ export class RegentComm {
   }
 
   private createPortrait(scene: Phaser.Scene): Phaser.GameObjects.Container {
-    // Outer glow — red/hostile
     const glow = scene.add.graphics();
     glow.fillStyle(REGENT_COLOR, 0.08);
     glow.fillCircle(0, 0, 28);
 
-    // Angular head outline — more aggressive/sharp than Slick's hex
     const head = scene.add.graphics();
     head.lineStyle(1.5, REGENT_COLOR, 0.75);
     head.beginPath();
@@ -159,46 +156,37 @@ export class RegentComm {
     head.closePath();
     head.strokePath();
 
-    // Inner circuitry — angular/aggressive
     const circuits = scene.add.graphics();
     circuits.lineStyle(1, REGENT_COLOR, 0.2);
     circuits.lineBetween(-18, -10, -10, -4);
     circuits.lineBetween(18, -10, 10, -4);
     circuits.lineBetween(-18, 8, -10, 6);
     circuits.lineBetween(18, 8, 10, 6);
-    // Vertical line through center
     circuits.lineBetween(0, -22, 0, -14);
     circuits.lineBetween(0, 16, 0, 22);
-    // Cross-hair lines
     circuits.lineStyle(1, REGENT_ACCENT, 0.12);
     circuits.lineBetween(-10, -4, 10, -4);
 
-    // Eyes — narrow slits, menacing
     const eyes = scene.add.graphics();
     eyes.fillStyle(REGENT_COLOR, 0.95);
     eyes.fillRect(-11, -8, 8, 2);
     eyes.fillRect(3, -8, 8, 2);
-    // Glowing red pupils
     eyes.fillStyle(REGENT_ACCENT, 1);
     eyes.fillRect(-6, -8, 3, 2);
     eyes.fillRect(5, -8, 3, 2);
 
-    // Nose — sharper V than Slick
     const nose = scene.add.graphics();
     nose.lineStyle(1, REGENT_COLOR, 0.35);
     nose.lineBetween(-3, 0, 0, 4);
     nose.lineBetween(0, 4, 3, 0);
 
-    // Mouth — flat line with downturned corners (stern/angry)
     const mouth = scene.add.graphics();
     mouth.lineStyle(1.5, REGENT_COLOR, 0.7);
     mouth.lineBetween(-7, 10, 7, 10);
-    // Downturn
     mouth.lineStyle(1, REGENT_COLOR, 0.5);
     mouth.lineBetween(-7, 10, -9, 12);
     mouth.lineBetween(7, 10, 9, 12);
 
-    // Scan line
     const scanLine = scene.add.graphics();
     scanLine.lineStyle(1, REGENT_ACCENT, 0.1);
     scanLine.lineBetween(-18, 0, 18, 0);

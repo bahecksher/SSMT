@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import {
-  SALVAGE_POINTS_PER_SECOND,
+  SALVAGE_KILL_RADIUS,
+  SALVAGE_POINTS_MAX,
+  SALVAGE_POINTS_MIN,
   DRIFTER_MINING_POINTS_MIN,
   DRIFTER_MINING_POINTS_MAX,
 } from '../data/tuning';
@@ -49,6 +51,7 @@ export class SalvageSystem {
     // --- Salvage scoring: stack all overlapping salvage zones ---
     let totalSalvagePoints = 0;
     let hasRareInRange = false;
+    let salvageDangerClose = false;
 
     for (const debris of this.debrisList) {
       if (!debris.active) continue;
@@ -61,9 +64,12 @@ export class SalvageSystem {
       );
 
       if (dist <= debris.salvageRadius && !debris.depleted) {
-        const points = SALVAGE_POINTS_PER_SECOND * debris.pointsMultiplier * dt;
+        const proximity = 1 - Math.max(0, dist - SALVAGE_KILL_RADIUS) / Math.max(1, debris.salvageRadius - SALVAGE_KILL_RADIUS);
+        const ptsPerSec = SALVAGE_POINTS_MIN + (SALVAGE_POINTS_MAX - SALVAGE_POINTS_MIN) * proximity * proximity;
+        const points = ptsPerSec * debris.pointsMultiplier * dt;
         totalSalvagePoints += points;
         if (debris.isRare) hasRareInRange = true;
+        if (proximity > 0.72) salvageDangerClose = true;
 
         // Deplete salvage HP
         debris.hp -= dt;
@@ -79,17 +85,17 @@ export class SalvageSystem {
       this.scoreSystem.addUnbanked(totalSalvagePoints);
       this.salvageFloatPoints += totalSalvagePoints;
 
-      // Floating text for salvage
+      // Floating text for salvage - faster and punchier when hugging the core
       this.salvageFloatTimer += delta;
-      const interval = hasRareInRange ? 300 : 500;
+      const interval = hasRareInRange ? 300 : (salvageDangerClose ? 360 : 500);
       if (this.salvageFloatTimer >= interval) {
         const displayPts = Math.max(1, Math.round(this.salvageFloatPoints));
         const color = hasRareInRange ? '#ff44ff' : `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`;
         this.spawnFloatingText(
           `+${displayPts}`,
           color,
-          hasRareInRange ? '16px' : '13px',
-          hasRareInRange,
+          hasRareInRange ? '16px' : (salvageDangerClose ? '15px' : '13px'),
+          hasRareInRange || salvageDangerClose,
         );
         this.salvageFloatTimer -= interval;
         this.salvageFloatPoints = 0;
@@ -174,10 +180,12 @@ export class SalvageSystem {
     color: string,
     fontSize: string,
     bold: boolean,
+    x = this.player.x + Phaser.Math.Between(-15, 15),
+    y = this.player.y - 20,
   ): void {
     const text = this.scene.add.text(
-      this.player.x + Phaser.Math.Between(-15, 15),
-      this.player.y - 20,
+      x,
+      y,
       label,
       {
         fontFamily: 'monospace',
@@ -188,6 +196,10 @@ export class SalvageSystem {
     ).setOrigin(0.5).setDepth(90);
 
     this.floatingTexts.push({ text, life: 800 });
+  }
+
+  spawnRewardText(label: string, x: number, y: number, color = '#ffdd55'): void {
+    this.spawnFloatingText(label, color, '18px', true, x, y);
   }
 
   isInRange(): boolean {

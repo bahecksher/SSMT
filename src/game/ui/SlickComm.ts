@@ -23,10 +23,10 @@ export class SlickComm {
     this.scene = scene;
     this.autoHideMs = options.autoHideMs ?? 3200;
 
-    const width = options.width ?? Math.min(GAME_WIDTH - 32, 420);
-    const height = 88;
+    const width = options.width ?? Math.min(GAME_WIDTH - 72, 360);
+    const height = 70;
     const x = (GAME_WIDTH - width) / 2;
-    const y = 12;
+    const y = 8;
     const depth = options.depth ?? 150;
     this.baseY = y;
 
@@ -40,20 +40,21 @@ export class SlickComm {
     panel.strokeRoundedRect(4, 4, width - 8, height - 8, 6);
 
     this.portrait = this.createPortrait(scene);
-    this.portrait.setPosition(44, height / 2);
+    this.portrait.setPosition(38, height / 2);
+    this.portrait.setScale(0.82);
 
-    this.nameText = scene.add.text(86, 12, 'SLICK // OPS', {
+    this.nameText = scene.add.text(72, 10, 'SLICK // OPS', {
       fontFamily: 'monospace',
-      fontSize: '11px',
+      fontSize: '10px',
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
     });
 
-    this.text = scene.add.text(86, 30, '', {
+    this.text = scene.add.text(72, 24, '', {
       fontFamily: 'monospace',
-      fontSize: '13px',
+      fontSize: '11px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-      wordWrap: { width: width - 100 },
-      lineSpacing: 3,
+      wordWrap: { width: width - 84 },
+      lineSpacing: 2,
     });
 
     this.root = scene.add.container(x, y, [panel, this.portrait, this.nameText, this.text]);

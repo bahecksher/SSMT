@@ -8,6 +8,8 @@ export const PLAYER_DISTANCE_SCALE = 3.5;  // velocity = distance * this factor
 // Salvage
 export const SALVAGE_RADIUS = 120;
 export const SALVAGE_POINTS_PER_SECOND = 10;
+export const SALVAGE_POINTS_MIN = 2;
+export const SALVAGE_POINTS_MAX = 12;
 export const SALVAGE_DRIFT_SPEED_MIN = 20;
 export const SALVAGE_DRIFT_SPEED_MAX = 50;
 export const SALVAGE_RESPAWN_DELAY = 1500;
@@ -42,6 +44,7 @@ export const ENEMY_SPEED = 120;
 export const ENEMY_RADIUS = 12;
 export const ENEMY_TURN_RATE = 2.0;  // radians/sec
 export const ENEMY_SPAWN_RATE_BASE = 12000; // ms between spawns
+export const ENEMY_BONUS_POINTS = 120;
 
 // Health
 export const SALVAGE_MAX_HP = 15;         // seconds of salvaging to deplete
@@ -56,6 +59,12 @@ export const NPC_SPAWN_RATE_BASE = 15000; // ms between spawns
 export const NPC_SALVAGE_RANGE = 80;     // how close NPC gets before "salvaging"
 export const NPC_BUMP_FORCE = 250;       // push speed when player bumps NPC
 export const NPC_BUMP_RADIUS = 18;       // collision radius for player bump
+export const NPC_BONUS_DROP_CHANCE = 0.4;
+export const NPC_BONUS_POINTS = 70;
+
+// Bonus point pickups
+export const BONUS_PICKUP_RADIUS = 12;
+export const BONUS_PICKUP_LIFETIME = 9000;
 
 // Difficulty
 export const DIFFICULTY_SPEED_SCALE = 0.18;
