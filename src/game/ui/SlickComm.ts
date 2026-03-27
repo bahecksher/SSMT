@@ -23,7 +23,7 @@ export class SlickComm {
 
   constructor(scene: Phaser.Scene, options: SlickCommOptions = {}) {
     this.scene = scene;
-    this.autoHideMs = options.autoHideMs ?? 3200;
+    this.autoHideMs = options.autoHideMs ?? 4200;
 
     const width = options.width ?? Math.min(GAME_WIDTH - 72, 360);
     const height = 70;
@@ -49,13 +49,13 @@ export class SlickComm {
 
     this.nameText = scene.add.text(72, 10, 'SLICK // OPS', {
       fontFamily: 'monospace',
-      fontSize: '10px',
+      fontSize: '11px',
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
     });
 
     this.text = scene.add.text(72, 24, '', {
       fontFamily: 'monospace',
-      fontSize: '11px',
+      fontSize: '13px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       wordWrap: { width: width - 84 },
       lineSpacing: 2,

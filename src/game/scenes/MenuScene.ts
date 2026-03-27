@@ -18,6 +18,8 @@ const BG_MAX_NPCS = 2;
 const BG_DRIFTER_SPAWN_MS = 800;
 const BG_DEBRIS_SPAWN_MS = 2000;
 const BG_NPC_SPAWN_MS = 2500;
+const MENU_STARFIELD_OVERSCAN = 96;
+const MENU_STARFIELD_COUNT = 170;
 
 export class MenuScene extends Phaser.Scene {
   private leaderboardTexts: Phaser.GameObjects.Text[] = [];
@@ -50,9 +52,16 @@ export class MenuScene extends Phaser.Scene {
 
     // Starfield
     const starfield = this.add.graphics().setDepth(-1);
-    for (let i = 0; i < 120; i++) {
-      const sx = Phaser.Math.Between(0, GAME_WIDTH);
-      const sy = Phaser.Math.Between(0, GAME_HEIGHT);
+    starfield.fillStyle(0x020806, 1);
+    starfield.fillRect(
+      -MENU_STARFIELD_OVERSCAN,
+      -MENU_STARFIELD_OVERSCAN,
+      GAME_WIDTH + MENU_STARFIELD_OVERSCAN * 2,
+      GAME_HEIGHT + MENU_STARFIELD_OVERSCAN * 2,
+    );
+    for (let i = 0; i < MENU_STARFIELD_COUNT; i++) {
+      const sx = Phaser.Math.Between(-MENU_STARFIELD_OVERSCAN, GAME_WIDTH + MENU_STARFIELD_OVERSCAN);
+      const sy = Phaser.Math.Between(-MENU_STARFIELD_OVERSCAN, GAME_HEIGHT + MENU_STARFIELD_OVERSCAN);
       const brightness = Phaser.Math.FloatBetween(0.1, 0.4);
       const size = Phaser.Math.FloatBetween(0.5, 1.2);
       const starColor = Math.random() < 0.6 ? COLORS.PLAYER : 0xffffff;

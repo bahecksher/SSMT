@@ -39,13 +39,7 @@ export class ShieldPickup {
   private draw(): void {
     const g = this.graphic;
     g.clear();
-
-    // Hologram flicker
-    if (Math.random() < 0.03) {
-      g.setAlpha(0.4);
-    } else {
-      g.setAlpha(1);
-    }
+    g.setAlpha(1);
 
     const glow = 0.3 + Math.sin(this.pulse) * 0.15;
 

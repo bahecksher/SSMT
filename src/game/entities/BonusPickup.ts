@@ -48,12 +48,7 @@ export class BonusPickup {
   private draw(): void {
     const g = this.graphic;
     g.clear();
-
-    if (Math.random() < 0.03) {
-      g.setAlpha(0.45);
-    } else {
-      g.setAlpha(1);
-    }
+    g.setAlpha(1);
 
     const glow = 0.25 + Math.sin(this.pulse) * 0.12;
     const ringRadius = this.radius + 4 + Math.sin(this.pulse * 1.3) * 2;

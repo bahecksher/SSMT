@@ -3,7 +3,6 @@ import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
 
 export class HologramOverlay {
   private scanlines: Phaser.GameObjects.Graphics;
-  private flickerTimer = 0;
 
   constructor(scene: Phaser.Scene) {
     this.scanlines = scene.add.graphics().setDepth(100);
@@ -13,13 +12,7 @@ export class HologramOverlay {
     }
   }
 
-  update(delta: number): void {
-    this.flickerTimer += delta;
-    if (this.flickerTimer > 100) {
-      this.scanlines.setAlpha(0.8 + Math.random() * 0.2);
-      this.flickerTimer = 0;
-    }
-  }
+  update(_delta: number): void {}
 
   destroy(): void {
     this.scanlines.destroy();

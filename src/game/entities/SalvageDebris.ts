@@ -212,13 +212,7 @@ export class SalvageDebris {
   private drawDebris(): void {
     const g = this.graphic;
     g.clear();
-
-    // Hologram flicker
-    if (!this.inverted && Math.random() < 0.03) {
-      g.setAlpha(0.4);
-    } else {
-      g.setAlpha(1);
-    }
+    g.setAlpha(1);
 
     const color = this.inverted ? 0x000000 : (this.isRare ? 0xff44ff : COLORS.SALVAGE);
 

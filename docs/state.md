@@ -1,8 +1,8 @@
 # State
-_Last updated: 2026-03-27 1456_
+_Last updated: 2026-03-27 1519_
 
 ## Current focus
-Gameplay polish pass is centered on making the arena feel alive from the first moment, with readable telegraphing, cleaner death feedback, and tighter result-screen presentation.
+Gameplay polish pass is centered on making the arena feel alive from the first moment, with readable telegraphing, cleaner death feedback, tighter result-screen presentation, and steadier visuals.
 
 ## What's working
 - Full scene flow: Boot -> Menu -> Game (in-scene results, no separate GameOver scene)
@@ -10,6 +10,10 @@ Gameplay polish pass is centered on making the arena feel alive from the first m
 - Live menu simulation now includes salvage, asteroids, and NPC scavengers moving through the field
 - Menu NPCs can chase salvage and die to hazards, but menu mode does not spawn shields or bonus-point pickups
 - Seamless transition: menu background entities carry into gameplay, including NPCs
+- Menu and gameplay starfields now use overscan coverage so the whole visible field stays filled with stars
+- Hologram flicker has been removed from the overlay and gameplay entities for a steadier image
+- Slick and Regent comm body text is larger for readability
+- Slick and Regent comms stay open longer to give more time to read
 - 3-2-1 countdown with gate sync before active play begins
 - NPC ships are now present from phase 1 instead of waiting until phase 2
 - 2-second invulnerability on run start with blinking visual indicator
@@ -39,7 +43,7 @@ Gameplay polish pass is centered on making the arena feel alive from the first m
 - Proximity-based asteroid mining: 1 pts/sec at edge, up to 15 pts/sec danger-close
 - Rare salvage still multiplies rewards inside the flat salvage scoring zone
 - How-to-play instructions on menu screen
-- Hologram visual style and in-world training-module framing
+- Hologram visual style and in-world training-module framing without random alpha popping
 - Online leaderboard on menu screen with daily/weekly tabs (Supabase)
 - Score submission on extraction only, fire-and-forget (works offline)
 - Slick comms overlay: smaller top-center panel with slimmer footprint during gameplay
@@ -95,7 +99,7 @@ Nothing active.
 - Slick/Regent line frequency and shared-slot presentation may still need playtest tuning on mobile
 
 ## Next actions
-1. Playtest flat salvage scoring feel on desktop and mobile
+1. Playtest the longer comm duration on desktop and mobile
 2. Playtest menu NPC density and phase-1 NPC pacing on desktop and mobile
 3. Continue into audio and settings screen (phase 6 items)
 
@@ -104,12 +108,12 @@ docs/plans/2026-03-27 0020 Plan - Slick Character Voice.md
 
 ## How to verify
 1. Run `npm.cmd run dev -- --host 0.0.0.0` or `npm.cmd run build`
-2. Die and confirm the result card says `CREDITS LOST` instead of `SCORE LOST`
-3. Confirm the death comm panel and both action options still fit cleanly inside the card
-4. Confirm extraction still shows `SCORE: ...`
-5. Confirm retry/menu actions still work normally
+2. Trigger Slick and Regent comms and confirm they remain visible long enough to comfortably read
+3. Confirm the death-screen pinned comms still behave the same
+4. Confirm the longer open time does not cause unwanted overlap during normal play
+5. Confirm no clipping or layout breakage appears with the longer display time
 
 ## Recent logs
-- docs/log/2026-03-27 1456 Death Label Copy.md - Renamed the death result label from `SCORE LOST` to `CREDITS LOST`
-- docs/log/2026-03-27 1455 Death Card Bounds.md - Kept death result actions inside the framed result box
-- docs/log/2026-03-27 1452 Salvage Safe Zone.md - Removed salvage death collision and reverted salvage scoring to a flat zone
+- docs/log/2026-03-27 1519 Longer Comm Duration.md - Increased comm auto-hide timing for better readability
+- docs/log/2026-03-27 1516 Remove Hologram Flicker.md - Removed random hologram alpha flicker from overlay and entities
+- docs/log/2026-03-27 1502 Comm Font Size.md - Increased comm text size and confirmed Regent lines remain in a dedicated data file

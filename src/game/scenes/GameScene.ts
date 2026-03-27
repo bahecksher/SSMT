@@ -54,6 +54,8 @@ type DeathCause = 'asteroid' | 'enemy' | 'laser';
 
 export class GameScene extends Phaser.Scene {
   private static readonly START_COUNTDOWN_MS = 3000;
+  private static readonly STARFIELD_OVERSCAN = 96;
+  private static readonly STARFIELD_COUNT = 170;
 
   private inputSystem!: InputSystem;
   private scoreSystem!: ScoreSystem;
@@ -116,10 +118,10 @@ export class GameScene extends Phaser.Scene {
     // Starfield background (hologram-tinted)
     this.starfield = this.add.graphics().setDepth(-1);
     this.starfieldStars = [];
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < GameScene.STARFIELD_COUNT; i++) {
       this.starfieldStars.push({
-        x: Phaser.Math.Between(0, GAME_WIDTH),
-        y: Phaser.Math.Between(0, GAME_HEIGHT),
+        x: Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, GAME_WIDTH + GameScene.STARFIELD_OVERSCAN),
+        y: Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, GAME_HEIGHT + GameScene.STARFIELD_OVERSCAN),
         speed: Phaser.Math.FloatBetween(3, 12),
         alpha: Phaser.Math.FloatBetween(0.1, 0.4),
         size: Phaser.Math.FloatBetween(0.5, 1.2),
@@ -690,9 +692,9 @@ export class GameScene extends Phaser.Scene {
     const dt = delta / 1000;
     for (const star of this.starfieldStars) {
       star.y += star.speed * dt;
-      if (star.y > GAME_HEIGHT + star.size) {
-        star.y = -star.size;
-        star.x = Phaser.Math.Between(0, GAME_WIDTH);
+      if (star.y > GAME_HEIGHT + GameScene.STARFIELD_OVERSCAN + star.size) {
+        star.y = -GameScene.STARFIELD_OVERSCAN - star.size;
+        star.x = Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, GAME_WIDTH + GameScene.STARFIELD_OVERSCAN);
       }
     }
     this.drawStarfield();
@@ -727,6 +729,13 @@ export class GameScene extends Phaser.Scene {
 
   private drawStarfield(): void {
     this.starfield.clear();
+    this.starfield.fillStyle(0x020806, 1);
+    this.starfield.fillRect(
+      -GameScene.STARFIELD_OVERSCAN,
+      -GameScene.STARFIELD_OVERSCAN,
+      GAME_WIDTH + GameScene.STARFIELD_OVERSCAN * 2,
+      GAME_HEIGHT + GameScene.STARFIELD_OVERSCAN * 2,
+    );
     for (const star of this.starfieldStars) {
       this.starfield.fillStyle(star.color, star.alpha);
       this.starfield.fillCircle(star.x, star.y, star.size);

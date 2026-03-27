@@ -73,13 +73,7 @@ export class ExitGate {
   private draw(): void {
     const g = this.graphic;
     g.clear();
-
-    // Hologram flicker
-    if (Math.random() < 0.03) {
-      g.setAlpha(0.4);
-    } else {
-      g.setAlpha(1);
-    }
+    g.setAlpha(1);
 
     const remaining = 1 - this.elapsed / this.duration;
     const urgent = remaining < 0.4;

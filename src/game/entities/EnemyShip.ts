@@ -108,13 +108,7 @@ export class EnemyShip {
   private draw(): void {
     const g = this.graphic;
     g.clear();
-
-    // Hologram flicker
-    if (!this.inverted && Math.random() < 0.03) {
-      g.setAlpha(0.4);
-    } else {
-      g.setAlpha(1);
-    }
+    g.setAlpha(1);
 
     const r = this.radius;
     const color = this.inverted ? 0x000000 : ENEMY_COLOR;
