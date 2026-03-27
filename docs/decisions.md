@@ -93,3 +93,5 @@ Persistent leaderboard using Supabase. Daily (24h) and weekly (7d) tabs on the m
 
 ### 2026-03-27 — Leaderboard is fire-and-forget
 Score submission and leaderboard fetching are non-blocking. If network fails, game still works — menu shows "OFFLINE" and scores save locally only. No retry logic.
+### 2026-03-27 - Callsign format: 2 letters + 3 digits
+Player identity now uses two player-chosen uppercase letters plus a persistent random three-digit suffix (example: "AB123"). Existing saved callsigns are migrated to the new format by keeping the first two letters and last three digits when possible.

@@ -66,6 +66,29 @@ export class NPCShip {
     this.graphic.setPosition(this.x, this.y);
   }
 
+  static createAt(scene: Phaser.Scene, x: number, y: number, vx: number, vy: number): NPCShip {
+    const npc = Object.create(NPCShip.prototype) as NPCShip;
+    npc.x = x;
+    npc.y = y;
+    npc.vx = vx;
+    npc.vy = vy;
+    npc.radius = NPC_RADIUS;
+    npc.active = true;
+    npc.inverted = false;
+    npc.killedByHazard = false;
+    npc.hasShield = false;
+    npc.heading = Math.atan2(vy, vx);
+    npc.targetX = 0;
+    npc.targetY = 0;
+    npc.hasTarget = false;
+    npc.salvaging = false;
+    npc.salvageTimer = 0;
+    npc.graphic = scene.add.graphics().setDepth(5);
+    npc.draw();
+    npc.graphic.setPosition(npc.x, npc.y);
+    return npc;
+  }
+
   /** Set or clear the salvage target the NPC is heading toward. */
   setTarget(x: number, y: number): void {
     this.targetX = x;

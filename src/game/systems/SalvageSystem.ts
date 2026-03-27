@@ -1,8 +1,6 @@
 import Phaser from 'phaser';
 import {
-  SALVAGE_KILL_RADIUS,
-  SALVAGE_POINTS_MAX,
-  SALVAGE_POINTS_MIN,
+  SALVAGE_POINTS_PER_SECOND,
   DRIFTER_MINING_POINTS_MIN,
   DRIFTER_MINING_POINTS_MAX,
 } from '../data/tuning';
@@ -51,7 +49,6 @@ export class SalvageSystem {
     // --- Salvage scoring: stack all overlapping salvage zones ---
     let totalSalvagePoints = 0;
     let hasRareInRange = false;
-    let salvageDangerClose = false;
 
     for (const debris of this.debrisList) {
       if (!debris.active) continue;
@@ -64,12 +61,9 @@ export class SalvageSystem {
       );
 
       if (dist <= debris.salvageRadius && !debris.depleted) {
-        const proximity = 1 - Math.max(0, dist - SALVAGE_KILL_RADIUS) / Math.max(1, debris.salvageRadius - SALVAGE_KILL_RADIUS);
-        const ptsPerSec = SALVAGE_POINTS_MIN + (SALVAGE_POINTS_MAX - SALVAGE_POINTS_MIN) * proximity * proximity;
-        const points = ptsPerSec * debris.pointsMultiplier * dt;
+        const points = SALVAGE_POINTS_PER_SECOND * debris.pointsMultiplier * dt;
         totalSalvagePoints += points;
         if (debris.isRare) hasRareInRange = true;
-        if (proximity > 0.72) salvageDangerClose = true;
 
         // Deplete salvage HP
         debris.hp -= dt;
@@ -85,17 +79,17 @@ export class SalvageSystem {
       this.scoreSystem.addUnbanked(totalSalvagePoints);
       this.salvageFloatPoints += totalSalvagePoints;
 
-      // Floating text for salvage - faster and punchier when hugging the core
+      // Floating text for salvage - rare salvage is still punchier
       this.salvageFloatTimer += delta;
-      const interval = hasRareInRange ? 300 : (salvageDangerClose ? 360 : 500);
+      const interval = hasRareInRange ? 300 : 500;
       if (this.salvageFloatTimer >= interval) {
         const displayPts = Math.max(1, Math.round(this.salvageFloatPoints));
         const color = hasRareInRange ? '#ff44ff' : `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`;
         this.spawnFloatingText(
           `+${displayPts}`,
           color,
-          hasRareInRange ? '16px' : (salvageDangerClose ? '15px' : '13px'),
-          hasRareInRange || salvageDangerClose,
+          hasRareInRange ? '16px' : '13px',
+          hasRareInRange,
         );
         this.salvageFloatTimer -= interval;
         this.salvageFloatPoints = 0;
@@ -111,7 +105,7 @@ export class SalvageSystem {
     let dangerClose = false;
 
     for (const drifter of drifters) {
-      if (!drifter.active) continue;
+      if (!drifter.active || !drifter.isMineable) continue;
 
       const dist = Phaser.Math.Distance.Between(
         this.player.x,

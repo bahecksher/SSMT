@@ -4,6 +4,7 @@ import { SaveSystem } from '../systems/SaveSystem';
 import { fetchLeaderboard, type LeaderboardEntry } from '../services/LeaderboardService';
 import { SalvageDebris } from '../entities/SalvageDebris';
 import { DrifterHazard } from '../entities/DrifterHazard';
+import { NPCShip } from '../entities/NPCShip';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { DRIFTER_SPEED_BASE } from '../data/tuning';
 import { pickAsteroidSize } from '../data/phaseConfig';
@@ -13,8 +14,10 @@ type Period = 'daily' | 'weekly';
 // Background simulation constants (phase 1 feel)
 const BG_MAX_DEBRIS = 2;
 const BG_MAX_DRIFTERS = 5;
+const BG_MAX_NPCS = 2;
 const BG_DRIFTER_SPAWN_MS = 800;
 const BG_DEBRIS_SPAWN_MS = 2000;
+const BG_NPC_SPAWN_MS = 2500;
 
 export class MenuScene extends Phaser.Scene {
   private leaderboardTexts: Phaser.GameObjects.Text[] = [];
@@ -27,9 +30,11 @@ export class MenuScene extends Phaser.Scene {
   // Background simulation
   private bgDebris: SalvageDebris[] = [];
   private bgDrifters: DrifterHazard[] = [];
+  private bgNpcs: NPCShip[] = [];
   private hologramOverlay!: HologramOverlay;
   private drifterTimer = 0;
   private debrisTimer = 0;
+  private npcTimer = 0;
 
   constructor() {
     super(SCENE_KEYS.MENU);
@@ -63,6 +68,9 @@ export class MenuScene extends Phaser.Scene {
       const sizeScale = pickAsteroidSize(1);
       const speed = DRIFTER_SPEED_BASE * (1 / Math.sqrt(sizeScale));
       this.bgDrifters.push(new DrifterHazard(this, speed, sizeScale));
+    }
+    for (let i = 0; i < BG_MAX_NPCS; i++) {
+      this.bgNpcs.push(new NPCShip(this));
     }
 
     // === UI layer (depth 10+) ===
@@ -105,8 +113,8 @@ export class MenuScene extends Phaser.Scene {
 
     this.pilotText.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       pointer.event.stopPropagation();
-      const currentInitials = save.getPlayerName().slice(0, 3);
-      const nextInitials = window.prompt('Choose 3 letters for your callsign', currentInitials);
+      const currentInitials = save.getPlayerName().slice(0, 2);
+      const nextInitials = window.prompt('Choose 2 letters for your callsign', currentInitials);
       if (nextInitials === null) return;
 
       const updatedName = save.setPlayerInitials(nextInitials);
@@ -114,7 +122,7 @@ export class MenuScene extends Phaser.Scene {
       this.pilotText.setText(`PILOT: ${updatedName}`);
     });
 
-    this.add.text(centerX, GAME_HEIGHT * 0.33, 'TAP CALLSIGN TO EDIT LETTERS', {
+    this.add.text(centerX, GAME_HEIGHT * 0.33, 'TAP CALLSIGN TO EDIT 2 LETTERS', {
       fontFamily: 'monospace',
       fontSize: '10px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -223,8 +231,11 @@ export class MenuScene extends Phaser.Scene {
         const debrisState = this.bgDebris
           .filter(d => d.active)
           .map(d => ({ x: d.x, y: d.y, vx: d.driftVx, vy: d.driftVy }));
+        const npcState = this.bgNpcs
+          .filter(npc => npc.active)
+          .map(npc => ({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy }));
         this.cleanupBackground();
-        this.scene.start(SCENE_KEYS.GAME, { drifterState, debrisState });
+        this.scene.start(SCENE_KEYS.GAME, { drifterState, debrisState, npcState });
       }
     });
 
@@ -251,6 +262,68 @@ export class MenuScene extends Phaser.Scene {
       }
     }
 
+    for (const npc of this.bgNpcs) {
+      if (!npc.active) continue;
+
+      let bestTarget: SalvageDebris | null = null;
+      let bestDist = Infinity;
+      for (const debris of this.bgDebris) {
+        if (!debris.active || debris.depleted) continue;
+        const dist = Phaser.Math.Distance.Between(npc.x, npc.y, debris.x, debris.y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestTarget = debris;
+        }
+      }
+
+      if (bestTarget) {
+        npc.setTarget(bestTarget.x, bestTarget.y);
+      } else {
+        npc.clearTarget();
+      }
+    }
+
+    // Update background NPCs
+    for (let i = this.bgNpcs.length - 1; i >= 0; i--) {
+      const npc = this.bgNpcs[i];
+      npc.update(delta);
+      if (!npc.active) {
+        npc.destroy();
+        this.bgNpcs.splice(i, 1);
+      }
+    }
+
+    // Menu-only NPC salvage/death simulation: no shield or bonus drops here
+    for (const npc of this.bgNpcs) {
+      if (!npc.active || !npc.isSalvaging()) continue;
+      for (const debris of this.bgDebris) {
+        if (!debris.active || debris.depleted) continue;
+        const dist = Phaser.Math.Distance.Between(npc.x, npc.y, debris.x, debris.y);
+        if (dist < debris.salvageRadius) {
+          debris.hp -= delta / 1000;
+          if (debris.hp <= 0) {
+            debris.hp = 0;
+            debris.depleted = true;
+          }
+        }
+      }
+    }
+
+    for (const npc of this.bgNpcs) {
+      if (!npc.active) continue;
+      for (const drifter of this.bgDrifters) {
+        if (!drifter.active) continue;
+        const dx = npc.x - drifter.x;
+        const dy = npc.y - drifter.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < npc.radius + drifter.radius) {
+          npc.active = false;
+          npc.killedByHazard = true;
+          break;
+        }
+      }
+    }
+
     // Spawn replacement debris
     this.debrisTimer += delta;
     if (this.debrisTimer >= BG_DEBRIS_SPAWN_MS && this.bgDebris.length < BG_MAX_DEBRIS) {
@@ -267,6 +340,12 @@ export class MenuScene extends Phaser.Scene {
       this.drifterTimer = 0;
     }
 
+    this.npcTimer += delta;
+    if (this.npcTimer >= BG_NPC_SPAWN_MS && this.bgNpcs.length < BG_MAX_NPCS) {
+      this.bgNpcs.push(new NPCShip(this));
+      this.npcTimer = 0;
+    }
+
     // Hologram flicker
     this.hologramOverlay.update(delta);
   }
@@ -276,6 +355,8 @@ export class MenuScene extends Phaser.Scene {
     this.bgDebris = [];
     for (const d of this.bgDrifters) d.destroy();
     this.bgDrifters = [];
+    for (const npc of this.bgNpcs) npc.destroy();
+    this.bgNpcs = [];
     this.hologramOverlay.destroy();
   }
 

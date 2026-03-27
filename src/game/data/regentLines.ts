@@ -1,6 +1,8 @@
 export type RegentLineKey =
   | 'enemyEnter'
   | 'beamUnlock'
+  | 'gateClose'
+  | 'killTaunt'
   | 'whyWontYouDie';
 
 const REGENT_LINES: Record<RegentLineKey, string[]> = {
@@ -15,6 +17,18 @@ const REGENT_LINES: Record<RegentLineKey, string[]> = {
     "Bring out the big guns. It's time to end this.",
     "Activating heavy ordnance. Should've left when you had the chance.",
     'All batteries, full sweep. Burn them out.',
+  ],
+  gateClose: [
+    'Gate is shut. Now endure the part where this gets difficult.',
+    'No exit for you. Stay and watch your odds collapse.',
+    "Phase three already, scavenger. Let's see how long your nerve lasts.",
+    'Door sealed. Good. Running was beginning to embarrass you.',
+  ],
+  killTaunt: [
+    'All that noise, and nothing to show for it.',
+    'Predictable. Trespassers always break eventually.',
+    'There. The sector corrects itself.',
+    "You lasted just long enough to disappoint yourself.",
   ],
   whyWontYouDie: [
     "Why won't you DIE?!",

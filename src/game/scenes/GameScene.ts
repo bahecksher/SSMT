@@ -21,6 +21,7 @@ import { ShieldPickup } from '../entities/ShieldPickup';
 import { BonusPickup } from '../entities/BonusPickup';
 import { ShipDebris } from '../entities/ShipDebris';
 import { ExitGate } from '../entities/ExitGate';
+import { NPCShip } from '../entities/NPCShip';
 import { Hud } from '../ui/Hud';
 import { Overlays } from '../ui/Overlays';
 import { HologramOverlay } from '../ui/HologramOverlay';
@@ -32,6 +33,7 @@ import { getRegentLine } from '../data/regentLines';
 interface MenuHandoff {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
   debrisState?: { x: number; y: number; vx: number; vy: number }[];
+  npcState?: { x: number; y: number; vx: number; vy: number }[];
 }
 
 interface StarfieldStar {
@@ -47,6 +49,8 @@ interface ResultData {
   score: number;
   cause: 'death' | 'extract';
 }
+
+type DeathCause = 'asteroid' | 'enemy' | 'laser';
 
 export class GameScene extends Phaser.Scene {
   private static readonly START_COUNTDOWN_MS = 3000;
@@ -179,6 +183,11 @@ export class GameScene extends Phaser.Scene {
         const debris = SalvageDebris.createAt(this, d.x, d.y, d.vx, d.vy);
         this.debrisList.push(debris);
         this.salvageSystem.addDebris(debris);
+      }
+    }
+    if (handoff.npcState?.length) {
+      for (const npc of handoff.npcState) {
+        this.difficultySystem.getNPCs().push(NPCShip.createAt(this, npc.x, npc.y, npc.vx, npc.vy));
       }
     }
 
@@ -353,6 +362,8 @@ export class GameScene extends Phaser.Scene {
       // Regent: "why won't you die" every phase after 7
       if (currentPhase > 7 && currentPhase > this.regentLastPhase) {
         this.regentComm.show(getRegentLine('whyWontYouDie'));
+      } else if (currentPhase >= 3) {
+        this.regentComm.show(getRegentLine('gateClose'), 2600);
       }
       this.regentLastPhase = currentPhase;
     }
@@ -484,10 +495,9 @@ export class GameScene extends Phaser.Scene {
     // Check collisions — shield absorbs one hit and destroys/splits the asteroid
     const hitDrifter = this.collisionSystem.checkDrifters(this.difficultySystem.getDrifters());
     const hitBeam = this.collisionSystem.checkBeams(this.difficultySystem.getBeams());
-    const hitSalvage = this.collisionSystem.checkSalvage(this.debrisList);
     const hitEnemy = this.collisionSystem.checkEnemies(this.difficultySystem.getEnemies());
     const invulnerable = this.invulnerableTimer > 0;
-    if (gameplayActive && !invulnerable && (hitDrifter || hitBeam || hitSalvage || hitEnemy)) {
+    if (gameplayActive && !invulnerable && (hitDrifter || hitBeam || hitEnemy)) {
       if (this.player.hasShield) {
         this.player.hasShield = false;
         // Shield destroys or splits the asteroid it hit
@@ -500,7 +510,17 @@ export class GameScene extends Phaser.Scene {
         }
         Overlays.shieldBreakFlash(this);
       } else {
-        this.handleDeath();
+        let deathCause: DeathCause;
+        if (hitBeam) {
+          deathCause = 'laser';
+        } else if (hitEnemy) {
+          deathCause = 'enemy';
+        } else if (hitDrifter) {
+          deathCause = 'asteroid';
+        } else {
+          deathCause = 'enemy';
+        }
+        this.handleDeath(deathCause);
         return;
       }
     }
@@ -529,7 +549,7 @@ export class GameScene extends Phaser.Scene {
     // HUD
     const timeToGate = this.extractionSystem.getTimeToGate();
     const gateActive = this.extractionSystem.isGateActive();
-    if (gateActive && !this.lastGateActive) {
+    if (gateActive && !this.lastGateActive && Math.random() < 0.55) {
       this.slickComm.show(getSlickLine('gateOpen'));
     }
     // Gate just closed — occasionally comment on the player staying
@@ -590,9 +610,17 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private handleDeath(): void {
-    this.resultData = { score: 0, cause: 'death' };
+  private handleDeath(cause: DeathCause): void {
+    const lostScore = this.scoreSystem.getUnbanked();
+    this.resultData = { score: lostScore, cause: 'death' };
     this.state = GameState.DEAD;
+    if (cause === 'enemy' || cause === 'laser') {
+      this.slickComm.hide();
+      this.regentComm.show(getRegentLine('killTaunt'), 0);
+    } else {
+      this.regentComm.hide();
+      this.slickComm.show(getSlickLine('hazardDeath'), 0);
+    }
     this.playerDebris.push(new ShipDebris(
       this, this.player.x, this.player.y,
       this.player.getVelocityX(), this.player.getVelocityY(),
@@ -722,6 +750,10 @@ export class GameScene extends Phaser.Scene {
     const centerX = GAME_WIDTH / 2;
     const cause = data.cause;
     const isDeath = cause === 'death';
+    const deathCommY = GAME_HEIGHT * 0.53;
+    const panelTop = GAME_HEIGHT * 0.18;
+    const panelHeight = GAME_HEIGHT * (isDeath ? 0.64 : 0.58);
+    const panelBottom = panelTop + panelHeight;
     const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
     const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
     const save = new SaveSystem();
@@ -729,9 +761,9 @@ export class GameScene extends Phaser.Scene {
 
     const backing = this.add.graphics().setDepth(205);
     backing.fillStyle(COLORS.BG, 0.78);
-    backing.fillRoundedRect(28, GAME_HEIGHT * 0.18, GAME_WIDTH - 56, GAME_HEIGHT * 0.58, 16);
+    backing.fillRoundedRect(28, panelTop, GAME_WIDTH - 56, panelHeight, 16);
     backing.lineStyle(1.5, titleColor, 0.4);
-    backing.strokeRoundedRect(28, GAME_HEIGHT * 0.18, GAME_WIDTH - 56, GAME_HEIGHT * 0.58, 16);
+    backing.strokeRoundedRect(28, panelTop, GAME_WIDTH - 56, panelHeight, 16);
     this.resultUi.push(backing);
 
     const title = this.add.text(centerX, GAME_HEIGHT * 0.29, titleText, {
@@ -745,18 +777,26 @@ export class GameScene extends Phaser.Scene {
     const scoreText = this.add.text(
       centerX,
       GAME_HEIGHT * 0.40,
-      isDeath ? 'SCORE LOST' : `SCORE: ${Math.floor(data.score)}`,
+      isDeath ? `CREDITS LOST: ${Math.floor(data.score)}` : `SCORE: ${Math.floor(data.score)}`,
       {
         fontFamily: 'monospace',
-        fontSize: isDeath ? '22px' : '28px',
+        fontSize: isDeath ? '24px' : '28px',
         color: `#${(isDeath ? COLORS.HAZARD : COLORS.SALVAGE).toString(16).padStart(6, '0')}`,
         align: 'center',
       },
     ).setOrigin(0.5).setDepth(210);
     this.resultUi.push(scoreText);
 
+    if (isDeath) {
+      this.slickComm.setPinnedLayout(deathCommY, 212);
+      this.regentComm.setPinnedLayout(deathCommY, 212);
+    } else {
+      this.slickComm.resetLayout();
+      this.regentComm.resetLayout();
+    }
+
     if (best > 0) {
-      const bestText = this.add.text(centerX, GAME_HEIGHT * 0.49, `BEST: ${Math.floor(best)}`, {
+      const bestText = this.add.text(centerX, isDeath ? GAME_HEIGHT * 0.64 : GAME_HEIGHT * 0.49, `BEST: ${Math.floor(best)}`, {
         fontFamily: 'monospace',
         fontSize: '18px',
         color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -765,7 +805,7 @@ export class GameScene extends Phaser.Scene {
       this.resultUi.push(bestText);
     }
 
-    const retryText = this.add.text(centerX, GAME_HEIGHT * 0.61, 'TAP TO RETRY', {
+    const retryText = this.add.text(centerX, isDeath ? GAME_HEIGHT * 0.71 : GAME_HEIGHT * 0.61, 'TAP TO RETRY', {
       fontFamily: 'monospace',
       fontSize: '24px',
       color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
@@ -781,7 +821,7 @@ export class GameScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    const menuText = this.add.text(centerX, GAME_HEIGHT * 0.70, 'MENU', {
+    const menuText = this.add.text(centerX, isDeath ? panelBottom - 30 : GAME_HEIGHT * 0.70, 'MENU', {
       fontFamily: 'monospace',
       fontSize: '18px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,

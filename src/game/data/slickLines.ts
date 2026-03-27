@@ -4,6 +4,7 @@ export type SlickLineKey =
   | 'phaseAdvance'
   | 'gateOpen'
   | 'gateClose'
+  | 'hazardDeath'
   | 'shieldPickup'
   | 'extraction'
   | 'death'
@@ -37,6 +38,12 @@ const SLICK_LINES: Record<SlickLineKey, string[]> = {
     "Bold choice, pilot.",
     "More guts than sense. Respect.",
     "That's the spirit. Or the stupidity. Either way.",
+  ],
+  hazardDeath: [
+    'Next time, tuck it in, cowboy.',
+    "Bit late to dodge now. Learn it and line up another run.",
+    "That's the field taking your lunch money. Go earn it back.",
+    'Rough hit. Better here than in real vacuum. Tighten it up.',
   ],
   shieldPickup: [
     "That's a shield. Try not to spend it immediately.",

@@ -2,24 +2,41 @@ import { SAVE_KEY, PLAYER_NAME_KEY } from '../constants';
 import type { SaveData } from '../types';
 
 const DEFAULT_SAVE: SaveData = { bestScore: 0 };
+const LETTER_COUNT = 2;
+const DIGIT_COUNT = 3;
+
+function randomDigits(): string {
+  return String(Math.floor(Math.random() * (10 ** DIGIT_COUNT))).padStart(DIGIT_COUNT, '0');
+}
 
 function generatePlayerName(): string {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   let name = '';
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < LETTER_COUNT; i++) {
     name += letters[Math.floor(Math.random() * 26)];
   }
-  name += String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  name += randomDigits();
   return name;
 }
 
 function normalizeInitials(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  return value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, LETTER_COUNT);
 }
 
 function extractDigits(name: string): string {
-  const match = name.match(/(\d{4})$/);
-  return match?.[1] ?? String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  const digitMatches = name.match(/\d/g);
+  if (!digitMatches || digitMatches.length === 0) {
+    return randomDigits();
+  }
+  return digitMatches.join('').slice(-DIGIT_COUNT).padStart(DIGIT_COUNT, '0');
+}
+
+function migratePlayerName(name: string): string {
+  const normalizedLetters = normalizeInitials(name);
+  if (normalizedLetters.length !== LETTER_COUNT) {
+    return generatePlayerName();
+  }
+  return `${normalizedLetters}${extractDigits(name)}`;
 }
 
 export class SaveSystem {
@@ -63,7 +80,13 @@ export class SaveSystem {
   getPlayerName(): string {
     try {
       const existing = localStorage.getItem(PLAYER_NAME_KEY);
-      if (existing) return existing;
+      if (existing) {
+        const migrated = migratePlayerName(existing);
+        if (migrated !== existing) {
+          localStorage.setItem(PLAYER_NAME_KEY, migrated);
+        }
+        return migrated;
+      }
     } catch {
       // Private browsing
     }
@@ -78,7 +101,7 @@ export class SaveSystem {
 
   setPlayerInitials(initials: string): string | null {
     const normalized = normalizeInitials(initials);
-    if (normalized.length !== 3) return null;
+    if (normalized.length !== LETTER_COUNT) return null;
 
     const existing = this.getPlayerName();
     const playerName = `${normalized}${extractDigits(existing)}`;

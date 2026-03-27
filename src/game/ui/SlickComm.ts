@@ -17,7 +17,9 @@ export class SlickComm {
   private pulseTween: Phaser.Tweens.Tween;
   private scanTween: Phaser.Tweens.Tween;
   private autoHideMs: number;
-  private readonly baseY: number;
+  private readonly defaultY: number;
+  private readonly defaultDepth: number;
+  private currentY: number;
 
   constructor(scene: Phaser.Scene, options: SlickCommOptions = {}) {
     this.scene = scene;
@@ -28,7 +30,9 @@ export class SlickComm {
     const x = (GAME_WIDTH - width) / 2;
     const y = 8;
     const depth = options.depth ?? 150;
-    this.baseY = y;
+    this.defaultY = y;
+    this.defaultDepth = depth;
+    this.currentY = y;
 
     const panel = scene.add.graphics();
     panel.fillStyle(0x03110e, 0.92);
@@ -89,13 +93,13 @@ export class SlickComm {
     }
 
     this.text.setText(message);
-    this.root.setY(this.baseY - 8);
+    this.root.setY(this.currentY - 8);
     this.root.setVisible(true);
     this.scene.tweens.killTweensOf(this.root);
     this.scene.tweens.add({
       targets: this.root,
       alpha: 1,
-      y: this.baseY,
+      y: this.currentY,
       duration: 200,
       ease: 'Sine.Out',
     });
@@ -120,11 +124,29 @@ export class SlickComm {
     this.scene.tweens.add({
       targets: this.root,
       alpha: 0,
-      y: this.baseY - 8,
+      y: this.currentY - 8,
       duration: 200,
       ease: 'Sine.In',
       onComplete: () => this.root.setVisible(false),
     });
+  }
+
+  setPinnedLayout(y: number, depth?: number): void {
+    this.currentY = y;
+    this.root.setDepth(depth ?? this.root.depth);
+    this.scene.tweens.killTweensOf(this.root);
+    if (this.root.visible) {
+      this.root.setY(y);
+    }
+  }
+
+  resetLayout(): void {
+    this.currentY = this.defaultY;
+    this.root.setDepth(this.defaultDepth);
+    this.scene.tweens.killTweensOf(this.root);
+    if (this.root.visible) {
+      this.root.setY(this.currentY);
+    }
   }
 
   destroy(): void {

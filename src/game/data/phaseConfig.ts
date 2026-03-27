@@ -45,8 +45,8 @@ export function getPhaseConfig(phase: number): PhaseConfig {
     enemyEnabled: phase >= 5,
     enemySpawnRate: phase >= 5 ? Math.max(6000, ENEMY_SPAWN_RATE_BASE - (phase - 5) * 1500) : 0,
     maxConcurrentEnemies: phase >= 5 ? Math.min(1 + Math.floor((phase - 5) * 0.5), 4) : 0,
-    npcEnabled: phase >= 2,
-    npcSpawnRate: phase >= 2 ? Math.max(8000, NPC_SPAWN_RATE_BASE - (phase - 2) * 2000) : 0,
-    maxConcurrentNPCs: phase >= 2 ? Math.min(1 + Math.floor((phase - 1) * 0.5), 3) : 0,
+    npcEnabled: phase >= 1,
+    npcSpawnRate: Math.max(8000, NPC_SPAWN_RATE_BASE - Math.max(0, phase - 1) * 2000),
+    maxConcurrentNPCs: Math.min(1 + Math.floor(phase * 0.5), 3),
   };
 }

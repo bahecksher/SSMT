@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { PhaseConfig } from '../types';
 import {
   BONUS_PICKUP_RADIUS,
+  DRIFTER_MINEABLE_CHANCE,
   DRIFTER_SPEED_BASE,
   ENEMY_BONUS_POINTS,
   NPC_BONUS_DROP_CHANCE,
@@ -79,7 +80,8 @@ export class DifficultySystem {
       const speed = DRIFTER_SPEED_BASE * this.config.hazardSpeedMultiplier;
       const sizeScale = pickAsteroidSize(this.config.phaseNumber);
       const adjustedSpeed = speed * (1 / Math.sqrt(sizeScale));
-      this.drifters.push(new DrifterHazard(this.scene, adjustedSpeed, sizeScale));
+      const isMineable = Math.random() < DRIFTER_MINEABLE_CHANCE;
+      this.drifters.push(new DrifterHazard(this.scene, adjustedSpeed, sizeScale, isMineable));
       this.drifterTimer = 0;
     }
 
@@ -221,6 +223,7 @@ export class DifficultySystem {
         target.vx + perpX * scatter,
         target.vy + perpY * scatter,
         childScale,
+        target.isMineable,
       ));
       this.drifters.push(DrifterHazard.createFragment(
         this.scene,
@@ -229,6 +232,7 @@ export class DifficultySystem {
         target.vx - perpX * scatter,
         target.vy - perpY * scatter,
         childScale,
+        target.isMineable,
       ));
     }
 
@@ -303,6 +307,7 @@ export class DifficultySystem {
                   ast.vx + perpX * scatter,
                   ast.vy + perpY * scatter,
                   childScale,
+                  ast.isMineable,
                 ));
                 newFragments.push(DrifterHazard.createFragment(
                   this.scene,
@@ -311,6 +316,7 @@ export class DifficultySystem {
                   ast.vx - perpX * scatter,
                   ast.vy - perpY * scatter,
                   childScale,
+                  ast.isMineable,
                 ));
               } else {
                 ast.active = false;

@@ -3,7 +3,6 @@ import { pointInPolygon } from '../utils/collision';
 import type { Player } from '../entities/Player';
 import type { DrifterHazard } from '../entities/DrifterHazard';
 import type { BeamHazard } from '../entities/BeamHazard';
-import type { SalvageDebris } from '../entities/SalvageDebris';
 import type { EnemyShip } from '../entities/EnemyShip';
 
 export class CollisionSystem {
@@ -24,18 +23,6 @@ export class CollisionSystem {
     }
 
     return null;
-  }
-
-  checkSalvage(debrisList: SalvageDebris[]): boolean {
-    for (const debris of debrisList) {
-      if (!debris.active) continue;
-
-      if (pointInPolygon(this.player.x, this.player.y, debris.getWorldVertices())) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   checkBeams(beams: BeamHazard[]): boolean {

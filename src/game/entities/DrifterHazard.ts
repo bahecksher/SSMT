@@ -17,6 +17,7 @@ export class DrifterHazard {
   radius: number;
   miningRadius: number;
   radiusScale: number;
+  isMineable: boolean;
   active = true;
   inverted = false;
 
@@ -48,10 +49,11 @@ export class DrifterHazard {
     return verts;
   }
 
-  constructor(scene: Phaser.Scene, speed: number, radiusScale = 1) {
+  constructor(scene: Phaser.Scene, speed: number, radiusScale = 1, isMineable = false) {
     this.radiusScale = radiusScale;
     this.radius = DRIFTER_RADIUS * radiusScale;
     this.miningRadius = this.radius * DRIFTER_MINING_RADIUS_MULT;
+    this.isMineable = isMineable;
     this.maxHp = DRIFTER_MAX_HP * radiusScale;
     this.hp = this.maxHp;
     this.spinSpeed = Phaser.Math.FloatBetween(0.2, 0.6) * (Math.random() < 0.5 ? 1 : -1);
@@ -108,11 +110,13 @@ export class DrifterHazard {
     vx: number,
     vy: number,
     radiusScale: number,
+    isMineable = false,
   ): DrifterHazard {
     const d = Object.create(DrifterHazard.prototype) as DrifterHazard;
     d.radiusScale = radiusScale;
     d.radius = DRIFTER_RADIUS * radiusScale;
     d.miningRadius = d.radius * DRIFTER_MINING_RADIUS_MULT;
+    d.isMineable = isMineable;
     d.maxHp = DRIFTER_MAX_HP * radiusScale;
     d.hp = d.maxHp;
     d.depleted = false;
@@ -197,23 +201,25 @@ export class DrifterHazard {
     const color = this.inverted ? 0x000000 : COLORS.HAZARD;
     const miningColor = this.inverted ? 0x000000 : 0xffaa00;
 
-    // Mining zone - pulsing filled area
-    const miningAlpha = 0.06 + Math.sin(this.miningPulse) * 0.03;
-    g.fillStyle(miningColor, miningAlpha);
-    g.fillCircle(0, 0, mr);
+    if (this.isMineable) {
+      // Mining zone - pulsing filled area
+      const miningAlpha = 0.06 + Math.sin(this.miningPulse) * 0.03;
+      g.fillStyle(miningColor, miningAlpha);
+      g.fillCircle(0, 0, mr);
 
-    // Mining zone ring - dashed rotating segments
-    const segCount = 12;
-    const segGap = 0.2;
-    const segAngle = (Math.PI * 2) / segCount;
-    const ringAlpha = 0.25 + Math.sin(this.miningPulse) * 0.1;
-    g.lineStyle(1.5, miningColor, ringAlpha);
-    for (let i = 0; i < segCount; i++) {
-      const startA = i * segAngle + this.miningPulse * 0.3;
-      const endA = startA + segAngle - segGap;
-      g.beginPath();
-      g.arc(0, 0, mr, startA, endA, false);
-      g.strokePath();
+      // Mining zone ring - dashed rotating segments
+      const segCount = 12;
+      const segGap = 0.2;
+      const segAngle = (Math.PI * 2) / segCount;
+      const ringAlpha = 0.25 + Math.sin(this.miningPulse) * 0.1;
+      g.lineStyle(1.5, miningColor, ringAlpha);
+      for (let i = 0; i < segCount; i++) {
+        const startA = i * segAngle + this.miningPulse * 0.3;
+        const endA = startA + segAngle - segGap;
+        g.beginPath();
+        g.arc(0, 0, mr, startA, endA, false);
+        g.strokePath();
+      }
     }
 
     // Randomized asteroid shape, rotated (stroke-based hologram)
@@ -243,7 +249,7 @@ export class DrifterHazard {
     g.fillCircle(0, 0, r * 0.25);
 
     // HP bar (shows when damaged)
-    if (this.hp < this.maxHp) {
+    if (this.isMineable && this.hp < this.maxHp) {
       const barW = Math.max(16, r * 1.5);
       const barH = 3;
       const barY = r + 6;
