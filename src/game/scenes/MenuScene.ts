@@ -12,10 +12,24 @@ export class MenuScene extends Phaser.Scene {
     const save = new SaveSystem();
     const best = save.getBestScore();
 
-    this.add.text(centerX, GAME_HEIGHT * 0.3, 'BIT PILOT', {
+    this.add.text(centerX, GAME_HEIGHT * 0.22, "SLICK'S", {
       fontFamily: 'monospace',
-      fontSize: '48px',
+      fontSize: '40px',
       color: `#${COLORS.PLAYER.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5);
+
+    this.add.text(centerX, GAME_HEIGHT * 0.30, 'SALVAGE & MINING', {
+      fontFamily: 'monospace',
+      fontSize: '24px',
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5);
+
+    this.add.text(centerX, GAME_HEIGHT * 0.36, 'OPERATION TRAINING MODULE', {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5);
 

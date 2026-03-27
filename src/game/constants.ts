@@ -17,7 +17,7 @@ export const SCENE_KEYS = {
   GAME_OVER: 'GameOverScene',
 } as const;
 
-export const SAVE_KEY = 'bitpailot_save';
+export const SAVE_KEY = 'ssmt_save';
 
 export const COLORS = {
   BG: 0x020a08,
