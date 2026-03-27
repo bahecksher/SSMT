@@ -1,8 +1,8 @@
 # State
-_Last updated: 2026-03-26 2244_
+_Last updated: 2026-03-26 2332_
 
 ## Current focus
-Added NPC "other player" ships. Ready for playtesting NPC behavior and tuning.
+Added NPC ships, renamed to Slick's Salvage & Mining Operation Training Module, deployed to GitHub Pages. Ready for playtesting.
 
 ## What's working
 - Full scene flow: Boot -> Menu -> Game -> GameOver -> Menu/Retry
@@ -25,15 +25,16 @@ Added NPC "other player" ships. Ready for playtesting NPC behavior and tuning.
 - Shield power-up spawns near salvage, absorbs one hit, destroys/splits asteroid
 - Enemy ships (phase 5+) steer toward player, smash through asteroids
 - Beam hazards (phase 7+) fire 1-3 volleys with double red flash warning
-- **NPC ships (phase 2+)**: amber triangles navigate to salvage, deplete HP, killed by asteroids/enemies
-- **NPC bump**: player can push NPCs away from salvage (impulse force, no kill)
-- **NPC death drops shields**: hazard-killed NPCs spawn a shield pickup at death position
-- **Enemies hunt NPCs**: enemy ships target nearby NPCs when closer than player
+- NPC ships (phase 2+): amber triangles navigate to salvage, deplete HP, killed by asteroids/enemies
+- NPC bump: player can push NPCs away from salvage (impulse force, no kill)
+- NPC death drops shields: hazard-killed NPCs spawn a shield pickup at death position
+- Enemies hunt NPCs: enemy ships target nearby NPCs when closer than player
 - Difficulty scales per phase with gentler ramp
 - Exit gate spawns every 30s, open 5s (2s warmup + 3s active), extraction banks score
 - Best score persists in localStorage
 - HUD: CREDITS, best score, gate countdown, phase counter, shield status
 - Hologram visual style with scanline overlay
+- GitHub Pages deployment: https://bahecksher.github.io/SSMT/
 
 ## In progress
 Nothing active.
@@ -45,6 +46,7 @@ Nothing active.
 - HP values (15s salvage, 10s asteroid) may need tuning after playtesting
 - Beam hazards still span full screen width/height, not clipped to arena
 - NPC spawn rates and bump force may need tuning after playtesting
+- Save key changed to `ssmt_save` — existing best scores under old key are lost
 - `node`/`npm` not on PowerShell PATH; use `npm.cmd` or set PATH in Git Bash
 - Windows Firewall may block port 5173 for LAN phone testing
 
@@ -57,22 +59,19 @@ Nothing active.
 docs/plans/2026-03-25 2328 Plan - Gameplay Feel and Difficulty.md
 
 ## How to verify
-1. In Git Bash: `export PATH="/c/Program Files/nodejs:$PATH"`
-2. Run: `npm.cmd install`
-3. Run: `npm.cmd run dev -- --host 0.0.0.0`
-4. Desktop: `http://localhost:5173`
-5. Mobile (same Wi-Fi): `http://192.168.1.192:5173`
-6. Test: reach phase 2 — amber NPC ships should spawn from edges
-7. Test: NPCs navigate toward salvage debris and stay near it
+1. Play live at https://bahecksher.github.io/SSMT/
+2. Or locally: In Git Bash `export PATH="/c/Program Files/nodejs:$PATH"`
+3. Run: `npm.cmd install`
+4. Run: `npm.cmd run dev -- --host 0.0.0.0`
+5. Desktop: `http://localhost:5173/SSMT/`
+6. Test: title screen reads "SLICK'S / SALVAGE & MINING / OPERATION TRAINING MODULE"
+7. Test: reach phase 2 — amber NPC ships spawn from edges and head toward salvage
 8. Test: NPCs deplete salvage HP (watch the HP bar go down without you collecting)
-9. Test: fly into an NPC — it should get pushed away, not killed
-10. Test: asteroids destroy NPCs on contact
-11. Test: enemy ships (phase 5+) sometimes chase NPCs instead of you
-12. Test: when an NPC dies to a hazard, a shield pickup appears at its death position
-13. Test: NPC shields that go offscreen don't drop shields (only hazard kills)
+9. Test: fly into an NPC — it gets pushed away, not killed
+10. Test: asteroids and enemies destroy NPCs, dropping shield pickups
 
 ## Recent logs
-- docs/log/2026-03-26 2244 NPC Player Tokens.md — NPC ships that compete for salvage, bumped by player, drop shields on death
+- docs/log/2026-03-26 2332 NPC Ships Rename and GitHub Pages.md — NPC ships, game rename, GitHub Pages deployment
 - docs/log/2026-03-26 2231 Health HP Hitboxes and Gate Tuning.md — Health system, polygon hitboxes, screen wipes, gate grace period/pulsing, HP tuning
 - docs/log/2026-03-26 2158 Mobile Controls and Visual Polish.md — Invisible joystick controls, hitbox visibility, mining zone glow, triangle ship, difficulty rebalance
 - docs/log/2026-03-26 1645 Mobile Access Firewall Attempt.md — Confirmed LAN IP and narrowed phone access issue to firewall/admin permissions
