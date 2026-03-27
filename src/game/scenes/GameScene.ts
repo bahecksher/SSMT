@@ -146,6 +146,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.hud = new Hud(this);
+    this.slickComm.show(getSlickLine('runStart'));
   }
 
   update(_time: number, delta: number): void {
@@ -347,6 +348,10 @@ export class GameScene extends Phaser.Scene {
     const gateActive = this.extractionSystem.isGateActive();
     if (gateActive && !this.lastGateActive) {
       this.slickComm.show(getSlickLine('gateOpen'));
+    }
+    // Gate just closed — occasionally comment on the player staying
+    if (!gateActive && this.lastGateActive && Math.random() < 0.5) {
+      this.slickComm.show(getSlickLine('gateClose'), 2400);
     }
     this.lastGateActive = gateActive;
 
