@@ -1,5 +1,5 @@
 # State
-_Last updated: 2026-03-27 1519_
+_Last updated: 2026-03-27 1530_
 
 ## Current focus
 Gameplay polish pass is centered on making the arena feel alive from the first moment, with readable telegraphing, cleaner death feedback, tighter result-screen presentation, and steadier visuals.
@@ -11,9 +11,14 @@ Gameplay polish pass is centered on making the arena feel alive from the first m
 - Menu NPCs can chase salvage and die to hazards, but menu mode does not spawn shields or bonus-point pickups
 - Seamless transition: menu background entities carry into gameplay, including NPCs
 - Menu and gameplay starfields now use overscan coverage so the whole visible field stays filled with stars
+- Letterboxed space outside the game canvas now renders as a matching starfield background instead of black bars
 - Hologram flicker has been removed from the overlay and gameplay entities for a steadier image
 - Slick and Regent comm body text is larger for readability
 - Slick and Regent comms stay open longer to give more time to read
+- Player gets 0.5 seconds of invulnerability after a shield absorbs a hit
+- Shielded NPCs destroy an unshielded player on contact
+- Shielded players destroy unshielded NPCs on contact and lose their shield
+- Player/NPC collisions still bump normally when both are shielded or both are unshielded
 - 3-2-1 countdown with gate sync before active play begins
 - NPC ships are now present from phase 1 instead of waiting until phase 2
 - 2-second invulnerability on run start with blinking visual indicator
@@ -70,7 +75,7 @@ Gameplay polish pass is centered on making the arena feel alive from the first m
 - Enemy ships (phase 5+) steer toward player, smash through asteroids
 - Beam hazards (phase 7+) fire 1-3 volleys with double red flash warning
 - NPC ships navigate to salvage, deplete HP, and are killed by asteroids/enemies
-- NPC bump: player can push NPCs away from salvage (impulse force, no kill)
+- NPC bump: player can push NPCs away from salvage except in the shield-vs-no-shield kill cases above
 - NPC death drops shields only when the drop would land fully inside the arena during gameplay
 - Enemies hunt NPCs: enemy ships target nearby NPCs when closer than player
 - Difficulty scales per phase with gentler ramp
@@ -99,8 +104,8 @@ Nothing active.
 - Slick/Regent line frequency and shared-slot presentation may still need playtest tuning on mobile
 
 ## Next actions
-1. Playtest the longer comm duration on desktop and mobile
-2. Playtest menu NPC density and phase-1 NPC pacing on desktop and mobile
+1. Playtest shield-vs-NPC collision feel on desktop and mobile
+2. Verify the starfield page background feels seamless on taller and wider displays
 3. Continue into audio and settings screen (phase 6 items)
 
 ## Active plan
@@ -108,12 +113,13 @@ docs/plans/2026-03-27 0020 Plan - Slick Character Voice.md
 
 ## How to verify
 1. Run `npm.cmd run dev -- --host 0.0.0.0` or `npm.cmd run build`
-2. Trigger Slick and Regent comms and confirm they remain visible long enough to comfortably read
-3. Confirm the death-screen pinned comms still behave the same
-4. Confirm the longer open time does not cause unwanted overlap during normal play
-5. Confirm no clipping or layout breakage appears with the longer display time
+2. Open the game on a display that previously showed top/bottom bars and confirm the surrounding area now shows stars instead of black letterboxing
+3. Let a shielded player hit an unshielded NPC and confirm the NPC dies, the player loses the shield, and the player survives
+4. Let a shielded NPC hit an unshielded player and confirm the player dies
+5. Test shield-vs-shield and no-shield-vs-no-shield contacts and confirm they still just bump
 
 ## Recent logs
+- docs/log/2026-03-27 1530 Starfield Page Background.md - Replaced visible letterbox bars with a matching starfield page background
+- docs/log/2026-03-27 1525 NPC Shield Collision.md - Added shield-vs-no-shield player/NPC contact rules
+- docs/log/2026-03-27 1523 Shield Break Grace.md - Added a 0.5s invulnerability window after shield absorption
 - docs/log/2026-03-27 1519 Longer Comm Duration.md - Increased comm auto-hide timing for better readability
-- docs/log/2026-03-27 1516 Remove Hologram Flicker.md - Removed random hologram alpha flicker from overlay and entities
-- docs/log/2026-03-27 1502 Comm Font Size.md - Increased comm text size and confirmed Regent lines remain in a dedicated data file

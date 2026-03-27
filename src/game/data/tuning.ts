@@ -4,6 +4,7 @@ export const PLAYER_MAX_SPEED = 750;
 export const PLAYER_RADIUS = 5;
 export const PLAYER_DEAD_ZONE = 8;
 export const PLAYER_DISTANCE_SCALE = 3.5;  // velocity = distance * this factor
+export const PLAYER_SHIELD_BREAK_INVULN_MS = 500;
 
 // Salvage
 export const SALVAGE_RADIUS = 120;

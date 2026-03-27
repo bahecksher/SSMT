@@ -5,7 +5,7 @@ import {
   ARENA_WIDTH, ARENA_HEIGHT,
 } from '../constants';
 import { GameState } from '../types';
-import { SALVAGE_RESPAWN_DELAY, PLAYER_RADIUS, NPC_BUMP_FORCE, NPC_BUMP_RADIUS } from '../data/tuning';
+import { SALVAGE_RESPAWN_DELAY, PLAYER_RADIUS, PLAYER_SHIELD_BREAK_INVULN_MS, NPC_BUMP_FORCE, NPC_BUMP_RADIUS } from '../data/tuning';
 import { InputSystem } from '../systems/InputSystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
 import { SalvageSystem } from '../systems/SalvageSystem';
@@ -461,12 +461,27 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Player-NPC bump physics — push NPCs away, can't destroy them
+    const invulnerable = this.invulnerableTimer > 0;
+
     for (const npc of npcs) {
       if (!npc.active) continue;
       const dx = npc.x - this.player.x;
       const dy = npc.y - this.player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < NPC_BUMP_RADIUS && dist > 0.1) {
+        if (gameplayActive && !invulnerable && npc.hasShield && !this.player.hasShield) {
+          this.handleDeath('asteroid');
+          return;
+        }
+        if (gameplayActive && this.player.hasShield && !npc.hasShield) {
+          this.player.hasShield = false;
+          this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
+          npc.active = false;
+          npc.killedByHazard = false;
+          this.playerDebris.push(new ShipDebris(this, npc.x, npc.y, npc.vx, npc.vy, 0xffcc44, npc.radius));
+          Overlays.shieldBreakFlash(this);
+          continue;
+        }
         const nx = dx / dist;
         const ny = dy / dist;
         npc.applyImpulse(nx * NPC_BUMP_FORCE, ny * NPC_BUMP_FORCE);
@@ -498,10 +513,10 @@ export class GameScene extends Phaser.Scene {
     const hitDrifter = this.collisionSystem.checkDrifters(this.difficultySystem.getDrifters());
     const hitBeam = this.collisionSystem.checkBeams(this.difficultySystem.getBeams());
     const hitEnemy = this.collisionSystem.checkEnemies(this.difficultySystem.getEnemies());
-    const invulnerable = this.invulnerableTimer > 0;
     if (gameplayActive && !invulnerable && (hitDrifter || hitBeam || hitEnemy)) {
       if (this.player.hasShield) {
         this.player.hasShield = false;
+        this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
         // Shield destroys or splits the asteroid it hit
         if (hitDrifter) {
           this.difficultySystem.shieldDestroyDrifter(hitDrifter);
