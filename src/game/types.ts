@@ -1,0 +1,27 @@
+export interface SaveData {
+  bestScore: number;
+}
+
+export interface PhaseConfig {
+  phaseNumber: number;
+  hazardSpawnRate: number;
+  hazardSpeedMultiplier: number;
+  maxConcurrentDrifters: number;
+  beamEnabled: boolean;
+  beamFrequency: number;
+  enemyEnabled: boolean;
+  enemySpawnRate: number;
+  maxConcurrentEnemies: number;
+  npcEnabled: boolean;
+  npcSpawnRate: number;
+  maxConcurrentNPCs: number;
+}
+
+export const GameState = {
+  PLAYING: 'PLAYING',
+  EXTRACTING: 'EXTRACTING',
+  DEATH_FREEZE: 'DEATH_FREEZE',
+  DEAD: 'DEAD',
+} as const;
+
+export type GameState = (typeof GameState)[keyof typeof GameState];
