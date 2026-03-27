@@ -22,6 +22,7 @@ export class MenuScene extends Phaser.Scene {
   private weeklyTab!: Phaser.GameObjects.Text;
   private activePeriod: Period = 'daily';
   private statusText!: Phaser.GameObjects.Text;
+  private pilotText!: Phaser.GameObjects.Text;
 
   // Background simulation
   private bgDebris: SalvageDebris[] = [];
@@ -95,15 +96,33 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(uiDepth);
 
     // Player name and best score
-    this.add.text(centerX, GAME_HEIGHT * 0.30, `PILOT: ${playerName}`, {
+    this.pilotText = this.add.text(centerX, GAME_HEIGHT * 0.30, `PILOT: ${playerName}`, {
       fontFamily: 'monospace',
       fontSize: '14px',
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
       align: 'center',
-    }).setOrigin(0.5).setDepth(uiDepth);
+    }).setOrigin(0.5).setDepth(uiDepth).setInteractive({ useHandCursor: true });
+
+    this.pilotText.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      pointer.event.stopPropagation();
+      const currentInitials = save.getPlayerName().slice(0, 3);
+      const nextInitials = window.prompt('Choose 3 letters for your callsign', currentInitials);
+      if (nextInitials === null) return;
+
+      const updatedName = save.setPlayerInitials(nextInitials);
+      if (!updatedName) return;
+      this.pilotText.setText(`PILOT: ${updatedName}`);
+    });
+
+    this.add.text(centerX, GAME_HEIGHT * 0.33, 'TAP CALLSIGN TO EDIT LETTERS', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(uiDepth).setAlpha(0.7);
 
     if (best > 0) {
-      this.add.text(centerX, GAME_HEIGHT * 0.34, `BEST: ${Math.floor(best)}`, {
+      this.add.text(centerX, GAME_HEIGHT * 0.37, `BEST: ${Math.floor(best)}`, {
         fontFamily: 'monospace',
         fontSize: '16px',
         color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
@@ -112,7 +131,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     // Leaderboard section
-    const lbTop = GAME_HEIGHT * 0.40;
+    const lbTop = GAME_HEIGHT * 0.42;
     const tabY = lbTop;
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;

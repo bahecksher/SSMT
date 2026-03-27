@@ -30,7 +30,23 @@ interface MenuHandoff {
   debrisState?: { x: number; y: number; vx: number; vy: number }[];
 }
 
+interface StarfieldStar {
+  x: number;
+  y: number;
+  speed: number;
+  size: number;
+  alpha: number;
+  color: number;
+}
+
+interface ResultData {
+  score: number;
+  cause: 'death' | 'extract';
+}
+
 export class GameScene extends Phaser.Scene {
+  private static readonly START_COUNTDOWN_MS = 3000;
+
   private inputSystem!: InputSystem;
   private scoreSystem!: ScoreSystem;
   private salvageSystem!: SalvageSystem;
@@ -46,13 +62,17 @@ export class GameScene extends Phaser.Scene {
   private state: GameState = GameState.PLAYING;
   private debrisRespawnTimer: Phaser.Time.TimerEvent | null = null;
   private rareSalvageTimer = 0;
-  private deathFreezeTimer = 0;
+  private countdownTimer = 0;
   private starfield!: Phaser.GameObjects.Graphics;
+  private starfieldStars: StarfieldStar[] = [];
   private arenaBorder!: Phaser.GameObjects.Graphics;
   private hologramOverlay!: HologramOverlay;
   private entryGate: ExitGate | null = null;
   private slickComm!: SlickComm;
-  private pendingGameOverData: { score: number; cause: 'death' | 'extract' } | null = null;
+  private countdownText: Phaser.GameObjects.Text | null = null;
+  private resultData: ResultData | null = null;
+  private resultUi: Phaser.GameObjects.GameObject[] = [];
+  private resultInputLocked = false;
   private lastGateActive = false;
 
   constructor() {
@@ -60,9 +80,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(data?: MenuHandoff): void {
-    this.state = GameState.PLAYING;
+    this.events.once('shutdown', this.cleanup, this);
+    this.state = GameState.COUNTDOWN;
     this.rareSalvageTimer = 0;
-    this.pendingGameOverData = null;
+    this.countdownTimer = GameScene.START_COUNTDOWN_MS;
+    this.resultData = null;
+    this.resultUi = [];
+    this.resultInputLocked = false;
     this.lastGateActive = false;
 
     this.saveSystem = new SaveSystem();
@@ -72,16 +96,18 @@ export class GameScene extends Phaser.Scene {
 
     // Starfield background (hologram-tinted)
     this.starfield = this.add.graphics().setDepth(-1);
+    this.starfieldStars = [];
     for (let i = 0; i < 120; i++) {
-      const sx = Phaser.Math.Between(0, GAME_WIDTH);
-      const sy = Phaser.Math.Between(0, GAME_HEIGHT);
-      const brightness = Phaser.Math.FloatBetween(0.1, 0.4);
-      const size = Phaser.Math.FloatBetween(0.5, 1.2);
-      // Mix of green-tinted and white stars
-      const starColor = Math.random() < 0.6 ? COLORS.PLAYER : 0xffffff;
-      this.starfield.fillStyle(starColor, brightness);
-      this.starfield.fillCircle(sx, sy, size);
+      this.starfieldStars.push({
+        x: Phaser.Math.Between(0, GAME_WIDTH),
+        y: Phaser.Math.Between(0, GAME_HEIGHT),
+        speed: Phaser.Math.FloatBetween(3, 12),
+        alpha: Phaser.Math.FloatBetween(0.1, 0.4),
+        size: Phaser.Math.FloatBetween(0.5, 1.2),
+        color: Math.random() < 0.6 ? COLORS.PLAYER : 0xffffff,
+      });
     }
+    this.drawStarfield();
 
     // Draw arena boundary (hologram style)
     this.arenaBorder = this.add.graphics().setDepth(0);
@@ -116,7 +142,7 @@ export class GameScene extends Phaser.Scene {
     this.player = new Player(this, spawnX, spawnY);
 
     // Entry gate — player appears inside a closing gate
-    this.entryGate = new ExitGate(this, { x: spawnX, y: spawnY });
+    this.entryGate = new ExitGate(this, { x: spawnX, y: spawnY }, GameScene.START_COUNTDOWN_MS);
 
     this.salvageSystem = new SalvageSystem(this, this.player, this.scoreSystem);
     this.collisionSystem = new CollisionSystem(this.player);
@@ -146,40 +172,50 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.hud = new Hud(this);
+    this.countdownText = this.add.text(
+      GAME_WIDTH / 2,
+      GAME_HEIGHT / 2,
+      '3',
+      {
+        fontFamily: 'monospace',
+        fontSize: '96px',
+        fontStyle: 'bold',
+        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+        stroke: `#${COLORS.GRID.toString(16).padStart(6, '0')}`,
+        strokeThickness: 4,
+        shadow: {
+          offsetX: 0,
+          offsetY: 0,
+          color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+          blur: 14,
+          fill: true,
+        },
+      },
+    ).setOrigin(0.5).setDepth(120).setAlpha(0.9);
     this.slickComm.show(getSlickLine('runStart'));
+
+    this.input.on('pointerdown', this.handlePointerDown, this);
   }
 
   update(_time: number, delta: number): void {
-    // During death freeze, count down then play red wipe transition
-    if (this.state === GameState.DEATH_FREEZE) {
-      this.deathFreezeTimer -= delta;
-      if (this.deathFreezeTimer <= 0) {
-        this.state = GameState.DEAD;
-        Overlays.screenWipe(this, 0xff3366, 0.55, () => {
-          this.cleanup();
-          if (this.pendingGameOverData) {
-            this.scene.start(SCENE_KEYS.GAME_OVER, this.pendingGameOverData);
-          }
-        });
-      }
-      return;
+    if (
+      this.state !== GameState.COUNTDOWN &&
+      this.state !== GameState.PLAYING &&
+      this.state !== GameState.RESULTS &&
+      this.state !== GameState.DEAD &&
+      this.state !== GameState.EXTRACTING
+    ) return;
+
+    const gameplayActive = this.state === GameState.PLAYING;
+
+    this.updateEntryGate(delta);
+
+    if (gameplayActive) {
+      this.inputSystem.update();
+      const target = this.inputSystem.getTarget();
+      const swipe = this.inputSystem.getSwipe();
+      this.player.update(delta, target, swipe);
     }
-
-    if (this.state !== GameState.PLAYING) return;
-
-    // Update entry gate (cosmetic only)
-    if (this.entryGate) {
-      this.entryGate.update(delta);
-      if (!this.entryGate.active) {
-        this.entryGate.destroy();
-        this.entryGate = null;
-      }
-    }
-
-    this.inputSystem.update();
-    const target = this.inputSystem.getTarget();
-    const swipe = this.inputSystem.getSwipe();
-    this.player.update(delta, target, swipe);
 
     // Update all debris
     for (let i = this.debrisList.length - 1; i >= 0; i--) {
@@ -211,7 +247,7 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
       // Check pickup collision
-      if (!this.player.hasShield) {
+      if (gameplayActive && !this.player.hasShield) {
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, s.x, s.y);
         if (dist < PLAYER_RADIUS + s.radius) {
           this.player.hasShield = true;
@@ -230,7 +266,7 @@ export class GameScene extends Phaser.Scene {
 
     // Phase advanced — update difficulty
     const currentPhase = this.extractionSystem.getPhaseCount();
-    if (currentPhase !== prevPhase) {
+    if (gameplayActive && currentPhase !== prevPhase) {
       this.difficultySystem.setPhase(currentPhase);
     }
 
@@ -310,7 +346,7 @@ export class GameScene extends Phaser.Scene {
 
     // Check extraction — player can extract any time they enter the active gate
     const activeGate = this.extractionSystem.getGate();
-    if (activeGate && this.bankingSystem.checkExtraction(activeGate)) {
+    if (gameplayActive && activeGate && this.bankingSystem.checkExtraction(activeGate)) {
       this.handleExtraction();
       return;
     }
@@ -320,7 +356,7 @@ export class GameScene extends Phaser.Scene {
     const hitBeam = this.collisionSystem.checkBeams(this.difficultySystem.getBeams());
     const hitSalvage = this.collisionSystem.checkSalvage(this.debrisList);
     const hitEnemy = this.collisionSystem.checkEnemies(this.difficultySystem.getEnemies());
-    if (hitDrifter || hitBeam || hitSalvage || hitEnemy) {
+    if (gameplayActive && (hitDrifter || hitBeam || hitSalvage || hitEnemy)) {
       if (this.player.hasShield) {
         this.player.hasShield = false;
         // Shield destroys or splits the asteroid it hit
@@ -338,7 +374,14 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    this.salvageSystem.update(delta, this.difficultySystem.getDrifters());
+    if (gameplayActive) {
+      this.salvageSystem.update(delta, this.difficultySystem.getDrifters());
+    }
+
+    this.updateStarfield(delta);
+    if (this.state === GameState.COUNTDOWN) {
+      this.updateCountdown(delta);
+    }
 
     // Hologram overlay
     this.hologramOverlay.update(delta);
@@ -400,7 +443,7 @@ export class GameScene extends Phaser.Scene {
 
   private scheduleDebrisRespawn(): void {
     this.debrisRespawnTimer = this.time.delayedCall(SALVAGE_RESPAWN_DELAY, () => {
-      if (this.state === GameState.PLAYING) {
+      if (this.state !== GameState.EXTRACTING && this.state !== GameState.DEAD) {
         this.spawnDebris();
       }
       this.debrisRespawnTimer = null;
@@ -408,24 +451,31 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleDeath(): void {
-    this.pendingGameOverData = { score: 0, cause: 'death' };
-    this.state = GameState.DEATH_FREEZE;
-    this.deathFreezeTimer = 250; // brief freeze to see what killed you
+    this.resultData = { score: 0, cause: 'death' };
+    this.state = GameState.DEAD;
+    this.player.setDestroyedVisual(true);
+    Overlays.screenWipe(
+      this,
+      0xff3366,
+      0.55,
+      () => {
+        this.enterResultsState();
+      },
+      { duration: 350, hold: 120 },
+    );
   }
 
   private handleExtraction(): void {
     this.state = GameState.EXTRACTING;
     const score = this.scoreSystem.getBanked();
-    this.pendingGameOverData = { score, cause: 'extract' };
+    this.resultData = { score, cause: 'extract' };
     Overlays.screenWipe(this, 0x44ff88, 0.5, () => {
-      this.cleanup();
-      if (this.pendingGameOverData) {
-        this.scene.start(SCENE_KEYS.GAME_OVER, this.pendingGameOverData);
-      }
+      this.enterResultsState();
     });
   }
 
   private cleanup(): void {
+    this.input.off('pointerdown', this.handlePointerDown, this);
     this.inputSystem.destroy();
     this.scoreSystem.destroy();
     this.salvageSystem.destroy();
@@ -446,10 +496,168 @@ export class GameScene extends Phaser.Scene {
       this.entryGate.destroy();
       this.entryGate = null;
     }
+    if (this.countdownText) {
+      this.countdownText.destroy();
+      this.countdownText = null;
+    }
+    this.clearResultUi();
     this.hud.destroy();
     this.slickComm.destroy();
     this.hologramOverlay.destroy();
     this.starfield.destroy();
     this.arenaBorder.destroy();
+  }
+
+  private updateStarfield(delta: number): void {
+    const dt = delta / 1000;
+    for (const star of this.starfieldStars) {
+      star.y += star.speed * dt;
+      if (star.y > GAME_HEIGHT + star.size) {
+        star.y = -star.size;
+        star.x = Phaser.Math.Between(0, GAME_WIDTH);
+      }
+    }
+    this.drawStarfield();
+  }
+
+  private updateEntryGate(delta: number): void {
+    if (this.entryGate) {
+      this.entryGate.update(delta);
+      if (!this.entryGate.active) {
+        this.entryGate.destroy();
+        this.entryGate = null;
+      }
+    }
+  }
+
+  private updateCountdown(delta: number): void {
+    this.countdownTimer = Math.max(0, this.countdownTimer - delta);
+    const remaining = Math.max(1, Math.ceil(this.countdownTimer / 1000));
+    this.countdownText?.setText(String(remaining));
+
+    const secondProgress = 1 - ((this.countdownTimer % 1000) / 1000);
+    const scale = 0.9 + secondProgress * 0.45;
+    this.countdownText?.setScale(scale);
+    this.countdownText?.setAlpha(0.72 + secondProgress * 0.24);
+
+    if (this.countdownTimer <= 0) {
+      this.countdownText?.destroy();
+      this.countdownText = null;
+      this.state = GameState.PLAYING;
+    }
+  }
+
+  private drawStarfield(): void {
+    this.starfield.clear();
+    for (const star of this.starfieldStars) {
+      this.starfield.fillStyle(star.color, star.alpha);
+      this.starfield.fillCircle(star.x, star.y, star.size);
+    }
+  }
+
+  private enterResultsState(): void {
+    if (!this.resultData) return;
+
+    this.state = GameState.RESULTS;
+    this.resultInputLocked = true;
+    this.showResultUi(this.resultData);
+    this.time.delayedCall(500, () => {
+      this.resultInputLocked = false;
+    });
+  }
+
+  private showResultUi(data: ResultData): void {
+    this.clearResultUi();
+
+    const centerX = GAME_WIDTH / 2;
+    const cause = data.cause;
+    const isDeath = cause === 'death';
+    const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
+    const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
+    const save = new SaveSystem();
+    const best = save.getBestScore();
+
+    const backing = this.add.graphics().setDepth(205);
+    backing.fillStyle(COLORS.BG, 0.78);
+    backing.fillRoundedRect(28, GAME_HEIGHT * 0.18, GAME_WIDTH - 56, GAME_HEIGHT * 0.58, 16);
+    backing.lineStyle(1.5, titleColor, 0.4);
+    backing.strokeRoundedRect(28, GAME_HEIGHT * 0.18, GAME_WIDTH - 56, GAME_HEIGHT * 0.58, 16);
+    this.resultUi.push(backing);
+
+    const title = this.add.text(centerX, GAME_HEIGHT * 0.29, titleText, {
+      fontFamily: 'monospace',
+      fontSize: '40px',
+      color: `#${titleColor.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(210);
+    this.resultUi.push(title);
+
+    const scoreText = this.add.text(
+      centerX,
+      GAME_HEIGHT * 0.40,
+      isDeath ? 'SCORE LOST' : `SCORE: ${Math.floor(data.score)}`,
+      {
+        fontFamily: 'monospace',
+        fontSize: isDeath ? '22px' : '28px',
+        color: `#${(isDeath ? COLORS.HAZARD : COLORS.SALVAGE).toString(16).padStart(6, '0')}`,
+        align: 'center',
+      },
+    ).setOrigin(0.5).setDepth(210);
+    this.resultUi.push(scoreText);
+
+    if (best > 0) {
+      const bestText = this.add.text(centerX, GAME_HEIGHT * 0.49, `BEST: ${Math.floor(best)}`, {
+        fontFamily: 'monospace',
+        fontSize: '18px',
+        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+        align: 'center',
+      }).setOrigin(0.5).setDepth(210);
+      this.resultUi.push(bestText);
+    }
+
+    const retryText = this.add.text(centerX, GAME_HEIGHT * 0.61, 'TAP TO RETRY', {
+      fontFamily: 'monospace',
+      fontSize: '24px',
+      color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(210);
+    this.resultUi.push(retryText);
+
+    this.tweens.add({
+      targets: retryText,
+      alpha: 0.3,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    const menuText = this.add.text(centerX, GAME_HEIGHT * 0.70, 'MENU', {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(210).setInteractive({ useHandCursor: true });
+    menuText.on('pointerdown', (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      if (this.resultInputLocked) return;
+      this.scene.start(SCENE_KEYS.MENU);
+    });
+    this.resultUi.push(menuText);
+  }
+
+  private clearResultUi(): void {
+    for (const obj of this.resultUi) {
+      obj.destroy();
+    }
+    this.resultUi = [];
+  }
+
+  private handlePointerDown(
+    _pointer: Phaser.Input.Pointer,
+    targets: Phaser.GameObjects.GameObject[],
+  ): void {
+    if (this.state !== GameState.RESULTS || this.resultInputLocked) return;
+    if (targets.length > 0) return;
+    this.scene.start(SCENE_KEYS.GAME);
   }
 }

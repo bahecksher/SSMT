@@ -6,6 +6,8 @@ import { DrifterHazard } from '../entities/DrifterHazard';
 import { BeamHazard } from '../entities/BeamHazard';
 import { EnemyShip } from '../entities/EnemyShip';
 import { NPCShip } from '../entities/NPCShip';
+import { ARENA_LEFT, ARENA_TOP, ARENA_RIGHT, ARENA_BOTTOM } from '../constants';
+import { SHIELD_PICKUP_RADIUS } from '../entities/ShieldPickup';
 import { Overlays } from '../ui/Overlays';
 
 export class DifficultySystem {
@@ -158,7 +160,7 @@ export class DifficultySystem {
     // Clean inactive NPCs — record positions of hazard-killed ones for shield drops
     for (let i = this.npcs.length - 1; i >= 0; i--) {
       if (!this.npcs[i].active) {
-        if (this.npcs[i].killedByHazard) {
+        if (this.npcs[i].killedByHazard && this.canDropShieldAt(this.npcs[i].x, this.npcs[i].y)) {
           this.deadNPCPositions.push({ x: this.npcs[i].x, y: this.npcs[i].y });
         }
         this.npcs[i].destroy();
@@ -365,6 +367,15 @@ export class DifficultySystem {
         }
       }
     }
+  }
+
+  private canDropShieldAt(x: number, y: number): boolean {
+    return (
+      x >= ARENA_LEFT + SHIELD_PICKUP_RADIUS &&
+      x <= ARENA_RIGHT - SHIELD_PICKUP_RADIUS &&
+      y >= ARENA_TOP + SHIELD_PICKUP_RADIUS &&
+      y <= ARENA_BOTTOM - SHIELD_PICKUP_RADIUS
+    );
   }
 
   destroy(): void {

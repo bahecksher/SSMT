@@ -15,6 +15,7 @@ export class Player {
   y: number;
   hasShield = false;
   inverted = false;
+  destroyed = false;
 
   private vx = 0;
   private vy = 0;
@@ -116,7 +117,9 @@ export class Player {
       g.strokeCircle(0, 0, VISUAL_SIZE * 2.2);
     }
 
-    const bodyColor = this.inverted ? 0xffffff : COLORS.PLAYER;
+    const bodyColor = this.destroyed
+      ? COLORS.HAZARD
+      : (this.inverted ? 0xffffff : COLORS.PLAYER);
 
     // Glow
     g.lineStyle(1, bodyColor, 0.1);
@@ -157,5 +160,10 @@ export class Player {
 
   destroy(): void {
     this.graphic.destroy();
+  }
+
+  setDestroyedVisual(destroyed: boolean): void {
+    this.destroyed = destroyed;
+    this.draw();
   }
 }

@@ -13,8 +13,12 @@ export class ExitGate {
   private duration: number;
   private ringPulse = 0;
 
-  constructor(scene: Phaser.Scene, fixedPosition?: { x: number; y: number }) {
-    this.duration = EXIT_GATE_DURATION;
+  constructor(
+    scene: Phaser.Scene,
+    fixedPosition?: { x: number; y: number },
+    duration = EXIT_GATE_DURATION,
+  ) {
+    this.duration = duration;
 
     if (fixedPosition) {
       // Used for entry gate — spawn at a specific position

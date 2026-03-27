@@ -101,12 +101,13 @@ export class Overlays {
     color: number,
     alpha: number,
     onComplete: () => void,
+    options?: { duration?: number; hold?: number },
   ): void {
     // Wipe mask: a rect that starts at height 0 and grows to fill the screen
     const wipe = scene.add.graphics().setDepth(250);
 
-    const duration = 600;
-    const hold = 400;
+    const duration = options?.duration ?? 600;
+    const hold = options?.hold ?? 400;
 
     // Animate via a simple counter object
     const progress = { t: 0 };

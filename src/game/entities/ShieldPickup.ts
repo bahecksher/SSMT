@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-const PICKUP_RADIUS = 14;
+export const SHIELD_PICKUP_RADIUS = 14;
 
 export class ShieldPickup {
   graphic: Phaser.GameObjects.Graphics;
@@ -8,7 +8,7 @@ export class ShieldPickup {
   y: number;
   vx: number;
   vy: number;
-  radius = PICKUP_RADIUS;
+  radius = SHIELD_PICKUP_RADIUS;
   active = true;
 
   private pulse = 0;
@@ -51,15 +51,15 @@ export class ShieldPickup {
 
     // Outer glow ring
     g.lineStyle(1, 0x44aaff, glow * 0.2);
-    g.strokeCircle(0, 0, PICKUP_RADIUS * 2.5);
+    g.strokeCircle(0, 0, SHIELD_PICKUP_RADIUS * 2.5);
 
     // Shield shape — hexagon (stroke-based)
     g.lineStyle(1.5, 0x44aaff, 0.8);
     g.beginPath();
     for (let i = 0; i < 6; i++) {
       const a = (Math.PI / 3) * i - Math.PI / 2;
-      const px = Math.cos(a) * PICKUP_RADIUS;
-      const py = Math.sin(a) * PICKUP_RADIUS;
+      const px = Math.cos(a) * SHIELD_PICKUP_RADIUS;
+      const py = Math.sin(a) * SHIELD_PICKUP_RADIUS;
       if (i === 0) g.moveTo(px, py);
       else g.lineTo(px, py);
     }
@@ -71,8 +71,8 @@ export class ShieldPickup {
     g.beginPath();
     for (let i = 0; i < 6; i++) {
       const a = (Math.PI / 3) * i - Math.PI / 2;
-      const px = Math.cos(a) * PICKUP_RADIUS;
-      const py = Math.sin(a) * PICKUP_RADIUS;
+      const px = Math.cos(a) * SHIELD_PICKUP_RADIUS;
+      const py = Math.sin(a) * SHIELD_PICKUP_RADIUS;
       if (i === 0) g.moveTo(px, py);
       else g.lineTo(px, py);
     }
@@ -81,7 +81,7 @@ export class ShieldPickup {
 
     // Inner emblem — small diamond (stroke)
     g.lineStyle(1, 0xffffff, 0.5);
-    const s = PICKUP_RADIUS * 0.35;
+    const s = SHIELD_PICKUP_RADIUS * 0.35;
     g.beginPath();
     g.moveTo(0, -s);
     g.lineTo(s, 0);
@@ -92,7 +92,7 @@ export class ShieldPickup {
 
     // Pulsing ring
     g.lineStyle(1, 0x44aaff, glow + 0.15);
-    g.strokeCircle(0, 0, PICKUP_RADIUS + 4 + Math.sin(this.pulse * 1.5) * 2);
+    g.strokeCircle(0, 0, SHIELD_PICKUP_RADIUS + 4 + Math.sin(this.pulse * 1.5) * 2);
   }
 
   destroy(): void {

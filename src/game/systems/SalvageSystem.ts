@@ -23,6 +23,8 @@ export class SalvageSystem {
   private floatingTexts: FloatingText[] = [];
   private salvageFloatTimer = 0;
   private miningFloatTimer = 0;
+  private salvageFloatPoints = 0;
+  private miningFloatPoints = 0;
 
   constructor(scene: Phaser.Scene, player: Player, scoreSystem: ScoreSystem) {
     this.scene = scene;
@@ -45,7 +47,6 @@ export class SalvageSystem {
 
     // --- Salvage scoring: stack all overlapping salvage zones ---
     let totalSalvagePoints = 0;
-    let highestMultiplier = 1;
     let hasRareInRange = false;
 
     for (const debris of this.debrisList) {
@@ -61,9 +62,6 @@ export class SalvageSystem {
       if (dist <= debris.salvageRadius && !debris.depleted) {
         const points = SALVAGE_POINTS_PER_SECOND * debris.pointsMultiplier * dt;
         totalSalvagePoints += points;
-        if (debris.pointsMultiplier > highestMultiplier) {
-          highestMultiplier = debris.pointsMultiplier;
-        }
         if (debris.isRare) hasRareInRange = true;
 
         // Deplete salvage HP
@@ -78,14 +76,13 @@ export class SalvageSystem {
     if (totalSalvagePoints > 0) {
       this.inRange = true;
       this.scoreSystem.addUnbanked(totalSalvagePoints);
+      this.salvageFloatPoints += totalSalvagePoints;
 
       // Floating text for salvage
       this.salvageFloatTimer += delta;
       const interval = hasRareInRange ? 300 : 500;
       if (this.salvageFloatTimer >= interval) {
-        const displayPts = Math.max(1, Math.round(
-          SALVAGE_POINTS_PER_SECOND * highestMultiplier * 0.5,
-        ));
+        const displayPts = Math.max(1, Math.round(this.salvageFloatPoints));
         const color = hasRareInRange ? '#ff44ff' : `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`;
         this.spawnFloatingText(
           `+${displayPts}`,
@@ -93,10 +90,12 @@ export class SalvageSystem {
           hasRareInRange ? '16px' : '13px',
           hasRareInRange,
         );
-        this.salvageFloatTimer = 0;
+        this.salvageFloatTimer -= interval;
+        this.salvageFloatPoints = 0;
       }
     } else {
       this.salvageFloatTimer = 0;
+      this.salvageFloatPoints = 0;
     }
 
     // --- Mining scoring: proximity to drifter asteroids ---
@@ -129,20 +128,23 @@ export class SalvageSystem {
       this.inRange = true;
       const miningPoints = DRIFTER_MINING_POINTS_PER_SECOND * miningCount * dt;
       this.scoreSystem.addUnbanked(miningPoints);
+      this.miningFloatPoints += miningPoints;
 
       // Floating text for mining
       this.miningFloatTimer += delta;
       if (this.miningFloatTimer >= 600) {
         this.spawnFloatingText(
-          `+${miningCount}`,
+          `+${Math.max(1, Math.round(this.miningFloatPoints))}`,
           `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
           '11px',
           false,
         );
-        this.miningFloatTimer = 0;
+        this.miningFloatTimer -= 600;
+        this.miningFloatPoints = 0;
       }
     } else {
       this.miningFloatTimer = 0;
+      this.miningFloatPoints = 0;
     }
 
     // Update floating texts

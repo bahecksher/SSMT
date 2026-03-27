@@ -13,6 +13,15 @@ function generatePlayerName(): string {
   return name;
 }
 
+function normalizeInitials(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+}
+
+function extractDigits(name: string): string {
+  const match = name.match(/(\d{4})$/);
+  return match?.[1] ?? String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+}
+
 export class SaveSystem {
   private data: SaveData;
 
@@ -65,5 +74,19 @@ export class SaveSystem {
       // Private browsing
     }
     return name;
+  }
+
+  setPlayerInitials(initials: string): string | null {
+    const normalized = normalizeInitials(initials);
+    if (normalized.length !== 3) return null;
+
+    const existing = this.getPlayerName();
+    const playerName = `${normalized}${extractDigits(existing)}`;
+    try {
+      localStorage.setItem(PLAYER_NAME_KEY, playerName);
+    } catch {
+      // Private browsing
+    }
+    return playerName;
   }
 }
