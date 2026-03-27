@@ -1,7 +1,17 @@
-import { SAVE_KEY } from '../constants';
+import { SAVE_KEY, PLAYER_NAME_KEY } from '../constants';
 import type { SaveData } from '../types';
 
 const DEFAULT_SAVE: SaveData = { bestScore: 0 };
+
+function generatePlayerName(): string {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let name = '';
+  for (let i = 0; i < 3; i++) {
+    name += letters[Math.floor(Math.random() * 26)];
+  }
+  name += String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  return name;
+}
 
 export class SaveSystem {
   private data: SaveData;
@@ -39,5 +49,21 @@ export class SaveSystem {
       this.data.bestScore = score;
       this.save();
     }
+  }
+
+  getPlayerName(): string {
+    try {
+      const existing = localStorage.getItem(PLAYER_NAME_KEY);
+      if (existing) return existing;
+    } catch {
+      // Private browsing
+    }
+    const name = generatePlayerName();
+    try {
+      localStorage.setItem(PLAYER_NAME_KEY, name);
+    } catch {
+      // Private browsing
+    }
+    return name;
   }
 }

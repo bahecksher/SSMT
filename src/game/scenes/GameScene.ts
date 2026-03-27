@@ -16,11 +16,19 @@ import { DifficultySystem } from '../systems/DifficultySystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { Player } from '../entities/Player';
 import { SalvageDebris } from '../entities/SalvageDebris';
+import { DrifterHazard } from '../entities/DrifterHazard';
 import { ShieldPickup } from '../entities/ShieldPickup';
 import { ExitGate } from '../entities/ExitGate';
 import { Hud } from '../ui/Hud';
 import { Overlays } from '../ui/Overlays';
 import { HologramOverlay } from '../ui/HologramOverlay';
+import { SlickComm } from '../ui/SlickComm';
+import { getSlickLine } from '../data/slickLines';
+
+interface MenuHandoff {
+  drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
+  debrisState?: { x: number; y: number; vx: number; vy: number }[];
+}
 
 export class GameScene extends Phaser.Scene {
   private inputSystem!: InputSystem;
@@ -43,14 +51,19 @@ export class GameScene extends Phaser.Scene {
   private arenaBorder!: Phaser.GameObjects.Graphics;
   private hologramOverlay!: HologramOverlay;
   private entryGate: ExitGate | null = null;
+  private slickComm!: SlickComm;
+  private pendingGameOverData: { score: number; cause: 'death' | 'extract' } | null = null;
+  private lastGateActive = false;
 
   constructor() {
     super(SCENE_KEYS.GAME);
   }
 
-  create(): void {
+  create(data?: MenuHandoff): void {
     this.state = GameState.PLAYING;
     this.rareSalvageTimer = 0;
+    this.pendingGameOverData = null;
+    this.lastGateActive = false;
 
     this.saveSystem = new SaveSystem();
     this.inputSystem = new InputSystem(this);
@@ -96,6 +109,7 @@ export class GameScene extends Phaser.Scene {
 
     // Hologram scanline overlay
     this.hologramOverlay = new HologramOverlay(this);
+    this.slickComm = new SlickComm(this);
 
     const spawnX = ARENA_LEFT + ARENA_WIDTH / 2;
     const spawnY = ARENA_TOP + ARENA_HEIGHT * 0.75;
@@ -110,7 +124,26 @@ export class GameScene extends Phaser.Scene {
     this.bankingSystem = new BankingSystem(this.player, this.scoreSystem, this.saveSystem);
     this.difficultySystem = new DifficultySystem(this, 1);
 
-    this.spawnDebris();
+    // Carry over background entities from menu for seamless transition
+    const handoff = data ?? {};
+    if (handoff.drifterState?.length) {
+      for (const d of handoff.drifterState) {
+        const drifter = DrifterHazard.createFragment(this, d.x, d.y, d.vx, d.vy, d.radiusScale);
+        this.difficultySystem.getDrifters().push(drifter);
+      }
+    }
+    if (handoff.debrisState?.length) {
+      for (const d of handoff.debrisState) {
+        const debris = SalvageDebris.createAt(this, d.x, d.y, d.vx, d.vy);
+        this.debrisList.push(debris);
+        this.salvageSystem.addDebris(debris);
+      }
+    }
+
+    // Only spawn fresh debris if none carried over
+    if (this.debrisList.length === 0) {
+      this.spawnDebris();
+    }
 
     this.hud = new Hud(this);
   }
@@ -123,7 +156,9 @@ export class GameScene extends Phaser.Scene {
         this.state = GameState.DEAD;
         Overlays.screenWipe(this, 0xff3366, 0.55, () => {
           this.cleanup();
-          this.scene.start(SCENE_KEYS.GAME_OVER, { score: 0, cause: 'death' });
+          if (this.pendingGameOverData) {
+            this.scene.start(SCENE_KEYS.GAME_OVER, this.pendingGameOverData);
+          }
         });
       }
       return;
@@ -310,6 +345,11 @@ export class GameScene extends Phaser.Scene {
     // HUD
     const timeToGate = this.extractionSystem.getTimeToGate();
     const gateActive = this.extractionSystem.isGateActive();
+    if (gateActive && !this.lastGateActive) {
+      this.slickComm.show(getSlickLine('gateOpen'));
+    }
+    this.lastGateActive = gateActive;
+
     let gateText: string;
     if (gateActive) {
       gateText = 'GATE OPEN';
@@ -363,6 +403,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleDeath(): void {
+    this.pendingGameOverData = { score: 0, cause: 'death' };
     this.state = GameState.DEATH_FREEZE;
     this.deathFreezeTimer = 250; // brief freeze to see what killed you
   }
@@ -370,9 +411,12 @@ export class GameScene extends Phaser.Scene {
   private handleExtraction(): void {
     this.state = GameState.EXTRACTING;
     const score = this.scoreSystem.getBanked();
+    this.pendingGameOverData = { score, cause: 'extract' };
     Overlays.screenWipe(this, 0x44ff88, 0.5, () => {
       this.cleanup();
-      this.scene.start(SCENE_KEYS.GAME_OVER, { score, cause: 'extract' });
+      if (this.pendingGameOverData) {
+        this.scene.start(SCENE_KEYS.GAME_OVER, this.pendingGameOverData);
+      }
     });
   }
 
@@ -398,6 +442,7 @@ export class GameScene extends Phaser.Scene {
       this.entryGate = null;
     }
     this.hud.destroy();
+    this.slickComm.destroy();
     this.hologramOverlay.destroy();
     this.starfield.destroy();
     this.arenaBorder.destroy();

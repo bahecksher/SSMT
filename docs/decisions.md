@@ -87,3 +87,9 @@ PLAYER_RADIUS reduced from 10 to 5 (only used for beam collision). Visual triang
 
 ### 2026-03-26 — NPC "other player" ships added (phase 2+)
 Amber/yellow NPC ships spawn from off-screen and navigate toward salvage to deplete its HP. Destroyed by asteroids and enemy ships (enemies hunt them). Player can bump NPCs away from salvage but can't destroy them. On hazard death, NPCs drop a shield pickup. Up to 3 concurrent NPCs in later phases.
+
+### 2026-03-27 — Online leaderboard via Supabase (daily/weekly)
+Persistent leaderboard using Supabase. Daily (24h) and weekly (7d) tabs on the menu screen, top 10 entries each. No all-time board. Scores submitted on extraction only (death = no submission). Player identity is auto-generated arcade-style: 3 random letters + 4 random digits (e.g. "XKR4281"), stored in localStorage, immutable.
+
+### 2026-03-27 — Leaderboard is fire-and-forget
+Score submission and leaderboard fetching are non-blocking. If network fails, game still works — menu shows "OFFLINE" and scores save locally only. No retry logic.

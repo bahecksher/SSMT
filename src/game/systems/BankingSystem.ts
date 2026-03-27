@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PLAYER_RADIUS, EXIT_GATE_HITBOX } from '../data/tuning';
+import { submitScore } from '../services/LeaderboardService';
 import type { Player } from '../entities/Player';
 import type { ExitGate } from '../entities/ExitGate';
 import type { ScoreSystem } from './ScoreSystem';
@@ -30,6 +31,11 @@ export class BankingSystem {
     if (dist < PLAYER_RADIUS + EXIT_GATE_HITBOX) {
       const banked = this.scoreSystem.bankScore();
       this.saveSystem.saveBestScore(banked);
+
+      // Submit to online leaderboard (fire-and-forget)
+      const playerName = this.saveSystem.getPlayerName();
+      submitScore(playerName, banked);
+
       return true;
     }
 

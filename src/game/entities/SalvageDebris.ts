@@ -303,6 +303,27 @@ export class SalvageDebris {
     }
   }
 
+  /** Create debris at a specific position with given velocity (no edge spawn). */
+  static createAt(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+  ): SalvageDebris {
+    const d = new SalvageDebris(scene);
+    // Override spawn position and velocity
+    d.x = x;
+    d.y = y;
+    (d as unknown as { vx: number }).vx = vx;
+    (d as unknown as { vy: number }).vy = vy;
+    (d as { driftVx: number }).driftVx = vx;
+    (d as { driftVy: number }).driftVy = vy;
+    d.graphic.setPosition(x, y);
+    d.radiusGraphic.setPosition(x, y);
+    return d;
+  }
+
   /** Returns polygon vertices in world space (rotated + translated). */
   getWorldVertices(): [number, number][] {
     return this.vertices.map(([vx, vy]) => {

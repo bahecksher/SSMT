@@ -18,6 +18,7 @@ export const SCENE_KEYS = {
 } as const;
 
 export const SAVE_KEY = 'ssmt_save';
+export const PLAYER_NAME_KEY = 'ssmt_player_name';
 
 export const COLORS = {
   BG: 0x020a08,
