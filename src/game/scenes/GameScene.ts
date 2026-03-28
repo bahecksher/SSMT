@@ -317,6 +317,40 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Salvage-asteroid collision: bounce salvage off drifters
+    if (!runFrozen) {
+      const drifters = this.difficultySystem.getDrifters();
+      for (const debris of this.debrisList) {
+        if (!debris.active) continue;
+        for (const drifter of drifters) {
+          if (!drifter.active) continue;
+          const dx = debris.x - drifter.x;
+          const dy = debris.y - drifter.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < drifter.radius + 30) {
+            debris.bounceOff(drifter.x, drifter.y, drifter.radius);
+          }
+        }
+      }
+    }
+
+    // Beams destroy salvage
+    if (!runFrozen) {
+      for (const beam of this.difficultySystem.getBeams()) {
+        if (!beam.active || !beam.isLethal()) continue;
+        const halfBeam = beam.width / 2;
+        for (const debris of this.debrisList) {
+          if (!debris.active) continue;
+          const dist = beam.isHorizontal
+            ? Math.abs(debris.y - beam.y1)
+            : Math.abs(debris.x - beam.x1);
+          if (dist < halfBeam + 30) {
+            debris.active = false;
+          }
+        }
+      }
+    }
+
     // Ensure at least one normal debris exists or is scheduled
     const hasNormal = this.debrisList.some(d => !d.isRare);
     if (!runFrozen && !hasNormal && !this.debrisRespawnTimer) {
@@ -710,7 +744,6 @@ export class GameScene extends Phaser.Scene {
       isRare: true,
       lifetime: 12000,
       pointsMultiplier: 4 + phase * 1.0,
-      radiusScale: 0.6,
     });
     this.debrisList.push(debris);
     this.salvageSystem.addDebris(debris);

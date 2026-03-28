@@ -47,8 +47,6 @@
         Slightly competitive when the player is doing well
     Backstory:
         Slick has hauled wreckage, mined bad belts, lost ships, and watched hotshots flame out.
-        He started the training module as a side business to teach rookies how to stay alive long enough to earn.
-        He treats the whole simulation like practical trade school, not military boot camp.
     What makes him memorable:
         He sounds like someone who has already survived every mistake the player is about to make.
         He praises smart flying like it matters.
@@ -69,11 +67,4 @@
         Slickline Salvage Training
     Recommended game-facing name:
         Slick's Salvage & Mining
-    Voice examples:
-        Failure: "Well. That asteroid just filed a complaint about your parking."
-        Failure: "Shake it off, pilot. Better to learn in the sim than out in the black."
-        Success: "Now that's clean work. You're starting to look expensive."
-        Success: "Easy money. Don't let it go to your head."
-        Phase up: "Field's getting meaner. Keep your nose clean."
-        Extraction ready: "Gate's live. Cash out or get greedy. Your call."
-        Near miss / recovery: "There you go. Ugly flying counts if you live through it."
+

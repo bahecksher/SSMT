@@ -359,6 +359,31 @@ export class SalvageDebris {
     return d;
   }
 
+  /** Bounce salvage off an obstacle at the given position. */
+  bounceOff(obstacleX: number, obstacleY: number, obstacleRadius: number): void {
+    const dx = this.x - obstacleX;
+    const dy = this.y - obstacleY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.01) return;
+    const nx = dx / dist;
+    const ny = dy / dist;
+    // Push out of overlap
+    const minDist = obstacleRadius + 30; // approximate salvage body radius
+    if (dist < minDist) {
+      this.x = obstacleX + nx * minDist;
+      this.y = obstacleY + ny * minDist;
+    }
+    // Reflect velocity along normal
+    const dot = this.vx * nx + this.vy * ny;
+    if (dot < 0) {
+      this.vx -= 2 * dot * nx;
+      this.vy -= 2 * dot * ny;
+      // Update drift velocities so it keeps moving in new direction
+      (this as { driftVx: number }).driftVx = this.vx;
+      (this as { driftVy: number }).driftVy = this.vy;
+    }
+  }
+
   /** Returns corners of the outermost rect in world space. */
   getWorldVertices(): [number, number][] {
     if (this.rects.length === 0) return [];

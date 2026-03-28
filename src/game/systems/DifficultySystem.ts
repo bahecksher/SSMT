@@ -32,6 +32,8 @@ export class DifficultySystem {
   private shipDebris: ShipDebris[] = [];
   private drifterTimer = 0;
   private beamTimer = 0;
+  private beamBurstQueue = 0;
+  private beamBurstTimer = 0;
   private enemyTimer = 0;
   private npcTimer = 0;
 
@@ -95,13 +97,22 @@ export class DifficultySystem {
 
     if (this.config.beamEnabled) {
       this.beamTimer += delta;
-      if (this.beamTimer >= this.config.beamFrequency) {
+      if (this.beamTimer >= this.config.beamFrequency && this.beamBurstQueue === 0) {
         Overlays.beamWarningFlash(this.scene);
-        const count = Phaser.Math.Between(1, 3);
-        for (let i = 0; i < count; i++) {
-          this.beams.push(new BeamHazard(this.scene));
-        }
+        // First beam fires immediately, rest queued as rapid burst
+        this.beams.push(new BeamHazard(this.scene, this.config.beamWidth));
+        this.beamBurstQueue = this.config.beamBurstCount - 1;
+        this.beamBurstTimer = 0;
         this.beamTimer = 0;
+      }
+      // Rapid-fire burst: spawn queued beams with short delays
+      if (this.beamBurstQueue > 0) {
+        this.beamBurstTimer += delta;
+        if (this.beamBurstTimer >= this.config.beamBurstDelay) {
+          this.beams.push(new BeamHazard(this.scene, this.config.beamWidth));
+          this.beamBurstQueue--;
+          this.beamBurstTimer -= this.config.beamBurstDelay;
+        }
       }
     }
 
@@ -141,6 +152,7 @@ export class DifficultySystem {
     this.resolveNPCDrifterCollisions();
     this.resolveEnemyNPCCollisions();
     this.resolveDrifterCollisions();
+    this.resolveBeamEntityCollisions();
 
     for (let i = this.drifters.length - 1; i >= 0; i--) {
       if (!this.drifters[i].active) {
@@ -472,6 +484,56 @@ export class DifficultySystem {
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < enemy.radius + drifter.radius) {
           this.shieldDestroyDrifter(drifter);
+        }
+      }
+    }
+  }
+
+  private resolveBeamEntityCollisions(): void {
+    for (const beam of this.beams) {
+      if (!beam.active || !beam.isLethal()) continue;
+      const halfBeam = beam.width / 2;
+
+      // Destroy drifters hit by beam
+      for (const drifter of this.drifters) {
+        if (!drifter.active) continue;
+        const dist = beam.isHorizontal
+          ? Math.abs(drifter.y - beam.y1)
+          : Math.abs(drifter.x - beam.x1);
+        if (dist < halfBeam + drifter.radius) {
+          drifter.active = false;
+          this.shipDebris.push(new ShipDebris(this.scene, drifter.x, drifter.y, drifter.vx, drifter.vy, 0xff3366, drifter.radius));
+        }
+      }
+
+      // Destroy enemies hit by beam
+      for (const enemy of this.enemies) {
+        if (!enemy.active) continue;
+        const dist = beam.isHorizontal
+          ? Math.abs(enemy.y - beam.y1)
+          : Math.abs(enemy.x - beam.x1);
+        if (dist < halfBeam + enemy.radius) {
+          enemy.active = false;
+          this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), 0xff00ff, enemy.radius));
+          if (this.canDropBonusAt(enemy.x, enemy.y)) {
+            this.bonusDropPositions.push({
+              x: enemy.x, y: enemy.y,
+              vx: enemy.getVelocityX() * 0.45, vy: enemy.getVelocityY() * 0.45,
+              points: ENEMY_BONUS_POINTS,
+            });
+          }
+        }
+      }
+
+      // Destroy NPCs hit by beam
+      for (const npc of this.npcs) {
+        if (!npc.active) continue;
+        const dist = beam.isHorizontal
+          ? Math.abs(npc.y - beam.y1)
+          : Math.abs(npc.x - beam.x1);
+        if (dist < halfBeam + npc.radius) {
+          npc.active = false;
+          npc.killedByHazard = true;
         }
       }
     }

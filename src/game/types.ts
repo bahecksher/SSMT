@@ -9,6 +9,9 @@ export interface PhaseConfig {
   maxConcurrentDrifters: number;
   beamEnabled: boolean;
   beamFrequency: number;
+  beamBurstCount: number;
+  beamBurstDelay: number;
+  beamWidth: number;
   enemyEnabled: boolean;
   enemySpawnRate: number;
   maxConcurrentEnemies: number;

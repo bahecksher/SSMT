@@ -105,7 +105,7 @@ export class SalvageSystem {
     let dangerClose = false;
 
     for (const drifter of drifters) {
-      if (!drifter.active || !drifter.isMineable) continue;
+      if (!drifter.active || !drifter.isMineable || drifter.radiusScale < 1.5) continue;
 
       const dist = Phaser.Math.Distance.Between(
         this.player.x,

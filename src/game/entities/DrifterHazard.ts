@@ -198,7 +198,7 @@ export class DrifterHazard {
     const color = this.inverted ? 0x000000 : COLORS.HAZARD;
     const miningColor = this.inverted ? 0x000000 : 0xffaa00;
 
-    if (this.isMineable) {
+    if (this.isMineable && this.radiusScale >= 1.5) {
       // Mining zone - pulsing filled area
       const miningAlpha = 0.06 + Math.sin(this.miningPulse) * 0.03;
       g.fillStyle(miningColor, miningAlpha);

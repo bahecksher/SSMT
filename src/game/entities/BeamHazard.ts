@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS } from '../constants';
-import { BEAM_WARNING_DURATION, BEAM_ACTIVE_DURATION, BEAM_WIDTH } from '../data/tuning';
+import { BEAM_WARNING_DURATION, BEAM_ACTIVE_DURATION } from '../data/tuning';
 import { getLayout } from '../layout';
 
 export class BeamHazard {
@@ -9,6 +9,7 @@ export class BeamHazard {
   private lethal = false;
   private elapsed = 0;
   private totalDuration: number;
+  readonly width: number;
 
   // Line segment endpoints
   readonly x1: number;
@@ -17,7 +18,8 @@ export class BeamHazard {
   readonly y2: number;
   readonly isHorizontal: boolean;
 
-  constructor(scene: Phaser.Scene) {
+  constructor(scene: Phaser.Scene, width = 20) {
+    this.width = width;
     const layout = getLayout();
     // Randomly choose horizontal or vertical
     this.isHorizontal = Math.random() < 0.5;
@@ -72,7 +74,7 @@ export class BeamHazard {
       g.lineBetween(this.x1, this.y1, this.x2, this.y2);
 
       // Growing width indicator
-      const growWidth = BEAM_WIDTH * warningProgress * 0.5;
+      const growWidth = this.width * warningProgress * 0.5;
       g.lineStyle(growWidth, COLORS.BEAM, alpha * 0.2);
       g.lineBetween(this.x1, this.y1, this.x2, this.y2);
     } else {
@@ -81,15 +83,15 @@ export class BeamHazard {
       const fadeAlpha = activeProgress > 0.7 ? 1 - (activeProgress - 0.7) / 0.3 : 1;
 
       // Glow
-      g.lineStyle(BEAM_WIDTH * 2, COLORS.BEAM, 0.15 * fadeAlpha);
+      g.lineStyle(this.width * 2, COLORS.BEAM, 0.15 * fadeAlpha);
       g.lineBetween(this.x1, this.y1, this.x2, this.y2);
 
       // Core beam
-      g.lineStyle(BEAM_WIDTH, COLORS.BEAM, 0.9 * fadeAlpha);
+      g.lineStyle(this.width, COLORS.BEAM, 0.9 * fadeAlpha);
       g.lineBetween(this.x1, this.y1, this.x2, this.y2);
 
       // Bright center
-      g.lineStyle(BEAM_WIDTH * 0.3, 0xffffff, 0.7 * fadeAlpha);
+      g.lineStyle(this.width * 0.3, 0xffffff, 0.7 * fadeAlpha);
       g.lineBetween(this.x1, this.y1, this.x2, this.y2);
     }
   }

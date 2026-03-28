@@ -1,4 +1,4 @@
-import { BEAM_WIDTH, PLAYER_RADIUS } from '../data/tuning';
+import { PLAYER_RADIUS } from '../data/tuning';
 import { circleIntersectsPolygon, pointInPolygon } from '../utils/collision';
 import type { Player } from '../entities/Player';
 import type { DrifterHazard } from '../entities/DrifterHazard';
@@ -26,11 +26,10 @@ export class CollisionSystem {
   }
 
   checkBeams(beams: BeamHazard[]): boolean {
-    const killDist = BEAM_WIDTH / 2 + PLAYER_RADIUS;
-
     for (const beam of beams) {
       if (!beam.active || !beam.isLethal()) continue;
 
+      const killDist = beam.width / 2 + PLAYER_RADIUS;
       // For axis-aligned beams, distance check is simple
       if (beam.isHorizontal) {
         const dist = Math.abs(this.player.y - beam.y1);
