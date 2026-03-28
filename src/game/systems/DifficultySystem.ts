@@ -16,7 +16,7 @@ import { NPCShip } from '../entities/NPCShip';
 import { SHIELD_PICKUP_RADIUS } from '../entities/ShieldPickup';
 import { ShipDebris } from '../entities/ShipDebris';
 import { Overlays } from '../ui/Overlays';
-import { getLayout } from '../layout';
+import { getLayout, getArenaDensityScale } from '../layout';
 
 export class DifficultySystem {
   private scene: Phaser.Scene;
@@ -29,6 +29,7 @@ export class DifficultySystem {
   private bonusDropPositions: { x: number; y: number; vx: number; vy: number; points: number }[] = [];
   private bombDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private shipDebris: ShipDebris[] = [];
+  private scaledMaxDrifters = 0;
   private drifterTimer = 0;
   private beamTimer = 0;
   private beamBurstQueue = 0;
@@ -39,10 +40,17 @@ export class DifficultySystem {
   constructor(scene: Phaser.Scene, phase: number) {
     this.scene = scene;
     this.config = getPhaseConfig(phase);
+    this.updateDensityScale();
   }
 
   setPhase(phase: number): void {
     this.config = getPhaseConfig(phase);
+    this.updateDensityScale();
+  }
+
+  private updateDensityScale(): void {
+    const scale = getArenaDensityScale();
+    this.scaledMaxDrifters = Math.max(6, Math.round(this.config.maxConcurrentDrifters * scale));
   }
 
   getConfig(): PhaseConfig {
@@ -85,7 +93,7 @@ export class DifficultySystem {
 
   update(delta: number, playerX = 0, playerY = 0): void {
     this.drifterTimer += delta;
-    if (this.drifterTimer >= this.config.hazardSpawnRate && this.drifters.length < this.config.maxConcurrentDrifters) {
+    if (this.drifterTimer >= this.config.hazardSpawnRate && this.drifters.length < this.scaledMaxDrifters) {
       const speed = DRIFTER_SPEED_BASE * this.config.hazardSpeedMultiplier;
       const sizeScale = pickAsteroidSize(this.config.phaseNumber);
       const adjustedSpeed = speed * (1 / Math.sqrt(sizeScale));
@@ -374,7 +382,7 @@ export class DifficultySystem {
               if (!ast.active) continue;
               const childScale = ast.radiusScale * 0.55;
               const canSplit = childScale >= DrifterHazard.MIN_SPLIT_SCALE &&
-                this.drifters.length + newFragments.length < this.config.maxConcurrentDrifters + 8;
+                this.drifters.length + newFragments.length < this.scaledMaxDrifters + 8;
 
               if (canSplit) {
                 ast.active = false;

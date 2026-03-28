@@ -69,3 +69,12 @@ export function setLayoutSize(width: number, height: number): LayoutMetrics {
 export function getLayout(): LayoutMetrics {
   return layout;
 }
+
+// Reference arena area for density normalization (default 540×960 viewport)
+const REFERENCE_ARENA_AREA = 355_324;
+
+/** Returns 0–1 scale factor: 1.0 on reference (540×960) screens, lower on smaller arenas. */
+export function getArenaDensityScale(): number {
+  const area = layout.arenaWidth * layout.arenaHeight;
+  return Math.min(1, area / REFERENCE_ARENA_AREA);
+}

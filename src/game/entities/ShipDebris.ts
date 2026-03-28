@@ -2,9 +2,9 @@ import Phaser from 'phaser';
 import { getLayout } from '../layout';
 
 /** Number of fragments a destroyed ship breaks into. */
-const FRAGMENT_COUNT = 5;
+const FRAGMENT_COUNT = 3;
 /** How long fragments live before fading (ms). */
-const FRAGMENT_LIFETIME = 1800;
+const FRAGMENT_LIFETIME = 1000;
 /** Extra random scatter speed added to inherited velocity. */
 const SCATTER_SPEED = 60;
 /** Spin speed range (radians / sec). */

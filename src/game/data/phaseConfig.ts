@@ -35,12 +35,16 @@ export function pickAsteroidSize(phase: number): number {
 }
 
 export function getPhaseConfig(phase: number): PhaseConfig {
+  // Drifter count ramps phases 1-4, then caps once beams/enemies take over
+  const rawDrifterCap = Math.floor(4 + phase * 3 + Math.pow(phase, 1.6));
+  const drifterCap = phase >= 5 ? Math.min(rawDrifterCap, 22) : rawDrifterCap;
+
   return {
     phaseNumber: phase,
-    hazardSpawnRate: DRIFTER_SPAWN_RATE_BASE * Math.pow(DIFFICULTY_SPAWN_SCALE, phase - 1),
+    // Spawn rate plateaus at phase 4 level — difficulty shifts to lethality, not quantity
+    hazardSpawnRate: DRIFTER_SPAWN_RATE_BASE * Math.pow(DIFFICULTY_SPAWN_SCALE, Math.min(phase - 1, 3)),
     hazardSpeedMultiplier: 1 + DIFFICULTY_SPEED_SCALE * (phase - 1),
-    // Gentler ramp: 6, 10, 15, 21, 28...
-    maxConcurrentDrifters: Math.floor(4 + phase * 3 + Math.pow(phase, 1.6)),
+    maxConcurrentDrifters: drifterCap,
     beamEnabled: phase >= 5,
     beamFrequency: phase >= 5 ? Math.max(2500, 10000 - (phase - 5) * 1000) : 0,
     beamBurstCount: phase >= 8 ? Math.min(2 + Math.floor((phase - 8) * 0.5), 5) : 2,
