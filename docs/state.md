@@ -1,23 +1,25 @@
 # State
-_Last updated: 2026-03-27 1826_
+_Last updated: 2026-03-27 2127_
 
 ## Current focus
-UI polish pass and gate rework — fixing scaling issues from the responsive layout change and reworking gate visuals for better anticipation.
+UI polish and visual additions — fixing responsive scaling issues, reworking gate visuals, adding background geo-sphere, and updating dialogue.
 
 ## What's working
 - Full scene flow: Boot -> Menu -> Game with in-scene results
 - Core salvage/extract loop, hazards, leaderboard, comms, and HUD remain intact
 - Responsive layout drives arena bounds, starfields, gate placement, spawns, overlays, and key UI positioning
-- HUD credits text scaled down to 14px to fit responsive viewports
-- Pause button relocated to top-right corner with compact 44x28 design
-- Pause menu panel enlarged (0.34 height) so RESUME, ABANDON RUN, and hint text all fit inside the border
+- HUD credits text scaled to 14px; pause button is a compact top-right `||` control
 - Gate timer removed from HUD
-- "BEST" score removed from destroyed/extracted results overlay
-- Asteroid hitboxes now use circle-polygon intersection (accounts for player radius), fixing visual mismatch on large asteroids
-- Gate preview: large closing circle appears 10s before gate activates, giving the player time to navigate toward it
-- Gate active: flickering on/off (accelerating blink) for 3s extractable window, with white flash on blink-out
-- Comms trigger when gate becomes extractable, not when it first appears
-- Rotating wireframe geo-sphere behind the arena (bottom-right corner, partially visible)
+- Pause menu panel fits all content (RESUME, ABANDON RUN, hint) on all screen sizes
+- Results screen: no "BEST" score, comms/retry/menu anchored to avoid overlap on short screens
+- Menu layout: how-to-play and TAP TO START anchored from bottom; leaderboard rows capped to available space
+- Gate preview: large closing circle appears 10s before activation
+- Gate active: salvage-style flicker for 3s extractable window with white flash on dim frames
+- Comms trigger when gate becomes extractable
+- Asteroid hitboxes use circle-polygon intersection (accounts for player radius)
+- Rotating wireframe geo-sphere behind arena on both menu and game scenes (bottom-right corner)
+- Starfield drifts east-to-west
+- All Slick and Regent dialogue updated; Regent `threatDetected` triggers sometimes at phase 2
 - Player callsigns use `AAA-###` format
 - Production build passes
 
@@ -42,25 +44,27 @@ Nothing active.
 - Build still warns about large chunk size because Phaser is bundled as one large client chunk
 
 ## Next actions
-1. Playtest gate closing-circle preview and flickering active state for readability and feel
-2. Playtest asteroid hitbox accuracy with the circle-polygon collision
-3. Playtest pause button in top-right on desktop and mobile
+1. Playtest gate closing-circle preview and flickering active state on desktop and mobile
+2. Playtest death/extraction result screen layout on multiple phone sizes
+3. Playtest menu leaderboard layout on short/wide screens
 
 ## Active plan
 None — working from ad-hoc polish requests.
 
 ## How to verify
 1. Run `npm.cmd run build` or `npm.cmd run dev -- --host 0.0.0.0`
-2. Start a run and verify credits text is smaller, pause button is top-right
+2. Confirm credits text is small, pause button is top-right `||`
 3. Wait ~20s and watch the closing circle appear around the gate location
-4. When the circle reaches the gate, confirm it starts flickering with white flashes on blink-out
+4. When the circle reaches the gate, confirm it starts flickering with white flashes
 5. Fly into the flickering gate to confirm extraction works during the 3s window
-6. Die and confirm no "BEST" score on the destroyed overlay
-7. Confirm the wireframe geo-sphere is visible in the bottom-right corner behind the arena
-8. Pause and confirm all content fits inside the pause panel
+6. Die and confirm comms don't overlap TAP TO RETRY; no "BEST" score shown
+7. Confirm the wireframe geo-sphere is visible in the bottom-right corner on both menu and game
+8. Confirm starfield drifts right-to-left
+9. On a phone, confirm menu leaderboard and how-to-play don't overlap
+10. Pause and confirm all content fits inside the pause panel
 
 ## Recent logs
-- docs/log/2026-03-27 1826 UI Polish and Gate Rework.md — HUD fixes, gate rework with closing-circle preview and flicker, geo-sphere background
-- docs/log/2026-03-27 1652 Callsign Format Restore.md — Restored three-letter arcade callsigns and reformatted them as `AAA-###`
-- docs/log/2026-03-27 1646 Post-run Progression Freeze.md — Froze phases, gates, spawns, and reactive lines after death/extraction while keeping background motion alive
-- docs/log/2026-03-27 1641 Crawl Pause Behavior.md — Replaced hard pause and resume countdown with an ultra-slow danger-live pause state
+- docs/log/2026-03-27 2127 UI Polish and Visual Additions.md — Full session: HUD fixes, gate rework, geo-sphere, dialogue updates, phone layout fixes
+- docs/log/2026-03-27 1652 Callsign Format Restore.md — Restored three-letter arcade callsigns
+- docs/log/2026-03-27 1646 Post-run Progression Freeze.md — Froze phases/gates/spawns after death/extraction
+- docs/log/2026-03-27 1641 Crawl Pause Behavior.md — Ultra-slow danger-live pause state

@@ -884,9 +884,10 @@ export class GameScene extends Phaser.Scene {
     const centerX = layout.centerX;
     const cause = data.cause;
     const isDeath = cause === 'death';
-    const deathCommY = layout.gameHeight * 0.53;
+    const deathCommY = layout.gameHeight * 0.48;
     const panelTop = layout.gameHeight * 0.18;
-    const panelHeight = layout.gameHeight * (isDeath ? 0.64 : 0.58);
+    const panelBottom = layout.gameHeight - 50;
+    const panelHeight = panelBottom - panelTop;
     const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
     const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
 
@@ -926,7 +927,7 @@ export class GameScene extends Phaser.Scene {
       this.regentComm.resetLayout();
     }
 
-    const retryText = this.add.text(centerX, isDeath ? layout.gameHeight * 0.64 : layout.gameHeight * 0.55, 'TAP TO RETRY', {
+    const retryText = this.add.text(centerX, panelBottom - 68, 'TAP TO RETRY', {
       fontFamily: 'monospace',
       fontSize: '24px',
       color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
@@ -942,7 +943,7 @@ export class GameScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    const menuText = this.add.text(centerX, isDeath ? layout.gameHeight * 0.71 : layout.gameHeight * 0.63, 'MENU', {
+    const menuText = this.add.text(centerX, panelBottom - 30, 'MENU', {
       fontFamily: 'monospace',
       fontSize: '18px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
