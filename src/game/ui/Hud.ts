@@ -7,11 +7,13 @@ export class Hud {
   private bestText: Phaser.GameObjects.Text;
   private phaseText: Phaser.GameObjects.Text;
   private shieldText: Phaser.GameObjects.Text;
+  private bombText: Phaser.GameObjects.Text;
 
   private lastScore = -1;
   private lastBest = -1;
   private lastPhase = -1;
   private lastShield = false;
+  private lastBomb = false;
 
   constructor(scene: Phaser.Scene) {
     const layout = getLayout();
@@ -41,9 +43,15 @@ export class Hud {
       fontSize: '12px',
       color: '#44aaff',
     }).setDepth(100);
+
+    this.bombText = scene.add.text(16, 50, '', {
+      ...textStyle,
+      fontSize: '12px',
+      color: '#ff8800',
+    }).setDepth(100);
   }
 
-  update(score: number, best: number, phase: number = 1, hasShield = false): void {
+  update(score: number, best: number, phase: number = 1, hasShield = false, hasBomb = false): void {
     const roundedScore = Math.floor(score);
     if (roundedScore !== this.lastScore) {
       this.scoreText.setText(`CREDITS: ${roundedScore}`);
@@ -65,6 +73,11 @@ export class Hud {
       this.shieldText.setText(hasShield ? 'SHIELD' : '');
       this.lastShield = hasShield;
     }
+
+    if (hasBomb !== this.lastBomb) {
+      this.bombText.setText(hasBomb ? 'BOMB [TAP]' : '');
+      this.lastBomb = hasBomb;
+    }
   }
 
   destroy(): void {
@@ -72,5 +85,6 @@ export class Hud {
     this.bestText.destroy();
     this.phaseText.destroy();
     this.shieldText.destroy();
+    this.bombText.destroy();
   }
 }

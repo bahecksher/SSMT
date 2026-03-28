@@ -1,8 +1,40 @@
 import Phaser from 'phaser';
 import { COLORS } from '../constants';
 import { getLayout } from '../layout';
+import { getSettings } from '../systems/SettingsSystem';
 
 export class Overlays {
+  /** Shake the camera if screen shake is enabled in settings. */
+  static screenShake(scene: Phaser.Scene, intensity = 0.008, duration = 200): void {
+    if (!getSettings().screenShake) return;
+    scene.cameras.main.shake(duration, intensity);
+  }
+
+  /** Big white flash + heavy shake for bomb detonation / game entry / extraction.
+   *  Flash holds at full white briefly, then fades out to reveal the board. */
+  static bombFlash(scene: Phaser.Scene, onComplete?: () => void): void {
+    const layout = getLayout();
+    const flash = scene.add.graphics().setDepth(300);
+    flash.fillStyle(0xffffff, 1);
+    flash.fillRect(0, 0, layout.gameWidth, layout.gameHeight);
+
+    Overlays.screenShake(scene, 0.018, 400);
+
+    // Hold full white for 200ms, then fade out over 1000ms
+    scene.time.delayedCall(200, () => {
+      scene.tweens.add({
+        targets: flash,
+        alpha: 0,
+        duration: 1000,
+        ease: 'Cubic.easeOut',
+        onComplete: () => {
+          flash.destroy();
+          onComplete?.();
+        },
+      });
+    });
+  }
+
   static deathFlash(scene: Phaser.Scene, onComplete: () => void): void {
     const layout = getLayout();
     const flash = scene.add.graphics().setDepth(200);

@@ -1,23 +1,32 @@
 # State
-_Last updated: 2026-03-27 2127_
+_Last updated: 2026-03-27 2308_
 
 ## Current focus
-UI polish and visual additions — fixing responsive scaling issues, reworking gate visuals, adding background geo-sphere, and updating dialogue.
+Phase 6 polish complete — board wipe, debug menu, salvage rework, tuning.
 
 ## What's working
 - Full scene flow: Boot -> Menu -> Game with in-scene results
 - Core salvage/extract loop, hazards, leaderboard, comms, and HUD remain intact
 - Responsive layout drives arena bounds, starfields, gate placement, spawns, overlays, and key UI positioning
 - HUD credits text scaled to 14px; pause button is a compact top-right `||` control
-- Gate timer removed from HUD
-- Pause menu panel fits all content (RESUME, ABANDON RUN, hint) on all screen sizes
-- Results screen: no "BEST" score, comms/retry/menu anchored to avoid overlap on short screens
-- Menu layout: how-to-play and TAP TO START anchored from bottom; leaderboard rows capped to available space
+- Pause menu panel includes settings toggles (screen shake, scanlines) and a debug spawn section
+- Menu scene has settings toggles in top-right corner
+- Settings persist to localStorage via SettingsSystem
 - Gate preview: large closing circle appears 10s before activation
 - Gate active: salvage-style flicker for 3s extractable window with white flash on dim frames
-- Comms trigger when gate becomes extractable
+- Bomb power-up: dropped by enemies (25% chance), 1.5s collection delay, BOMB button in bottom-right when held
+- Board wipe effect (full white flash, 200ms hold, 1s fade-out) fires on game start, extraction, and bomb detonation — clears all entities with shatter debris
+- NPC killed by player shield now drops a bonus point pickup (1.5s collection delay)
+- Salvage redesigned as modular space-station rectangles (2-3 perpendicular modules, edge-to-edge)
+- Salvage visual size 80px normal / 45px rare — larger than biggest asteroids
+- Salvage collection radius reduced to 80 (from 120)
+- Asteroid mining ring multiplier reduced to 1.8x (from 3.5x)
+- Extraction dialogue always triggers (was 55% chance)
+- Screen shake on death, extraction, game entry, and bomb detonation (toggleable in settings)
+- Scanline overlay toggleable in settings
+- Debug spawn menu in pause screen: spawn shields, points, bombs, salvage, rare salvage, small/large/mineable asteroids
 - Asteroid hitboxes use circle-polygon intersection (accounts for player radius)
-- Rotating wireframe geo-sphere behind arena on both menu and game scenes (bottom-right corner)
+- Rotating wireframe geo-sphere behind arena on both menu and game scenes
 - Starfield drifts east-to-west
 - All Slick and Regent dialogue updated; Regent `threatDetected` triggers sometimes at phase 2
 - Player callsigns use `AAA-###` format
@@ -34,8 +43,6 @@ Nothing active.
 - Gate flicker speed and closing-circle timing may need feel tuning after playtests
 - Beam hazards still span full screen width/height, not clipped to arena
 - No audio or voiced delivery for Slick/Regent yet
-- No settings screen (Phase 6)
-- No screen shake on death or extraction flash polish
 - NPC spawn rates, bonus drop values/chances, and pickup targeting may still need tuning
 - Save key changed to `ssmt_save` so older local best scores are not migrated
 - `node`/`npm` not on PowerShell PATH; use `npm.cmd` or set PATH explicitly
@@ -44,27 +51,25 @@ Nothing active.
 - Build still warns about large chunk size because Phaser is bundled as one large client chunk
 
 ## Next actions
-1. Playtest gate closing-circle preview and flickering active state on desktop and mobile
-2. Playtest death/extraction result screen layout on multiple phone sizes
-3. Playtest menu leaderboard layout on short/wide screens
+1. Playtest salvage size/collection radius feel across devices
+2. Playtest mining ring (1.8x) proximity mechanic
+3. Consider audio implementation (Phase 6 remaining)
 
 ## Active plan
-None — working from ad-hoc polish requests.
+None — working from ad-hoc Phase 6 requests.
 
 ## How to verify
 1. Run `npm.cmd run build` or `npm.cmd run dev -- --host 0.0.0.0`
-2. Confirm credits text is small, pause button is top-right `||`
-3. Wait ~20s and watch the closing circle appear around the gate location
-4. When the circle reaches the gate, confirm it starts flickering with white flashes
-5. Fly into the flickering gate to confirm extraction works during the 3s window
-6. Die and confirm comms don't overlap TAP TO RETRY; no "BEST" score shown
-7. Confirm the wireframe geo-sphere is visible in the bottom-right corner on both menu and game
-8. Confirm starfield drifts right-to-left
-9. On a phone, confirm menu leaderboard and how-to-play don't overlap
-10. Pause and confirm all content fits inside the pause panel
+2. Start a game — confirm white flash + shatter debris + board clear at countdown end
+3. Salvage should appear as large modular rectangles, clearly bigger than asteroids
+4. Salvage collection ring should be smaller than before (80px)
+5. Mineable asteroids should have a tighter mining ring (1.8x body)
+6. Kill enemies — bonus pickups drop with 1.5s delay; shield-kill an NPC — bonus drops too
+7. Collect a bomb, detonate — all entities shatter into debris + white flash
+8. Extract at gate — Slick dialogue always appears, entities shatter, flash + green wipe
+9. Pause menu has DEBUG SPAWN section to spawn test entities
 
 ## Recent logs
-- docs/log/2026-03-27 2127 UI Polish and Visual Additions.md — Full session: HUD fixes, gate rework, geo-sphere, dialogue updates, phone layout fixes
-- docs/log/2026-03-27 1652 Callsign Format Restore.md — Restored three-letter arcade callsigns
-- docs/log/2026-03-27 1646 Post-run Progression Freeze.md — Froze phases/gates/spawns after death/extraction
-- docs/log/2026-03-27 1641 Crawl Pause Behavior.md — Ultra-slow danger-live pause state
+- docs/log/2026-03-27 2308 Phase 6 Polish Salvage and Tuning.md — Salvage rework, board wipe shatter, NPC bonus drops, mining ring tuning, extraction dialogue fix
+- docs/log/2026-03-27 2224 Board Wipe and Debug Menu.md — Board wipe effect on bomb/start/extract, debug spawn menu
+- docs/log/2026-03-27 2152 Phase 6 Settings Bomb Shake.md — Settings, bomb power-up, screen shake, collection delays

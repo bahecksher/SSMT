@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS } from '../constants';
-import { BONUS_PICKUP_LIFETIME, BONUS_PICKUP_RADIUS } from '../data/tuning';
+import { BONUS_PICKUP_LIFETIME, BONUS_PICKUP_RADIUS, BONUS_COLLECTION_DELAY } from '../data/tuning';
 
 export class BonusPickup {
   graphic: Phaser.GameObjects.Graphics;
@@ -14,16 +14,23 @@ export class BonusPickup {
 
   private pulse = 0;
   private life = BONUS_PICKUP_LIFETIME;
+  private collectionDelay: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, points: number, vx = 0, vy = 0) {
+  constructor(scene: Phaser.Scene, x: number, y: number, points: number, vx = 0, vy = 0, collectionDelay = BONUS_COLLECTION_DELAY) {
     this.x = x;
     this.y = y;
     this.points = points;
     this.vx = vx;
     this.vy = vy;
+    this.collectionDelay = collectionDelay;
     this.graphic = scene.add.graphics().setDepth(8);
     this.graphic.setPosition(this.x, this.y);
     this.draw();
+  }
+
+  /** Returns true when the pickup can be collected. */
+  isCollectable(): boolean {
+    return this.collectionDelay <= 0;
   }
 
   update(delta: number): void {
@@ -31,6 +38,9 @@ export class BonusPickup {
 
     const dt = delta / 1000;
     this.life -= delta;
+    if (this.collectionDelay > 0) {
+      this.collectionDelay -= delta;
+    }
     if (this.life <= 0) {
       this.active = false;
       return;
@@ -48,7 +58,8 @@ export class BonusPickup {
   private draw(): void {
     const g = this.graphic;
     g.clear();
-    g.setAlpha(1);
+    const collectable = this.isCollectable();
+    g.setAlpha(collectable ? 1 : 0.35 + Math.sin(this.pulse * 8) * 0.15);
 
     const glow = 0.25 + Math.sin(this.pulse) * 0.12;
     const ringRadius = this.radius + 4 + Math.sin(this.pulse * 1.3) * 2;

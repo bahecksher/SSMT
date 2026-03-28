@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { PhaseConfig } from '../types';
 import {
+  BOMB_DROP_CHANCE,
   BONUS_PICKUP_RADIUS,
   DRIFTER_MINEABLE_CHANCE,
   DRIFTER_SPEED_BASE,
@@ -27,6 +28,7 @@ export class DifficultySystem {
   private npcs: NPCShip[] = [];
   private deadNPCPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private bonusDropPositions: { x: number; y: number; vx: number; vy: number; points: number }[] = [];
+  private bombDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private shipDebris: ShipDebris[] = [];
   private drifterTimer = 0;
   private beamTimer = 0;
@@ -71,6 +73,12 @@ export class DifficultySystem {
   consumeBonusDrops(): { x: number; y: number; vx: number; vy: number; points: number }[] {
     const drops = this.bonusDropPositions;
     this.bonusDropPositions = [];
+    return drops;
+  }
+
+  consumeBombDrops(): { x: number; y: number; vx: number; vy: number }[] {
+    const drops = this.bombDropPositions;
+    this.bombDropPositions = [];
     return drops;
   }
 
@@ -158,6 +166,14 @@ export class DifficultySystem {
               vy: enemy.getVelocityY() * 0.45,
               points: ENEMY_BONUS_POINTS,
             });
+            if (Math.random() < BOMB_DROP_CHANCE) {
+              this.bombDropPositions.push({
+                x: enemy.x,
+                y: enemy.y,
+                vx: enemy.getVelocityX() * 0.3,
+                vy: enemy.getVelocityY() * 0.3,
+              });
+            }
           }
         }
         enemy.destroy();

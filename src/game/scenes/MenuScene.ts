@@ -12,6 +12,7 @@ import { DRIFTER_SPEED_BASE } from '../data/tuning';
 import { pickAsteroidSize } from '../data/phaseConfig';
 import { getSlickLine } from '../data/slickLines';
 import { getLayout, setLayoutSize } from '../layout';
+import { getSettings, updateSettings } from '../systems/SettingsSystem';
 
 type Period = 'daily' | 'weekly';
 
@@ -231,6 +232,41 @@ export class MenuScene extends Phaser.Scene {
       align: 'center',
       lineSpacing: 6,
     }).setOrigin(0.5).setDepth(uiDepth);
+
+    // Settings toggles at the top-right
+    const settings = getSettings();
+    const settingsX = layout.gameWidth - 38;
+
+    const shakeBtn = this.add.text(settingsX, layout.gameHeight * 0.08, settings.screenShake ? 'SHAKE:ON' : 'SHAKE:OFF', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: settings.screenShake ? gateColor : hudColor,
+      align: 'right',
+    }).setOrigin(1, 0.5).setDepth(uiDepth + 1).setInteractive({ useHandCursor: true });
+    shakeBtn.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      p.event.stopPropagation();
+      const s = getSettings();
+      updateSettings({ screenShake: !s.screenShake });
+      const u = getSettings();
+      shakeBtn.setText(u.screenShake ? 'SHAKE:ON' : 'SHAKE:OFF');
+      shakeBtn.setColor(u.screenShake ? gateColor : hudColor);
+    });
+
+    const scanBtn = this.add.text(settingsX, layout.gameHeight * 0.08 + 18, settings.scanlines ? 'SCAN:ON' : 'SCAN:OFF', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: settings.scanlines ? gateColor : hudColor,
+      align: 'right',
+    }).setOrigin(1, 0.5).setDepth(uiDepth + 1).setInteractive({ useHandCursor: true });
+    scanBtn.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      p.event.stopPropagation();
+      const s = getSettings();
+      updateSettings({ scanlines: !s.scanlines });
+      const u = getSettings();
+      scanBtn.setText(u.scanlines ? 'SCAN:ON' : 'SCAN:OFF');
+      scanBtn.setColor(u.scanlines ? gateColor : hudColor);
+      this.hologramOverlay.setEnabled(u.scanlines);
+    });
 
     this.tweens.add({
       targets: tapText,

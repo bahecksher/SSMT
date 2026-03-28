@@ -7,7 +7,7 @@ export const PLAYER_DISTANCE_SCALE = 3.5;  // velocity = distance * this factor
 export const PLAYER_SHIELD_BREAK_INVULN_MS = 500;
 
 // Salvage
-export const SALVAGE_RADIUS = 120;
+export const SALVAGE_RADIUS = 80;
 export const SALVAGE_POINTS_PER_SECOND = 10;
 export const SALVAGE_POINTS_MIN = 2;
 export const SALVAGE_POINTS_MAX = 12;
@@ -27,7 +27,7 @@ export const EXIT_GATE_INSET = 60;
 export const DRIFTER_SPEED_BASE = 70;
 export const DRIFTER_SPEED_MAX = 200;  // hard cap after bounces
 export const DRIFTER_RADIUS = 16;
-export const DRIFTER_MINING_RADIUS_MULT = 3.5;  // mining zone = radius * this
+export const DRIFTER_MINING_RADIUS_MULT = 1.8;  // mining zone = radius * this
 export const DRIFTER_MINING_POINTS_MIN = 1;    // pts/sec at outer edge of mining zone
 export const DRIFTER_MINING_POINTS_MAX = 15;   // pts/sec when hugging the asteroid body
 export const DRIFTER_MINEABLE_CHANCE = 0.35;   // share of asteroids that show a mining ring and can be mined
@@ -67,6 +67,13 @@ export const NPC_BONUS_POINTS = 70;
 // Bonus point pickups
 export const BONUS_PICKUP_RADIUS = 12;
 export const BONUS_PICKUP_LIFETIME = 9000;
+
+// Bomb pickup
+export const BOMB_PICKUP_RADIUS = 14;
+export const BOMB_PICKUP_LIFETIME = 12000;
+export const BOMB_DROP_CHANCE = 0.25;         // 25% chance enemy drops a bomb
+export const BOMB_COLLECTION_DELAY = 1500;    // 1.5s before it can be collected
+export const BONUS_COLLECTION_DELAY = 1500;   // 1.5s before bonus can be collected
 
 // Difficulty
 export const DIFFICULTY_SPEED_SCALE = 0.18;

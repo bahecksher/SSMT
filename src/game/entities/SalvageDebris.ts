@@ -50,34 +50,62 @@ export class SalvageDebris {
 
   private angle = 0;
   private spinSpeed: number;
-  private vertices: [number, number][];
-  private innerLines: [number, number, number, number][];
+  /** Each module: [offsetX, offsetY, halfW, halfH, angleOffset] */
+  private rects: [number, number, number, number, number][];
 
-  private static generateVertices(baseRadius: number): [number, number][] {
-    const count = Phaser.Math.Between(6, 10);
-    const verts: [number, number][] = [];
-    for (let i = 0; i < count; i++) {
-      const a = (Math.PI * 2 / count) * i;
-      const dist = baseRadius * Phaser.Math.FloatBetween(0.6, 1.0);
-      verts.push([Math.cos(a) * dist, Math.sin(a) * dist]);
-    }
-    return verts;
-  }
-
-  private static generateInnerLines(baseRadius: number): [number, number, number, number][] {
-    const lines: [number, number, number, number][] = [];
+  /**
+   * Generate 2-3 rectangular modules arranged like space station segments.
+   * Each module attaches to an edge of the previous one at a roughly
+   * perpendicular angle, so the whole structure looks modular.
+   */
+  private static generateRects(baseRadius: number): [number, number, number, number, number][] {
     const count = Phaser.Math.Between(2, 3);
-    for (let i = 0; i < count; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const len = baseRadius * Phaser.Math.FloatBetween(0.4, 0.8);
-      lines.push([
-        Math.cos(a) * len * 0.3,
-        Math.sin(a) * len * 0.3,
-        Math.cos(a) * len,
-        Math.sin(a) * len,
-      ]);
+    const rects: [number, number, number, number, number][] = [];
+
+    // First module — the core, centered at origin
+    const hw0 = baseRadius * Phaser.Math.FloatBetween(0.55, 0.8);
+    const hh0 = baseRadius * Phaser.Math.FloatBetween(0.2, 0.35);
+    rects.push([0, 0, hw0, hh0, 0]);
+
+    for (let i = 1; i < count; i++) {
+      const prev = rects[i - 1];
+      const [pOx, pOy, pHw, pHh, pA] = prev;
+
+      // New module dimensions
+      const hw = baseRadius * Phaser.Math.FloatBetween(0.35, 0.7);
+      const hh = baseRadius * Phaser.Math.FloatBetween(0.15, 0.3);
+
+      // Pick a random edge of the previous rect to attach to (top/bottom/left/right)
+      const edge = Phaser.Math.Between(0, 3);
+      // Perpendicular angle: ±90° from parent, with slight variance
+      const perpAngle = pA + (Math.PI / 2) * (Math.random() < 0.5 ? 1 : -1)
+        + Phaser.Math.FloatBetween(-0.2, 0.2);
+
+      let ox: number;
+      let oy: number;
+      switch (edge) {
+        case 0: // attach to right edge
+          ox = pOx + pHw + hw * 0.7;
+          oy = pOy + Phaser.Math.FloatBetween(-pHh * 0.5, pHh * 0.5);
+          break;
+        case 1: // attach to left edge
+          ox = pOx - pHw - hw * 0.7;
+          oy = pOy + Phaser.Math.FloatBetween(-pHh * 0.5, pHh * 0.5);
+          break;
+        case 2: // attach to bottom edge
+          ox = pOx + Phaser.Math.FloatBetween(-pHw * 0.5, pHw * 0.5);
+          oy = pOy + pHh + hh * 0.7;
+          break;
+        default: // attach to top edge
+          ox = pOx + Phaser.Math.FloatBetween(-pHw * 0.5, pHw * 0.5);
+          oy = pOy - pHh - hh * 0.7;
+          break;
+      }
+
+      rects.push([ox, oy, hw, hh, perpAngle]);
     }
-    return lines;
+
+    return rects;
   }
 
   constructor(scene: Phaser.Scene, config?: SalvageDebrisConfig) {
@@ -91,10 +119,9 @@ export class SalvageDebris {
     this.maxHp = SALVAGE_MAX_HP * (this.isRare ? 0.5 : 1);
     this.hp = this.maxHp;
 
-    const shapeRadius = this.isRare ? 10 : 20;
-    this.vertices = SalvageDebris.generateVertices(shapeRadius);
-    this.innerLines = SalvageDebris.generateInnerLines(shapeRadius);
-    this.spinSpeed = Phaser.Math.FloatBetween(0.3, 0.8) * (Math.random() < 0.5 ? 1 : -1);
+    const shapeRadius = this.isRare ? 45 : 80;
+    this.rects = SalvageDebris.generateRects(shapeRadius);
+    this.spinSpeed = Phaser.Math.FloatBetween(0.15, 0.45) * (Math.random() < 0.5 ? 1 : -1);
 
     // Spawn from a random screen edge, aimed at the interior
     const edge = Phaser.Math.Between(0, 3);
@@ -219,57 +246,68 @@ export class SalvageDebris {
 
     const color = this.inverted ? 0x000000 : (this.isRare ? 0xff44ff : COLORS.SALVAGE);
 
-    // Randomized polygon shape, rotated (stroke-based hologram)
-    g.lineStyle(1.5, color, 0.9);
-    g.beginPath();
-    for (let i = 0; i < this.vertices.length; i++) {
-      const [rx, ry] = rotatePoint(this.vertices[i][0], this.vertices[i][1], this.angle);
-      if (i === 0) g.moveTo(rx, ry);
-      else g.lineTo(rx, ry);
-    }
-    g.closePath();
-    g.strokePath();
+    // Layered rectangles — each at its own offset and angle
+    for (let ri = 0; ri < this.rects.length; ri++) {
+      const [ox, oy, hw, hh, aOff] = this.rects[ri];
+      const rectAngle = this.angle + aOff;
+      const corners: [number, number][] = [
+        [-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh],
+      ];
 
-    // Subtle hologram fill
-    g.fillStyle(color, 0.05);
-    g.beginPath();
-    for (let i = 0; i < this.vertices.length; i++) {
-      const [rx, ry] = rotatePoint(this.vertices[i][0], this.vertices[i][1], this.angle);
-      if (i === 0) g.moveTo(rx, ry);
-      else g.lineTo(rx, ry);
-    }
-    g.closePath();
-    g.fillPath();
+      // Rotate corners and offset
+      const worldCorners = corners.map(([cx, cy]) => {
+        const [rx, ry] = rotatePoint(cx, cy, rectAngle);
+        return [rx + rotatePoint(ox, oy, this.angle)[0], ry + rotatePoint(ox, oy, this.angle)[1]] as [number, number];
+      });
 
-    // Inner detail lines
-    g.lineStyle(1, color, 0.3);
-    for (const line of this.innerLines) {
-      const [x1, y1] = rotatePoint(line[0], line[1], this.angle);
-      const [x2, y2] = rotatePoint(line[2], line[3], this.angle);
-      g.lineBetween(x1, y1, x2, y2);
+      // Subtle hologram fill (deeper layers dimmer)
+      const layerAlpha = 0.04 + (ri / this.rects.length) * 0.04;
+      g.fillStyle(color, layerAlpha);
+      g.beginPath();
+      for (let i = 0; i < worldCorners.length; i++) {
+        if (i === 0) g.moveTo(worldCorners[i][0], worldCorners[i][1]);
+        else g.lineTo(worldCorners[i][0], worldCorners[i][1]);
+      }
+      g.closePath();
+      g.fillPath();
+
+      // Stroke outline
+      const strokeAlpha = 0.5 + (ri / this.rects.length) * 0.4;
+      g.lineStyle(1.2, color, strokeAlpha);
+      g.beginPath();
+      for (let i = 0; i < worldCorners.length; i++) {
+        if (i === 0) g.moveTo(worldCorners[i][0], worldCorners[i][1]);
+        else g.lineTo(worldCorners[i][0], worldCorners[i][1]);
+      }
+      g.closePath();
+      g.strokePath();
+
+      // Cross-brace detail on the largest rect
+      if (ri === this.rects.length - 1) {
+        g.lineStyle(0.8, color, 0.25);
+        g.lineBetween(worldCorners[0][0], worldCorners[0][1], worldCorners[2][0], worldCorners[2][1]);
+        g.lineBetween(worldCorners[1][0], worldCorners[1][1], worldCorners[3][0], worldCorners[3][1]);
+      }
     }
 
     // Center dot
-    g.fillStyle(color, 0.4);
+    g.fillStyle(color, 0.5);
     g.fillCircle(0, 0, this.isRare ? 2 : 3);
 
     // HP bar (shows when damaged)
     if (this.hp < this.maxHp) {
-      const barW = 24;
+      const barW = 40;
       const barH = 3;
-      const barY = (this.isRare ? 10 : 20) + 8;
+      const barY = (this.isRare ? 45 : 80) + 8;
       const hpFrac = Math.max(0, this.hp / this.maxHp);
 
-      // Background
       g.fillStyle(0x000000, 0.5);
       g.fillRect(-barW / 2, barY, barW, barH);
 
-      // Fill — green to red
       const barColor = hpFrac > 0.5 ? COLORS.SALVAGE : (hpFrac > 0.25 ? 0xffaa00 : COLORS.HAZARD);
       g.fillStyle(barColor, 0.8);
       g.fillRect(-barW / 2, barY, barW * hpFrac, barH);
 
-      // Border
       g.lineStyle(0.5, 0xffffff, 0.3);
       g.strokeRect(-barW / 2, barY, barW, barH);
     }
@@ -321,11 +359,17 @@ export class SalvageDebris {
     return d;
   }
 
-  /** Returns polygon vertices in world space (rotated + translated). */
+  /** Returns corners of the outermost rect in world space. */
   getWorldVertices(): [number, number][] {
-    return this.vertices.map(([vx, vy]) => {
-      const [rx, ry] = rotatePoint(vx, vy, this.angle);
-      return [this.x + rx, this.y + ry] as [number, number];
+    if (this.rects.length === 0) return [];
+    const last = this.rects[this.rects.length - 1];
+    const [ox, oy, hw, hh, aOff] = last;
+    const rectAngle = this.angle + aOff;
+    const corners: [number, number][] = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+    return corners.map(([cx, cy]) => {
+      const [rx, ry] = rotatePoint(cx, cy, rectAngle);
+      const [oRx, oRy] = rotatePoint(ox, oy, this.angle);
+      return [this.x + rx + oRx, this.y + ry + oRy] as [number, number];
     });
   }
 

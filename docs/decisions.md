@@ -116,3 +116,27 @@ After death or extraction, phase timers, gate progression, spawns, and reactive 
 
 ### 2026-03-27 - Callsign format restored to AAA-###
 Player identity now uses three editable uppercase letters plus a persistent three-digit suffix, displayed as `AAA-###`. Existing saved callsigns migrate by preserving available letters and the last three digits, padding a missing third letter when needed.
+
+### 2026-03-27 - Phase 6: Settings, bomb power-up, screen shake, collection delays
+Settings system persists screen shake and scanline toggles to localStorage. Accessible from both the pause menu and the main menu. Bomb power-up drops from enemies (25% chance) with a 1.5s collection delay; once collected, a BOMB button appears in the bottom-right. Detonation clears all entities except the player with a white flash + camera shake. The same 1.5s collection delay applies to bonus point pickups from enemies. Flash+shake fires on game entry, extraction, and bomb detonation. Death triggers a screen shake.
+
+### 2026-03-27 - Board wipe: full white flash with hold + fade on bomb, game start, and extraction
+The board wipe effect (white flash at full opacity, 150ms hold, 600ms fade-out) now fires on bomb detonation, game start (countdown "GO"), and successful extraction. All hazards, enemies, salvage, and pickups are cleared in each case. New salvage respawns after 800ms on bomb/game-start; extraction transitions to results.
+
+### 2026-03-27 - Debug spawn menu in pause screen
+A "DEBUG SPAWN" section in the pause menu lets the player spawn shields, bonus points, bombs, salvage, rare salvage, small asteroids, large asteroids, and mineable asteroids near the arena center. Intended for playtesting only.
+
+### 2026-03-27 - Board wipe shatters entities into debris
+Board wipe (bomb, game start, extraction) now spawns ShipDebris fragments for every entity before destroying it, so nothing silently vanishes. Flash holds 200ms at full white, fades over 1000ms.
+
+### 2026-03-27 - NPC shield-kills drop bonus pickups
+When the player's shield destroys an unshielded NPC, a bonus point pickup (70 pts) drops with the standard 1.5s collection delay — same as enemy kills.
+
+### 2026-03-27 - Salvage redesigned as modular rectangles
+Salvage debris changed from random polygon blobs to 2-3 perpendicular rectangular modules arranged edge-to-edge (space station style). Normal shape radius 80px, rare 45px ��� clearly larger than the biggest asteroids. Collection radius reduced from 120 to 80.
+
+### 2026-03-27 - Mining ring tightened to 1.8x asteroid radius
+DRIFTER_MINING_RADIUS_MULT reduced from 3.5 to 1.8. Keeps the proximity-based points mechanic but prevents oversized rings on large asteroids.
+
+### 2026-03-27 - Extraction dialogue always triggers
+Slick's extraction line changed from 55% chance to guaranteed. Important moment should never be silent.
