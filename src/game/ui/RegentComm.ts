@@ -26,7 +26,7 @@ export class RegentComm {
 
   constructor(scene: Phaser.Scene, options: RegentCommOptions = {}) {
     this.scene = scene;
-    this.autoHideMs = options.autoHideMs ?? 4600;
+    this.autoHideMs = options.autoHideMs ?? 5600;
     const layout = getLayout();
 
     const width = options.width ?? Math.min(layout.gameWidth - 72, 420);

@@ -66,11 +66,11 @@ export const NPC_BONUS_POINTS = 70;
 
 // Bonus point pickups
 export const BONUS_PICKUP_RADIUS = 12;
-export const BONUS_PICKUP_LIFETIME = 9000;
+export const BONUS_PICKUP_LIFETIME = 30000;
 
 // Bomb pickup
 export const BOMB_PICKUP_RADIUS = 14;
-export const BOMB_PICKUP_LIFETIME = 12000;
+export const BOMB_PICKUP_LIFETIME = 30000;
 export const BOMB_DROP_CHANCE = 0.25;         // 25% chance enemy drops a bomb
 export const BOMB_COLLECTION_DELAY = 1500;    // 1.5s before it can be collected
 export const BONUS_COLLECTION_DELAY = 1500;   // 1.5s before bonus can be collected

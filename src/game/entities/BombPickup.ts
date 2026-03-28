@@ -56,7 +56,12 @@ export class BombPickup {
     g.clear();
 
     const collectable = this.isCollectable();
-    const masterAlpha = collectable ? 1 : 0.35 + Math.sin(this.pulse * 8) * 0.15;
+    let masterAlpha = collectable ? 1 : 0.35 + Math.sin(this.pulse * 8) * 0.15;
+    // Blink for last 5 seconds before expiring
+    if (this.life < 5000) {
+      const blinkRate = this.life < 2500 ? 0.12 : 0.06;
+      masterAlpha = Math.sin(this.life * blinkRate) > 0 ? masterAlpha : 0.15;
+    }
     g.setAlpha(masterAlpha);
 
     const glow = 0.25 + Math.sin(this.pulse) * 0.12;

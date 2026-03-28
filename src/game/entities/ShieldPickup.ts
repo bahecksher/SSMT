@@ -12,6 +12,7 @@ export class ShieldPickup {
   active = true;
 
   private pulse = 0;
+  private life = 30000;
 
   constructor(scene: Phaser.Scene, x: number, y: number, vx = 0, vy = 0) {
     this.x = x;
@@ -26,8 +27,13 @@ export class ShieldPickup {
   update(delta: number): void {
     if (!this.active) return;
 
-    // Drift with the same velocity as its paired salvage
     const dt = delta / 1000;
+    this.life -= delta;
+    if (this.life <= 0) {
+      this.active = false;
+      return;
+    }
+
     this.x += this.vx * dt;
     this.y += this.vy * dt;
     this.graphic.setPosition(this.x, this.y);
@@ -39,7 +45,13 @@ export class ShieldPickup {
   private draw(): void {
     const g = this.graphic;
     g.clear();
-    g.setAlpha(1);
+    // Blink for last 5 seconds before expiring
+    let alpha = 1;
+    if (this.life < 5000) {
+      const blinkRate = this.life < 2500 ? 0.12 : 0.06;
+      alpha = Math.sin(this.life * blinkRate) > 0 ? 1 : 0.15;
+    }
+    g.setAlpha(alpha);
 
     const glow = 0.3 + Math.sin(this.pulse) * 0.15;
 
