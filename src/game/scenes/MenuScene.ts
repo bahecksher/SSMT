@@ -100,7 +100,7 @@ export class MenuScene extends Phaser.Scene {
     // Semi-transparent backing so text is readable over the simulation
     const backing = this.add.graphics().setDepth(uiDepth);
     backing.fillStyle(COLORS.BG, 0.7);
-    backing.fillRoundedRect(20, layout.gameHeight * 0.06, layout.gameWidth - 40, layout.gameHeight * 0.88, 12);
+    backing.fillRoundedRect(20, layout.gameHeight * 0.06, layout.gameWidth - 40, layout.gameHeight - layout.gameHeight * 0.06 - 20, 12);
 
     // Title block
     this.add.text(centerX, layout.gameHeight * 0.12, "SLICK'S", {
@@ -210,8 +210,17 @@ export class MenuScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
 
-    // How to play
-    this.add.text(centerX, layout.gameHeight * 0.78, [
+    // TAP TO START — anchored from bottom
+    const tapY = layout.gameHeight - 60;
+    const tapText = this.add.text(centerX, tapY, 'TAP TO START', {
+      fontFamily: 'monospace',
+      fontSize: '24px',
+      color: gateColor,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(uiDepth);
+
+    // How to play — anchored above TAP TO START
+    this.add.text(centerX, tapY - 52, [
       'COLLECT SALVAGE FOR CREDITS',
       'DODGE ASTEROIDS & HAZARDS',
       'EXTRACT AT THE GATE TO BANK',
@@ -221,14 +230,6 @@ export class MenuScene extends Phaser.Scene {
       color: hudColor,
       align: 'center',
       lineSpacing: 6,
-    }).setOrigin(0.5).setDepth(uiDepth);
-
-    // TAP TO START
-    const tapText = this.add.text(centerX, layout.gameHeight * 0.88, 'TAP TO START', {
-      fontFamily: 'monospace',
-      fontSize: '24px',
-      color: gateColor,
-      align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
 
     this.tweens.add({
@@ -432,8 +433,13 @@ export class MenuScene extends Phaser.Scene {
       return;
     }
 
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
+    // Cap visible rows so they don't overlap the bottom UI (how-to-play + tap to start)
+    const bottomUiTop = layout.gameHeight - 120;
+    const maxRows = Math.max(3, Math.floor((bottomUiTop - startY) / rowHeight));
+    const visibleEntries = entries.slice(0, maxRows);
+
+    for (let i = 0; i < visibleEntries.length; i++) {
+      const entry = visibleEntries[i];
       const y = startY + i * rowHeight;
       const rank = `${i + 1}.`.padEnd(4);
       const name = entry.player_name.padEnd(9);
