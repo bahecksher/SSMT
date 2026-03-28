@@ -1,34 +1,40 @@
 # State
-_Last updated: 2026-03-27 2308_
+_Last updated: 2026-03-28 0044_
 
 ## Current focus
-Phase 6 polish complete — board wipe, debug menu, salvage rework, tuning.
+Phase 7 polish complete — beams obliterate entities, difficulty ramp, bomb/pickup physics, UI cleanup.
 
 ## What's working
 - Full scene flow: Boot -> Menu -> Game with in-scene results
 - Core salvage/extract loop, hazards, leaderboard, comms, and HUD remain intact
 - Responsive layout drives arena bounds, starfields, gate placement, spawns, overlays, and key UI positioning
-- HUD credits text scaled to 14px; pause button is a compact top-right `||` control
-- Pause menu panel includes settings toggles (screen shake, scanlines) and a debug spawn section
+- HUD credits text scaled to 14px; pause button is a compact top-right `||` / `▶` control
+- Pause menu panel has abandon run and settings toggles (screen shake, scanlines) — no resume button, resume only via top-right button
 - Menu scene has settings toggles in top-right corner
 - Settings persist to localStorage via SettingsSystem
 - Gate preview: large closing circle appears 10s before activation
 - Gate active: salvage-style flicker for 3s extractable window with white flash on dim frames
-- Bomb power-up: dropped by enemies (25% chance), 1.5s collection delay, BOMB button in bottom-right when held
+- Bomb power-up: dropped by enemies (25% chance), detonates instantly on player collection (board wipe)
+- NPC bomb collection triggers board wipe AND kills the player
 - Board wipe effect (full white flash, 200ms hold, 1s fade-out) fires on game start, extraction, and bomb detonation — clears all entities with shatter debris
-- NPC killed by player shield now drops a bonus point pickup (1.5s collection delay)
-- Salvage redesigned as modular space-station rectangles (2-3 perpendicular modules, edge-to-edge)
+- Beams obliterate everything: asteroids (shatter), enemies (drop bonus), NPCs (drop shield/bonus), salvage
+- Beam width scales aggressively per phase (20px at ph5 → 120px cap)
+- Beam burst system: rapid-fire beams at phase 8+ with short delays between each
+- Beams and enemies both start at phase 5
+- NPC killed by player shield drops a bonus point pickup
+- Salvage redesigned as modular space-station rectangles (2-3 perpendicular modules, edge-to-edge flush)
 - Salvage visual size 80px normal / 45px rare — larger than biggest asteroids
-- Salvage collection radius reduced to 80 (from 120)
-- Asteroid mining ring multiplier reduced to 1.8x (from 3.5x)
-- Extraction dialogue always triggers (was 55% chance)
+- Salvage collection radius 80px for both normal and rare
+- Small asteroids (radiusScale < 1.5) no longer show mining circles
+- Bonus pickups and bombs carry full inertia (no friction), can drift out of arena
+- Asteroid mining ring multiplier 1.8x (from radius)
+- Extraction dialogue always triggers
 - Screen shake on death, extraction, game entry, and bomb detonation (toggleable in settings)
 - Scanline overlay toggleable in settings
-- Debug spawn menu in pause screen: spawn shields, points, bombs, salvage, rare salvage, small/large/mineable asteroids
 - Asteroid hitboxes use circle-polygon intersection (accounts for player radius)
 - Rotating wireframe geo-sphere behind arena on both menu and game scenes
 - Starfield drifts east-to-west
-- All Slick and Regent dialogue updated; Regent `threatDetected` triggers sometimes at phase 2
+- All Slick and Regent dialogue updated; Regent triggers kill taunt on ALL deaths at phase 5+
 - Player callsigns use `AAA-###` format
 - Production build passes
 
@@ -51,25 +57,26 @@ Nothing active.
 - Build still warns about large chunk size because Phaser is bundled as one large client chunk
 
 ## Next actions
-1. Playtest salvage size/collection radius feel across devices
-2. Playtest mining ring (1.8x) proximity mechanic
-3. Consider audio implementation (Phase 6 remaining)
+1. Playtest new difficulty curve (beams at phase 5, burst system, width scaling)
+2. Playtest bomb-on-pickup feel and NPC bomb trigger
+3. Consider audio implementation
 
 ## Active plan
-None — working from ad-hoc Phase 6 requests.
+None — working from ad-hoc Phase 7 requests.
 
 ## How to verify
 1. Run `npm.cmd run build` or `npm.cmd run dev -- --host 0.0.0.0`
 2. Start a game — confirm white flash + shatter debris + board clear at countdown end
-3. Salvage should appear as large modular rectangles, clearly bigger than asteroids
-4. Salvage collection ring should be smaller than before (80px)
-5. Mineable asteroids should have a tighter mining ring (1.8x body)
-6. Kill enemies — bonus pickups drop with 1.5s delay; shield-kill an NPC — bonus drops too
-7. Collect a bomb, detonate — all entities shatter into debris + white flash
-8. Extract at gate — Slick dialogue always appears, entities shatter, flash + green wipe
-9. Pause menu has DEBUG SPAWN section to spawn test entities
+3. Reach phase 5 — beams and enemies should both appear
+4. Beams should destroy asteroids, enemies, NPCs, and salvage on contact
+5. Kill enemies — bonus pickups drift with full inertia (no friction slowdown)
+6. Collect a bomb — should immediately detonate (no button), board wipe fires
+7. Let NPC collect a bomb — board wipe + player death
+8. Die at phase 5+ — Regent should deliver kill taunt regardless of death cause
+9. Small asteroids should have no mining circle
+10. Pause menu has no resume button — only the top-right ▶ button resumes
 
 ## Recent logs
+- docs/log/2026-03-28 0044 Phase 7 Polish and Tuning.md — Beams obliterate entities, difficulty ramp, bomb instant detonate, pickup inertia, UI cleanup
 - docs/log/2026-03-27 2308 Phase 6 Polish Salvage and Tuning.md — Salvage rework, board wipe shatter, NPC bonus drops, mining ring tuning, extraction dialogue fix
 - docs/log/2026-03-27 2224 Board Wipe and Debug Menu.md — Board wipe effect on bomb/start/extract, debug spawn menu
-- docs/log/2026-03-27 2152 Phase 6 Settings Bomb Shake.md — Settings, bomb power-up, screen shake, collection delays

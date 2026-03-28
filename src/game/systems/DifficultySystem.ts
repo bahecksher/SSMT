@@ -2,7 +2,6 @@ import Phaser from 'phaser';
 import type { PhaseConfig } from '../types';
 import {
   BOMB_DROP_CHANCE,
-  BONUS_PICKUP_RADIUS,
   DRIFTER_MINEABLE_CHANCE,
   DRIFTER_SPEED_BASE,
   ENEMY_BONUS_POINTS,
@@ -170,22 +169,20 @@ export class DifficultySystem {
           enemy.y >= layout.arenaTop - 50 && enemy.y <= layout.arenaBottom + 50
         ) {
           this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), 0xff00ff, enemy.radius));
-          if (this.canDropBonusAt(enemy.x, enemy.y)) {
-            this.bonusDropPositions.push({
+          this.bonusDropPositions.push({
+            x: enemy.x,
+            y: enemy.y,
+            vx: enemy.getVelocityX() * 0.45,
+            vy: enemy.getVelocityY() * 0.45,
+            points: ENEMY_BONUS_POINTS,
+          });
+          if (Math.random() < BOMB_DROP_CHANCE) {
+            this.bombDropPositions.push({
               x: enemy.x,
               y: enemy.y,
-              vx: enemy.getVelocityX() * 0.45,
-              vy: enemy.getVelocityY() * 0.45,
-              points: ENEMY_BONUS_POINTS,
+              vx: enemy.getVelocityX() * 0.3,
+              vy: enemy.getVelocityY() * 0.3,
             });
-            if (Math.random() < BOMB_DROP_CHANCE) {
-              this.bombDropPositions.push({
-                x: enemy.x,
-                y: enemy.y,
-                vx: enemy.getVelocityX() * 0.3,
-                vy: enemy.getVelocityY() * 0.3,
-              });
-            }
           }
         }
         enemy.destroy();
@@ -201,7 +198,7 @@ export class DifficultySystem {
           if (this.canDropShieldAt(npc.x, npc.y)) {
             this.deadNPCPositions.push({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy });
           }
-          if (this.canDropBonusAt(npc.x, npc.y) && Math.random() < NPC_BONUS_DROP_CHANCE) {
+          if (Math.random() < NPC_BONUS_DROP_CHANCE) {
             this.bonusDropPositions.push({
               x: npc.x,
               y: npc.y,
@@ -515,13 +512,11 @@ export class DifficultySystem {
         if (dist < halfBeam + enemy.radius) {
           enemy.active = false;
           this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), 0xff00ff, enemy.radius));
-          if (this.canDropBonusAt(enemy.x, enemy.y)) {
-            this.bonusDropPositions.push({
-              x: enemy.x, y: enemy.y,
-              vx: enemy.getVelocityX() * 0.45, vy: enemy.getVelocityY() * 0.45,
-              points: ENEMY_BONUS_POINTS,
-            });
-          }
+          this.bonusDropPositions.push({
+            x: enemy.x, y: enemy.y,
+            vx: enemy.getVelocityX() * 0.45, vy: enemy.getVelocityY() * 0.45,
+            points: ENEMY_BONUS_POINTS,
+          });
         }
       }
 
@@ -549,15 +544,7 @@ export class DifficultySystem {
     );
   }
 
-  private canDropBonusAt(x: number, y: number): boolean {
-    const layout = getLayout();
-    return (
-      x >= layout.arenaLeft + BONUS_PICKUP_RADIUS &&
-      x <= layout.arenaRight - BONUS_PICKUP_RADIUS &&
-      y >= layout.arenaTop + BONUS_PICKUP_RADIUS &&
-      y <= layout.arenaBottom - BONUS_PICKUP_RADIUS
-    );
-  }
+
 
   destroy(): void {
     for (const d of this.drifters) d.destroy();

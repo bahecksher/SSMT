@@ -75,7 +75,6 @@ export class GameScene extends Phaser.Scene {
   private shields: ShieldPickup[] = [];
   private bonusPickups: BonusPickup[] = [];
   private bombPickups: BombPickup[] = [];
-  private playerHasBomb = false;
   private hud!: Hud;
   private state: GameState = GameState.PLAYING;
   private debrisRespawnTimer: Phaser.Time.TimerEvent | null = null;
@@ -103,9 +102,6 @@ export class GameScene extends Phaser.Scene {
   private pauseButtonBg!: Phaser.GameObjects.Graphics;
   private pauseButtonText!: Phaser.GameObjects.Text;
   private pauseButtonHit!: Phaser.GameObjects.Zone;
-  private bombButtonBg!: Phaser.GameObjects.Graphics;
-  private bombButtonText!: Phaser.GameObjects.Text;
-  private bombButtonHit!: Phaser.GameObjects.Zone;
   private pauseUi: Phaser.GameObjects.GameObject[] = [];
   private pausedFromState: GameState = GameState.PLAYING;
 
@@ -131,7 +127,6 @@ export class GameScene extends Phaser.Scene {
     this.regentBeamAnnounced = false;
     this.regentLastPhase = 0;
     this.invulnerableTimer = 2000;
-    this.playerHasBomb = false;
     this.bombPickups = [];
 
     this.saveSystem = new SaveSystem();
@@ -227,7 +222,6 @@ export class GameScene extends Phaser.Scene {
 
     this.hud = new Hud(this);
     this.createPauseButton();
-    this.createBombButton();
     this.countdownText = this.add.text(
       layout.centerX,
       layout.centerY,
@@ -313,23 +307,6 @@ export class GameScene extends Phaser.Scene {
         this.debrisList.splice(i, 1);
         if (!runFrozen && !d.isRare) {
           this.scheduleDebrisRespawn();
-        }
-      }
-    }
-
-    // Salvage-asteroid collision: bounce salvage off drifters
-    if (!runFrozen) {
-      const drifters = this.difficultySystem.getDrifters();
-      for (const debris of this.debrisList) {
-        if (!debris.active) continue;
-        for (const drifter of drifters) {
-          if (!drifter.active) continue;
-          const dx = debris.x - drifter.x;
-          const dy = debris.y - drifter.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < drifter.radius + 30) {
-            debris.bounceOff(drifter.x, drifter.y, drifter.radius);
-          }
         }
       }
     }
@@ -440,16 +417,32 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
 
-      if (gameplayActive && !this.playerHasBomb && bomb.isCollectable()) {
+      if (gameplayActive && bomb.isCollectable()) {
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, bomb.x, bomb.y);
         if (dist < PLAYER_RADIUS + bomb.radius) {
-          this.playerHasBomb = true;
           bomb.active = false;
           bomb.destroy();
           this.bombPickups.splice(i, 1);
-          this.tryShowSlick('shieldPickup', 0.5);
+          this.boardWipe();
           continue;
         }
+
+        // NPCs can trigger bombs — wipes field and kills the player
+        let claimedByNpc = false;
+        for (const npc of this.difficultySystem.getNPCs()) {
+          if (!npc.active) continue;
+          const npcDist = Phaser.Math.Distance.Between(npc.x, npc.y, bomb.x, bomb.y);
+          if (npcDist < npc.radius + bomb.radius) {
+            bomb.active = false;
+            bomb.destroy();
+            this.bombPickups.splice(i, 1);
+            this.boardWipe();
+            this.handleDeath('asteroid');
+            claimedByNpc = true;
+            break;
+          }
+        }
+        if (claimedByNpc) return;
       }
     }
 
@@ -718,9 +711,7 @@ export class GameScene extends Phaser.Scene {
       this.scoreSystem.getBest(),
       currentPhase,
       this.player.hasShield,
-      this.playerHasBomb,
     );
-    this.refreshBombButton();
   }
 
   private spawnDebris(): void {
@@ -770,7 +761,8 @@ export class GameScene extends Phaser.Scene {
     this.tweens.timeScale = 1;
     this.hidePauseMenu();
     this.refreshPauseUi();
-    if (cause === 'enemy' || cause === 'laser') {
+    const currentPhase = this.extractionSystem.getPhaseCount();
+    if (cause === 'enemy' || cause === 'laser' || currentPhase >= 5) {
       this.slickComm.hide();
       this.showRegentExclusive(getRegentLine('killTaunt'), 0);
     } else {
@@ -868,9 +860,6 @@ export class GameScene extends Phaser.Scene {
     this.pauseButtonBg.destroy();
     this.pauseButtonText.destroy();
     this.pauseButtonHit.destroy();
-    this.bombButtonBg.destroy();
-    this.bombButtonText.destroy();
-    this.bombButtonHit.destroy();
     this.clearResultUi();
     this.hud.destroy();
     this.slickComm.destroy();
@@ -1078,72 +1067,6 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private createBombButton(): void {
-    const layout = getLayout();
-    const buttonWidth = 64;
-    const buttonHeight = 28;
-    const buttonX = layout.gameWidth - 16 - buttonWidth / 2;
-    const buttonY = layout.gameHeight - 42;
-
-    this.bombButtonBg = this.add.graphics().setDepth(230);
-    this.bombButtonText = this.add.text(buttonX, buttonY, 'BOMB', {
-      fontFamily: 'monospace',
-      fontSize: '14px',
-      color: '#ff8800',
-      align: 'center',
-    }).setOrigin(0.5).setDepth(231);
-
-    this.bombButtonHit = this.add.zone(
-      buttonX - buttonWidth / 2,
-      buttonY - buttonHeight / 2,
-      buttonWidth,
-      buttonHeight,
-    ).setOrigin(0, 0).setDepth(232).setInteractive({ useHandCursor: true });
-    this.bombButtonHit.on(
-      'pointerdown',
-      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-        event.stopPropagation();
-        this.detonateBomb();
-      },
-    );
-
-    this.refreshBombButton();
-  }
-
-  private refreshBombButton(): void {
-    const layout = getLayout();
-    const buttonWidth = 64;
-    const buttonHeight = 28;
-    const buttonX = layout.gameWidth - 16 - buttonWidth / 2;
-    const buttonY = layout.gameHeight - 42;
-    const visible = this.playerHasBomb && (
-      this.state === GameState.PLAYING || this.state === GameState.COUNTDOWN
-    );
-
-    this.bombButtonBg.clear();
-    if (visible) {
-      this.bombButtonBg.fillStyle(0x331100, 0.88);
-      this.bombButtonBg.lineStyle(1.25, 0xff8800, 0.7);
-      this.bombButtonBg.fillRoundedRect(
-        buttonX - buttonWidth / 2, buttonY - buttonHeight / 2,
-        buttonWidth, buttonHeight, 8,
-      );
-      this.bombButtonBg.strokeRoundedRect(
-        buttonX - buttonWidth / 2, buttonY - buttonHeight / 2,
-        buttonWidth, buttonHeight, 8,
-      );
-    }
-
-    this.bombButtonBg.setVisible(visible);
-    this.bombButtonText.setVisible(visible).setPosition(buttonX, buttonY);
-    this.bombButtonHit.setVisible(visible)
-      .setPosition(buttonX - buttonWidth / 2, buttonY - buttonHeight / 2)
-      .setSize(buttonWidth, buttonHeight);
-    if (this.bombButtonHit.input) {
-      this.bombButtonHit.input.enabled = visible;
-    }
-  }
-
   /** Clear all hazards, enemies, salvage, and pickups from the board. */
   /** Clear all hazards, enemies, salvage, and pickups — each shatters into debris. */
   private clearBoard(): void {
@@ -1208,15 +1131,6 @@ export class GameScene extends Phaser.Scene {
         this.spawnDebris();
       }
     });
-  }
-
-  private detonateBomb(): void {
-    if (!this.playerHasBomb) return;
-    if (this.state !== GameState.PLAYING && this.state !== GameState.COUNTDOWN) return;
-
-    this.playerHasBomb = false;
-    this.refreshBombButton();
-    this.boardWipe();
   }
 
   // --- Debug spawn helpers ---
@@ -1302,22 +1216,7 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(221).setAlpha(0.8);
     this.pauseUi.push(subtitle);
 
-    const resumeText = this.add.text(centerX, panelTop + 116, 'RESUME', {
-      fontFamily: 'monospace',
-      fontSize: '22px',
-      color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
-    resumeText.on(
-      'pointerdown',
-      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-        event.stopPropagation();
-        this.resumeGame();
-      },
-    );
-    this.pauseUi.push(resumeText);
-
-    const abandonText = this.add.text(centerX, panelTop + 158, 'ABANDON RUN', {
+    const abandonText = this.add.text(centerX, panelTop + 116, 'ABANDON RUN', {
       fontFamily: 'monospace',
       fontSize: '18px',
       color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
@@ -1332,7 +1231,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.pauseUi.push(abandonText);
 
-    const abandonHint = this.add.text(centerX, panelTop + 184, 'RETURN TO MENU WITHOUT BANKING', {
+    const abandonHint = this.add.text(centerX, panelTop + 142, 'RETURN TO MENU WITHOUT BANKING', {
       fontFamily: 'monospace',
       fontSize: '10px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -1341,7 +1240,7 @@ export class GameScene extends Phaser.Scene {
     this.pauseUi.push(abandonHint);
 
     // Settings section
-    const settingsY = panelTop + 230;
+    const settingsY = panelTop + 188;
     const divider = this.add.graphics().setDepth(221);
     divider.lineStyle(1, COLORS.HUD, 0.2);
     divider.lineBetween(centerX - 100, settingsY - 16, centerX + 100, settingsY - 16);
@@ -1456,7 +1355,7 @@ export class GameScene extends Phaser.Scene {
     this.pauseButtonText
       .setVisible(buttonVisible)
       .setPosition(buttonX, buttonY)
-      .setText(paused ? 'RESUME' : '||')
+      .setText(paused ? '\u25B6' : '||')
       .setColor(textColor);
     this.pauseButtonHit
       .setVisible(buttonVisible)

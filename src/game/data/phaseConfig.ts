@@ -41,12 +41,12 @@ export function getPhaseConfig(phase: number): PhaseConfig {
     hazardSpeedMultiplier: 1 + DIFFICULTY_SPEED_SCALE * (phase - 1),
     // Gentler ramp: 6, 10, 15, 21, 28...
     maxConcurrentDrifters: Math.floor(4 + phase * 3 + Math.pow(phase, 1.6)),
-    beamEnabled: phase >= 7,
-    beamFrequency: phase >= 7 ? Math.max(2500, 8000 - (phase - 7) * 1000) : 0,
+    beamEnabled: phase >= 5,
+    beamFrequency: phase >= 5 ? Math.max(2500, 10000 - (phase - 5) * 1000) : 0,
     beamBurstCount: phase >= 8 ? Math.min(2 + Math.floor((phase - 8) * 0.5), 5) : 2,
     beamBurstDelay: phase >= 8 ? Math.max(200, 500 - (phase - 8) * 50) : 0,
-    // Aggressive width curve: 20 → 28 → 40 → 56 → 76 → 100 (ph7–12)
-    beamWidth: phase >= 7 ? Math.min(BEAM_WIDTH * Math.pow(1.4, phase - 7), 120) : BEAM_WIDTH,
+    // Aggressive width curve: 20 → 28 → 40 → 56 → 76 → 100 (ph5–10+)
+    beamWidth: phase >= 5 ? Math.min(BEAM_WIDTH * Math.pow(1.4, phase - 5), 120) : BEAM_WIDTH,
     enemyEnabled: phase >= 5,
     enemySpawnRate: phase >= 5 ? Math.max(4000, ENEMY_SPAWN_RATE_BASE - (phase - 5) * 1500) : 0,
     maxConcurrentEnemies: phase >= 5 ? Math.min(1 + Math.floor((phase - 5) * 0.5), phase >= 8 ? 6 : 4) : 0,

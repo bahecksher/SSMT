@@ -140,3 +140,27 @@ DRIFTER_MINING_RADIUS_MULT reduced from 3.5 to 1.8. Keeps the proximity-based po
 
 ### 2026-03-27 - Extraction dialogue always triggers
 Slick's extraction line changed from 55% chance to guaranteed. Important moment should never be silent.
+
+### 2026-03-28 - Beams obliterate all entities
+Lethal beams now destroy asteroids (shatter into debris), enemies (drop bonus), NPCs (drop shield/bonus), and salvage on contact. Beam width scales aggressively per phase (1.4x exponential from base 20px, capped at 120px).
+
+### 2026-03-28 - Beams and enemies both start at phase 5
+Beams moved from phase 7 to phase 5 to coincide with enemy introduction. Frequency starts gentler (10s) and ramps to 2.5s. Burst system at phase 8+ fires beams in rapid succession (200-500ms apart).
+
+### 2026-03-28 - Bombs detonate on pickup (no button)
+Bomb power-up now triggers board wipe immediately on player collection. The BOMB button, HUD indicator, and held-bomb state are removed. When an NPC collects a bomb, it also triggers the board wipe and kills the player.
+
+### 2026-03-28 - Pickups carry full inertia like shields
+Bonus point pickups and bombs no longer have velocity friction (was 0.988 damping). They drift at constant speed matching shield behavior and can exit the arena.
+
+### 2026-03-28 - Small asteroids have no mining circle
+Mining rings and proximity scoring now require radiusScale >= 1.5. Small and normal-sized asteroids no longer show the collection circle or count as mineable.
+
+### 2026-03-28 - Salvage has no collision with asteroids
+Salvage drifts through the asteroid field unaffected. Bounce and break-apart collision were both tried and felt wrong.
+
+### 2026-03-28 - Regent triggers on all deaths at phase 5+
+At phase 5 and above, Regent delivers the kill taunt on every death regardless of cause (asteroid, beam, enemy, or bomb). Below phase 5, Slick handles death lines.
+
+### 2026-03-28 - Pause resume only via top-right button
+The pause menu panel no longer has a resume button or play icon. Resume is accessed exclusively via the top-right ▶/|| toggle button.

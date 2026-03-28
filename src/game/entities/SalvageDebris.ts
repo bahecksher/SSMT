@@ -54,55 +54,57 @@ export class SalvageDebris {
   private rects: [number, number, number, number, number][];
 
   /**
-   * Generate 2-3 rectangular modules arranged like space station segments.
-   * Each module attaches to an edge of the previous one at a roughly
-   * perpendicular angle, so the whole structure looks modular.
+   * Generate 2-3 rectangular modules connected edge-to-edge.
+   * Child modules attach flush to a random point along a parent edge,
+   * oriented perpendicular to the parent.
    */
   private static generateRects(baseRadius: number): [number, number, number, number, number][] {
     const count = Phaser.Math.Between(2, 3);
     const rects: [number, number, number, number, number][] = [];
 
-    // First module — the core, centered at origin
+    // First module — the core, centered at origin, no rotation
     const hw0 = baseRadius * Phaser.Math.FloatBetween(0.55, 0.8);
     const hh0 = baseRadius * Phaser.Math.FloatBetween(0.2, 0.35);
     rects.push([0, 0, hw0, hh0, 0]);
 
     for (let i = 1; i < count; i++) {
       const prev = rects[i - 1];
-      const [pOx, pOy, pHw, pHh, pA] = prev;
+      const [pOx, pOy, pHw, pHh] = prev;
 
-      // New module dimensions
-      const hw = baseRadius * Phaser.Math.FloatBetween(0.35, 0.7);
-      const hh = baseRadius * Phaser.Math.FloatBetween(0.15, 0.3);
+      // New module: long and thin, perpendicular to parent
+      const hw = baseRadius * Phaser.Math.FloatBetween(0.15, 0.3);
+      const hh = baseRadius * Phaser.Math.FloatBetween(0.4, 0.7);
 
-      // Pick a random edge of the previous rect to attach to (top/bottom/left/right)
+      // Pick a random edge (0=right, 1=left, 2=bottom, 3=top)
       const edge = Phaser.Math.Between(0, 3);
-      // Perpendicular angle: ±90° from parent, with slight variance
-      const perpAngle = pA + (Math.PI / 2) * (Math.random() < 0.5 ? 1 : -1)
-        + Phaser.Math.FloatBetween(-0.2, 0.2);
+      // Random attachment point along that edge
+      const t = Phaser.Math.FloatBetween(-0.7, 0.7);
 
       let ox: number;
       let oy: number;
       switch (edge) {
-        case 0: // attach to right edge
-          ox = pOx + pHw + hw * 0.7;
-          oy = pOy + Phaser.Math.FloatBetween(-pHh * 0.5, pHh * 0.5);
+        case 0: // right edge — child center flush against parent right
+          ox = pOx + pHw + hw;
+          oy = pOy + t * pHh;
           break;
-        case 1: // attach to left edge
-          ox = pOx - pHw - hw * 0.7;
-          oy = pOy + Phaser.Math.FloatBetween(-pHh * 0.5, pHh * 0.5);
+        case 1: // left edge
+          ox = pOx - pHw - hw;
+          oy = pOy + t * pHh;
           break;
-        case 2: // attach to bottom edge
-          ox = pOx + Phaser.Math.FloatBetween(-pHw * 0.5, pHw * 0.5);
-          oy = pOy + pHh + hh * 0.7;
+        case 2: // bottom edge
+          ox = pOx + t * pHw;
+          oy = pOy + pHh + hw;
           break;
-        default: // attach to top edge
-          ox = pOx + Phaser.Math.FloatBetween(-pHw * 0.5, pHw * 0.5);
-          oy = pOy - pHh - hh * 0.7;
+        default: // top edge
+          ox = pOx + t * pHw;
+          oy = pOy - pHh - hw;
           break;
       }
 
-      rects.push([ox, oy, hw, hh, perpAngle]);
+      // For top/bottom edges, rotate child 90° so it extends outward
+      const angle = (edge >= 2) ? Math.PI / 2 : 0;
+
+      rects.push([ox, oy, hw, hh, angle]);
     }
 
     return rects;
@@ -357,31 +359,6 @@ export class SalvageDebris {
     d.graphic.setPosition(x, y);
     d.radiusGraphic.setPosition(x, y);
     return d;
-  }
-
-  /** Bounce salvage off an obstacle at the given position. */
-  bounceOff(obstacleX: number, obstacleY: number, obstacleRadius: number): void {
-    const dx = this.x - obstacleX;
-    const dy = this.y - obstacleY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 0.01) return;
-    const nx = dx / dist;
-    const ny = dy / dist;
-    // Push out of overlap
-    const minDist = obstacleRadius + 30; // approximate salvage body radius
-    if (dist < minDist) {
-      this.x = obstacleX + nx * minDist;
-      this.y = obstacleY + ny * minDist;
-    }
-    // Reflect velocity along normal
-    const dot = this.vx * nx + this.vy * ny;
-    if (dot < 0) {
-      this.vx -= 2 * dot * nx;
-      this.vy -= 2 * dot * ny;
-      // Update drift velocities so it keeps moving in new direction
-      (this as { driftVx: number }).driftVx = this.vx;
-      (this as { driftVy: number }).driftVy = this.vy;
-    }
   }
 
   /** Returns corners of the outermost rect in world space. */

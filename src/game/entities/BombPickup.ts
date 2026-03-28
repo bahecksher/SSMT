@@ -46,8 +46,6 @@ export class BombPickup {
 
     this.x += this.vx * dt;
     this.y += this.vy * dt;
-    this.vx *= 0.988;
-    this.vy *= 0.988;
     this.pulse += delta * 0.005;
     this.graphic.setPosition(this.x, this.y);
     this.draw();
