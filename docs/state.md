@@ -1,8 +1,8 @@
 # State
-_Last updated: 2026-03-28 0044_
+_Last updated: 2026-03-28 0055_
 
 ## Current focus
-Phase 7 polish complete — beams obliterate entities, difficulty ramp, bomb/pickup physics, UI cleanup.
+Phase 7 polish complete — consumable lifetimes extended, blink warnings added, comm duration increased.
 
 ## What's working
 - Full scene flow: Boot -> Menu -> Game with in-scene results
@@ -26,7 +26,9 @@ Phase 7 polish complete — beams obliterate entities, difficulty ramp, bomb/pic
 - Salvage visual size 80px normal / 45px rare — larger than biggest asteroids
 - Salvage collection radius 80px for both normal and rare
 - Small asteroids (radiusScale < 1.5) no longer show mining circles
+- All consumables (bonus, bomb, shield) last 30 seconds with 5-second blink warning before expiry
 - Bonus pickups and bombs carry full inertia (no friction), can drift out of arena
+- Comm messages display longer: Slick 5.2s, Regent 5.6s
 - Asteroid mining ring multiplier 1.8x (from radius)
 - Extraction dialogue always triggers
 - Screen shake on death, extraction, game entry, and bomb detonation (toggleable in settings)
@@ -36,7 +38,7 @@ Phase 7 polish complete — beams obliterate entities, difficulty ramp, bomb/pic
 - Starfield drifts east-to-west
 - All Slick and Regent dialogue updated; Regent triggers kill taunt on ALL deaths at phase 5+
 - Player callsigns use `AAA-###` format
-- Production build passes
+- Production build passes with Phaser chunk splitting
 
 ## In progress
 Nothing active.
@@ -54,12 +56,12 @@ Nothing active.
 - `node`/`npm` not on PowerShell PATH; use `npm.cmd` or set PATH explicitly
 - Windows Firewall may block port `5173` for LAN phone testing
 - Supabase `scores` table must be created manually (see leaderboard plan)
-- Build still warns about large chunk size because Phaser is bundled as one large client chunk
 
 ## Next actions
 1. Playtest new difficulty curve (beams at phase 5, burst system, width scaling)
 2. Playtest bomb-on-pickup feel and NPC bomb trigger
-3. Consider audio implementation
+3. Playtest consumable 30s lifetimes and blink warning visibility
+4. Consider audio implementation
 
 ## Active plan
 None — working from ad-hoc Phase 7 requests.
@@ -75,8 +77,10 @@ None — working from ad-hoc Phase 7 requests.
 8. Die at phase 5+ — Regent should deliver kill taunt regardless of death cause
 9. Small asteroids should have no mining circle
 10. Pause menu has no resume button — only the top-right ▶ button resumes
+11. All pickups blink for 5 seconds before their 30-second expiry
 
 ## Recent logs
+- docs/log/2026-03-28 0055 Consumable Lifetimes and Comm Duration.md — 30s lifetimes, blink warnings, longer comm display
 - docs/log/2026-03-28 0044 Phase 7 Polish and Tuning.md — Beams obliterate entities, difficulty ramp, bomb instant detonate, pickup inertia, UI cleanup
 - docs/log/2026-03-27 2308 Phase 6 Polish Salvage and Tuning.md — Salvage rework, board wipe shatter, NPC bonus drops, mining ring tuning, extraction dialogue fix
 - docs/log/2026-03-27 2224 Board Wipe and Debug Menu.md — Board wipe effect on bomb/start/extract, debug spawn menu
