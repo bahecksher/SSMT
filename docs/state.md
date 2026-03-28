@@ -1,13 +1,17 @@
 # State
-_Last updated: 2026-03-28 0055_
+_Last updated: 2026-03-28 1247_
 
 ## Current focus
-Phase 7 polish complete — consumable lifetimes extended, blink warnings added, comm duration increased.
+Phase 5+ difficulty rebalanced — drifter density capped, arena-scaled entity counts, reduced debris clutter.
 
 ## What's working
 - Full scene flow: Boot -> Menu -> Game with in-scene results
 - Core salvage/extract loop, hazards, leaderboard, comms, and HUD remain intact
 - Responsive layout drives arena bounds, starfields, gate placement, spawns, overlays, and key UI positioning
+- Arena density scaling: entity counts normalized to arena size so phone and desktop have equal density
+- Drifter count caps at 22 for phase 5+ (down from unbounded 28+), spawn rate plateaus at phase 4 level
+- Difficulty at phase 5+ shifts from quantity to lethality (faster, bigger asteroids + beams + enemies)
+- Ship debris reduced to 3 fragments / 1s lifetime for less visual clutter
 - HUD credits text scaled to 14px; pause button is a compact top-right `||` / `▶` control
 - Pause menu panel has abandon run and settings toggles (screen shake, scanlines) — no resume button, resume only via top-right button
 - Menu scene has settings toggles in top-right corner
@@ -58,29 +62,26 @@ Nothing active.
 - Supabase `scores` table must be created manually (see leaderboard plan)
 
 ## Next actions
-1. Playtest new difficulty curve (beams at phase 5, burst system, width scaling)
-2. Playtest bomb-on-pickup feel and NPC bomb trigger
-3. Playtest consumable 30s lifetimes and blink warning visibility
+1. Playtest phase 5+ density on phone vs desktop — verify equal feel
+2. Playtest new difficulty curve (drifter cap, speed/size still ramp)
+3. Playtest bomb-on-pickup feel and NPC bomb trigger
 4. Consider audio implementation
 
 ## Active plan
-None — working from ad-hoc Phase 7 requests.
+None — working from ad-hoc difficulty tuning requests.
 
 ## How to verify
 1. Run `npm.cmd run build` or `npm.cmd run dev -- --host 0.0.0.0`
 2. Start a game — confirm white flash + shatter debris + board clear at countdown end
-3. Reach phase 5 — beams and enemies should both appear
-4. Beams should destroy asteroids, enemies, NPCs, and salvage on contact
-5. Kill enemies — bonus pickups drift with full inertia (no friction slowdown)
-6. Collect a bomb — should immediately detonate (no button), board wipe fires
-7. Let NPC collect a bomb — board wipe + player death
-8. Die at phase 5+ — Regent should deliver kill taunt regardless of death cause
-9. Small asteroids should have no mining circle
-10. Pause menu has no resume button — only the top-right ▶ button resumes
-11. All pickups blink for 5 seconds before their 30-second expiry
+3. Reach phase 5 — asteroid count should feel similar to phase 4 (capped at 22)
+4. Compare phone vs desktop — density should feel equivalent despite different screen sizes
+5. Beams and enemies appear at phase 5, replacing asteroid swarm as primary threat
+6. Ship destruction debris clears quickly (3 fragments, ~1s)
+7. Die at phase 5+ — Regent should deliver kill taunt regardless of death cause
+8. All pickups blink for 5 seconds before their 30-second expiry
 
 ## Recent logs
+- docs/log/2026-03-28 1247 Phase 5 Density Cap and Arena Scaling.md — drifter cap, spawn plateau, arena density scaling, debris reduction
 - docs/log/2026-03-28 0055 Consumable Lifetimes and Comm Duration.md — 30s lifetimes, blink warnings, longer comm display
 - docs/log/2026-03-28 0044 Phase 7 Polish and Tuning.md — Beams obliterate entities, difficulty ramp, bomb instant detonate, pickup inertia, UI cleanup
 - docs/log/2026-03-27 2308 Phase 6 Polish Salvage and Tuning.md — Salvage rework, board wipe shatter, NPC bonus drops, mining ring tuning, extraction dialogue fix
-- docs/log/2026-03-27 2224 Board Wipe and Debug Menu.md — Board wipe effect on bomb/start/extract, debug spawn menu
