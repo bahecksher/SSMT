@@ -1188,61 +1188,6 @@ export class GameScene extends Phaser.Scene {
 
   // --- Debug spawn helpers ---
 
-  private debugCenterOffset(): { x: number; y: number } {
-    const layout = getLayout();
-    const cx = layout.arenaLeft + layout.arenaWidth / 2;
-    const cy = layout.arenaTop + layout.arenaHeight / 2;
-    return {
-      x: cx + Phaser.Math.Between(-60, 60),
-      y: cy + Phaser.Math.Between(-60, 60),
-    };
-  }
-
-  private debugSpawnShield(): void {
-    const { x, y } = this.debugCenterOffset();
-    this.shields.push(new ShieldPickup(this, x, y));
-  }
-
-  private debugSpawnBonus(): void {
-    const { x, y } = this.debugCenterOffset();
-    this.bonusPickups.push(new BonusPickup(this, x, y, 100, 0, 0, 0));
-  }
-
-  private debugSpawnBomb(): void {
-    const { x, y } = this.debugCenterOffset();
-    this.bombPickups.push(new BombPickup(this, x, y));
-  }
-
-  private debugSpawnSalvage(isRare: boolean): void {
-    const layout = getLayout();
-    const cx = layout.arenaLeft + layout.arenaWidth / 2 + Phaser.Math.Between(-40, 40);
-    const cy = layout.arenaTop + layout.arenaHeight / 2 + Phaser.Math.Between(-40, 40);
-    const debris = SalvageDebris.createAt(this, cx, cy, 0, 0);
-    if (isRare) {
-      (debris as unknown as { isRare: boolean }).isRare = true;
-    }
-    this.debrisList.push(debris);
-    this.salvageSystem.addDebris(debris);
-  }
-
-  private debugSpawnAsteroid(scale: number, isMineable: boolean): void {
-    const layout = getLayout();
-    const cx = layout.arenaLeft + layout.arenaWidth / 2;
-    const cy = layout.arenaTop + layout.arenaHeight / 2;
-    const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-    const speed = 30;
-    const drifter = DrifterHazard.createFragment(
-      this,
-      cx + Phaser.Math.Between(-40, 40),
-      cy + Phaser.Math.Between(-40, 40),
-      Math.cos(angle) * speed,
-      Math.sin(angle) * speed,
-      scale,
-      isMineable,
-    );
-    this.difficultySystem.getDrifters().push(drifter);
-  }
-
   private togglePause(): void {
     if (this.state === GameState.PAUSED) {
       this.resumeGame();
@@ -1281,8 +1226,8 @@ export class GameScene extends Phaser.Scene {
     this.hidePauseMenu();
     const layout = getLayout();
     const centerX = layout.centerX;
-    const panelTop = layout.gameHeight * 0.08;
-    const panelHeight = layout.gameHeight * 0.84;
+    const panelTop = layout.gameHeight * 0.20;
+    const panelHeight = layout.gameHeight * 0.52;
 
     const blocker = this.add.zone(0, 0, layout.gameWidth, layout.gameHeight)
       .setOrigin(0, 0)
@@ -1421,64 +1366,6 @@ export class GameScene extends Phaser.Scene {
       },
     );
     this.pauseUi.push(scanText);
-
-    // Debug spawn section
-    const debugY = settingsY + 110;
-    const debugDivider = this.add.graphics().setDepth(221);
-    debugDivider.lineStyle(1, COLORS.HUD, 0.2);
-    debugDivider.lineBetween(centerX - 100, debugY - 16, centerX + 100, debugY - 16);
-    this.pauseUi.push(debugDivider);
-
-    const debugTitle = this.add.text(centerX, debugY, 'DEBUG SPAWN', {
-      fontFamily: 'monospace',
-      fontSize: '16px',
-      color: '#ff8800',
-      align: 'center',
-    }).setOrigin(0.5).setDepth(221).setAlpha(0.7);
-    this.pauseUi.push(debugTitle);
-
-    const debugBtnStyle: Phaser.Types.GameObjects.Text.TextStyle = {
-      fontFamily: 'monospace',
-      fontSize: '11px',
-      color: '#ff8800',
-      align: 'center',
-      backgroundColor: '#331100',
-      padding: { x: 6, y: 4 },
-    };
-
-    const debugButtons: { label: string; action: () => void }[] = [
-      { label: 'SHIELD', action: () => this.debugSpawnShield() },
-      { label: 'POINTS', action: () => this.debugSpawnBonus() },
-      { label: 'BOMB', action: () => this.debugSpawnBomb() },
-      { label: 'SALVAGE', action: () => this.debugSpawnSalvage(false) },
-      { label: 'RARE SALVAGE', action: () => this.debugSpawnSalvage(true) },
-      { label: 'ASTEROID SM', action: () => this.debugSpawnAsteroid(0.5, false) },
-      { label: 'ASTEROID LG', action: () => this.debugSpawnAsteroid(1.5, false) },
-      { label: 'MINEABLE AST', action: () => this.debugSpawnAsteroid(1.0, true) },
-    ];
-
-    const cols = 2;
-    const colWidth = (layout.gameWidth - 80) / cols;
-    const rowHeight = 30;
-    const gridLeft = 40 + colWidth / 2;
-
-    for (let i = 0; i < debugButtons.length; i++) {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const bx = gridLeft + col * colWidth;
-      const by = debugY + 30 + row * rowHeight;
-      const btn = this.add.text(bx, by, debugButtons[i].label, debugBtnStyle)
-        .setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
-      const action = debugButtons[i].action;
-      btn.on(
-        'pointerdown',
-        (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-          event.stopPropagation();
-          action();
-        },
-      );
-      this.pauseUi.push(btn);
-    }
   }
 
   private hidePauseMenu(): void {
