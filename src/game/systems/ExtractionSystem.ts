@@ -1,6 +1,9 @@
 import type Phaser from 'phaser';
-import { PHASE_LENGTH } from '../data/tuning';
+import { PHASE_LENGTH, EXIT_GATE_PREVIEW } from '../data/tuning';
 import { ExitGate } from '../entities/ExitGate';
+
+/** Time within the phase when the gate visual first appears. */
+const GATE_SPAWN_TIME = PHASE_LENGTH - EXIT_GATE_PREVIEW;
 
 export class ExtractionSystem {
   private scene: Phaser.Scene;
@@ -34,8 +37,8 @@ export class ExtractionSystem {
       }
     }
 
-    // Spawn gate at phase boundary
-    if (!this.gate && !this.closingGate && this.phaseTimer >= PHASE_LENGTH) {
+    // Spawn gate preview when enough phase time has elapsed
+    if (!this.gate && !this.closingGate && this.phaseTimer >= GATE_SPAWN_TIME) {
       this.gate = new ExitGate(this.scene);
     }
   }
@@ -53,13 +56,14 @@ export class ExtractionSystem {
     return this.gate;
   }
 
+  /** True when the gate exists and is extractable. */
   isGateActive(): boolean {
-    return this.gate !== null && this.gate.active;
+    return this.gate !== null && this.gate.extractable;
   }
 
   getTimeToGate(): number {
     if (this.gate) return 0;
-    return Math.max(0, PHASE_LENGTH - this.phaseTimer);
+    return Math.max(0, GATE_SPAWN_TIME - this.phaseTimer);
   }
 
   getPhaseCount(): number {

@@ -1,4 +1,5 @@
 export type RegentLineKey =
+  | 'threatDetected'
   | 'enemyEnter'
   | 'beamUnlock'
   | 'gateClose'
@@ -6,39 +7,39 @@ export type RegentLineKey =
   | 'whyWontYouDie';
 
 const REGENT_LINES: Record<RegentLineKey, string[]> = {
+  threatDetected: [
+    'Threat detected. Investigating.',
+    'Anomalous activity in sector. Dispatching patrol.',
+  ],
   enemyEnter: [
     'This is a restricted zone. Leave now or be removed.',
-    "Unregistered vessel detected. You have exactly zero seconds to comply.",
-    'Regent Patrol to trespasser: prepare for destruction.',
-    "You're salvaging in MY sector? That's a death sentence, pilot.",
-    'Attention, scavenger. Your license has been... revoked.',
+    "Unregistered vessel detected. You have zero seconds to comply.",
+    'Regent Patrol to trespasser: Die rat.',
+    "You're in MY sector? That's a death sentence, pilot.",
+    'Attention, scavenger. Die.',
   ],
   beamUnlock: [
-    "Bring out the big guns. It's time to end this.",
-    "Activating heavy ordnance. Should've left when you had the chance.",
-    'All batteries, full sweep. Burn them out.',
+    "It's time to end this.",
+    "Should've left when you had the chance.",
+    'Burn them out.',
   ],
   gateClose: [
     'Gate is shut. Now endure the part where this gets difficult.',
     'No exit for you. Stay and watch your odds collapse.',
-    "Phase three already, scavenger. Let's see how long your nerve lasts.",
     'Door sealed. Good. Running was beginning to embarrass you.',
   ],
   killTaunt: [
-    'All that noise, and nothing to show for it.',
-    'Predictable. Trespassers always break eventually.',
-    'There. The sector corrects itself.',
+    'All that and nothing to show for it.',
+    'Predictable. You lot all break eventually.',
+    'Stay down.',
     "You lasted just long enough to disappoint yourself.",
   ],
   whyWontYouDie: [
     "Why won't you DIE?!",
     'Still here?! IMPOSSIBLE.',
-    "How are you still flying?! This is ABSURD.",
-    "What ARE you? Nothing survives this long!",
-    "My superiors are going to hear about this. And they won't be happy.",
+    "What ARE you?",
     'You are the most annoying scavenger I have EVER encountered.',
-    "Every phase you survive costs me a promotion. STOP THAT.",
-    "I've thrown everything at you. EVERYTHING. What's your secret?!",
+    'Fire Everything - EVERYTHING',
   ],
 };
 

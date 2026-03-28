@@ -17,10 +17,10 @@ export const SALVAGE_RESPAWN_DELAY = 1500;
 
 // Extraction
 export const PHASE_LENGTH = 30_000;
-export const EXIT_GATE_DURATION = 5_000;
+export const EXIT_GATE_PREVIEW = 10_000; // ms gate is visible but inactive before opening
+export const EXIT_GATE_DURATION = 3_000; // ms the gate is extractable
 export const EXIT_GATE_RADIUS = 50;      // visual size
 export const EXIT_GATE_HITBOX = 20;      // collision radius for extraction
-export const EXIT_GATE_GRACE_DELAY = 2000; // ms before gate becomes extractable
 export const EXIT_GATE_INSET = 60;
 
 // Hazards - Drifter

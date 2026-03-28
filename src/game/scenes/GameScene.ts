@@ -22,6 +22,7 @@ import { ExitGate } from '../entities/ExitGate';
 import { NPCShip } from '../entities/NPCShip';
 import { Hud } from '../ui/Hud';
 import { Overlays } from '../ui/Overlays';
+import { GeoSphere } from '../entities/GeoSphere';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { SlickComm } from '../ui/SlickComm';
 import { RegentComm } from '../ui/RegentComm';
@@ -78,6 +79,7 @@ export class GameScene extends Phaser.Scene {
   private countdownTimer = 0;
   private starfield!: Phaser.GameObjects.Graphics;
   private starfieldStars: StarfieldStar[] = [];
+  private geoSphere!: GeoSphere;
   private arenaBorder!: Phaser.GameObjects.Graphics;
   private hologramOverlay!: HologramOverlay;
   private entryGate: ExitGate | null = null;
@@ -142,6 +144,9 @@ export class GameScene extends Phaser.Scene {
       });
     }
     this.drawStarfield();
+
+    // Rotating geometric sphere behind the arena
+    this.geoSphere = new GeoSphere(this);
 
     // Draw arena boundary (hologram style)
     this.arenaBorder = this.add.graphics().setDepth(0);
@@ -398,7 +403,9 @@ export class GameScene extends Phaser.Scene {
       const slickPhaseLine = Math.random() < 0.28 ? getSlickLine('phaseAdvance') : null;
       let regentPhaseLine: string | null = null;
 
-      if (currentPhase >= 3 && !this.regentIntroduced) {
+      if (currentPhase === 2 && !this.regentIntroduced && Math.random() < 0.5) {
+        regentPhaseLine = getRegentLine('threatDetected');
+      } else if (currentPhase >= 3 && !this.regentIntroduced) {
         this.regentIntroduced = true;
         regentPhaseLine = getRegentLine('gateClose');
       } else if (this.regentIntroduced) {
@@ -612,6 +619,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.updateStarfield(effectiveDelta);
+    this.geoSphere.update(effectiveDelta);
     if (countdownActive) {
       this.updateCountdown(effectiveDelta, paused);
     }
@@ -619,31 +627,22 @@ export class GameScene extends Phaser.Scene {
     // Hologram overlay
     this.hologramOverlay.update(effectiveDelta);
 
-    // HUD
-    const timeToGate = this.extractionSystem.getTimeToGate();
-    const gateActive = this.extractionSystem.isGateActive();
-    if (!runFrozen && !paused && gateActive && !this.lastGateActive && Math.random() < 0.55) {
+    // HUD — comm triggers keyed to extractable transitions
+    const gateExtractable = this.extractionSystem.isGateActive();
+    const gate = this.extractionSystem.getGate();
+    if (!runFrozen && !paused && gate?.justBecameExtractable && Math.random() < 0.55) {
       this.showSlickExclusive(getSlickLine('gateOpen'));
     }
-    // Gate just closed — occasionally comment on the player staying
-    if (!runFrozen && !paused && !gateActive && this.lastGateActive && Math.random() < 0.5) {
+    if (!runFrozen && !paused && !gateExtractable && this.lastGateActive && Math.random() < 0.5) {
       this.showSlickExclusive(getSlickLine('gateClose'), 2400);
     }
     if (!runFrozen) {
-      this.lastGateActive = gateActive;
-    }
-
-    let gateText: string;
-    if (gateActive) {
-      gateText = 'GATE OPEN';
-    } else {
-      gateText = `GATE: ${Math.ceil(timeToGate / 1000)}s`;
+      this.lastGateActive = gateExtractable;
     }
 
     this.hud.update(
       this.scoreSystem.getUnbanked(),
       this.scoreSystem.getBest(),
-      gateText,
       currentPhase,
       this.player.hasShield,
     );
@@ -795,6 +794,7 @@ export class GameScene extends Phaser.Scene {
     this.slickComm.destroy();
     this.regentComm.destroy();
     this.hologramOverlay.destroy();
+    this.geoSphere.destroy();
     this.starfield.destroy();
     this.arenaBorder.destroy();
   }
@@ -803,10 +803,10 @@ export class GameScene extends Phaser.Scene {
     const layout = getLayout();
     const dt = delta / 1000;
     for (const star of this.starfieldStars) {
-      star.y += star.speed * dt;
-      if (star.y > layout.gameHeight + GameScene.STARFIELD_OVERSCAN + star.size) {
-        star.y = -GameScene.STARFIELD_OVERSCAN - star.size;
-        star.x = Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, layout.gameWidth + GameScene.STARFIELD_OVERSCAN);
+      star.x -= star.speed * dt;
+      if (star.x < -GameScene.STARFIELD_OVERSCAN - star.size) {
+        star.x = layout.gameWidth + GameScene.STARFIELD_OVERSCAN + star.size;
+        star.y = Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, layout.gameHeight + GameScene.STARFIELD_OVERSCAN);
       }
     }
     this.drawStarfield();
@@ -887,11 +887,8 @@ export class GameScene extends Phaser.Scene {
     const deathCommY = layout.gameHeight * 0.53;
     const panelTop = layout.gameHeight * 0.18;
     const panelHeight = layout.gameHeight * (isDeath ? 0.64 : 0.58);
-    const panelBottom = panelTop + panelHeight;
     const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
     const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
-    const save = new SaveSystem();
-    const best = save.getBestScore();
 
     const backing = this.add.graphics().setDepth(205);
     backing.fillStyle(COLORS.BG, 0.78);
@@ -929,17 +926,7 @@ export class GameScene extends Phaser.Scene {
       this.regentComm.resetLayout();
     }
 
-    if (best > 0) {
-      const bestText = this.add.text(centerX, isDeath ? layout.gameHeight * 0.64 : layout.gameHeight * 0.49, `BEST: ${Math.floor(best)}`, {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-        align: 'center',
-      }).setOrigin(0.5).setDepth(210);
-      this.resultUi.push(bestText);
-    }
-
-    const retryText = this.add.text(centerX, isDeath ? layout.gameHeight * 0.71 : layout.gameHeight * 0.61, 'TAP TO RETRY', {
+    const retryText = this.add.text(centerX, isDeath ? layout.gameHeight * 0.64 : layout.gameHeight * 0.55, 'TAP TO RETRY', {
       fontFamily: 'monospace',
       fontSize: '24px',
       color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
@@ -955,7 +942,7 @@ export class GameScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    const menuText = this.add.text(centerX, isDeath ? panelBottom - 30 : layout.gameHeight * 0.70, 'MENU', {
+    const menuText = this.add.text(centerX, isDeath ? layout.gameHeight * 0.71 : layout.gameHeight * 0.63, 'MENU', {
       fontFamily: 'monospace',
       fontSize: '18px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -978,12 +965,13 @@ export class GameScene extends Phaser.Scene {
 
   private createPauseButton(): void {
     const layout = getLayout();
-    const buttonWidth = Math.min(layout.gameWidth - 32, 156);
-    const buttonHeight = 34;
-    const buttonY = layout.gameHeight - 26;
+    const buttonWidth = 44;
+    const buttonHeight = 28;
+    const buttonX = layout.gameWidth - 16 - buttonWidth / 2;
+    const buttonY = 42;
 
     this.pauseButtonBg = this.add.graphics().setDepth(230);
-    this.pauseButtonText = this.add.text(layout.centerX, buttonY, 'PAUSE', {
+    this.pauseButtonText = this.add.text(buttonX, buttonY, '||', {
       fontFamily: 'monospace',
       fontSize: '14px',
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -991,7 +979,7 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(231);
 
     this.pauseButtonHit = this.add.zone(
-      layout.centerX - buttonWidth / 2,
+      buttonX - buttonWidth / 2,
       buttonY - buttonHeight / 2,
       buttonWidth,
       buttonHeight,
@@ -1044,7 +1032,7 @@ export class GameScene extends Phaser.Scene {
     const layout = getLayout();
     const centerX = layout.centerX;
     const panelTop = layout.gameHeight * 0.28;
-    const panelHeight = layout.gameHeight * 0.26;
+    const panelHeight = layout.gameHeight * 0.34;
 
     const blocker = this.add.zone(0, 0, layout.gameWidth, layout.gameHeight)
       .setOrigin(0, 0)
@@ -1142,9 +1130,10 @@ export class GameScene extends Phaser.Scene {
 
   private refreshPauseUi(): void {
     const layout = getLayout();
-    const buttonWidth = Math.min(layout.gameWidth - 32, 156);
-    const buttonHeight = 34;
-    const buttonY = layout.gameHeight - 26;
+    const buttonWidth = 44;
+    const buttonHeight = 28;
+    const buttonX = layout.gameWidth - 16 - buttonWidth / 2;
+    const buttonY = 42;
     const buttonVisible = (
       this.state === GameState.COUNTDOWN ||
       this.state === GameState.PLAYING ||
@@ -1160,30 +1149,30 @@ export class GameScene extends Phaser.Scene {
       this.pauseButtonBg.fillStyle(fillColor, paused ? 0.88 : 0.82);
       this.pauseButtonBg.lineStyle(1.25, lineColor, paused ? 0.95 : 0.5);
       this.pauseButtonBg.fillRoundedRect(
-        layout.centerX - buttonWidth / 2,
+        buttonX - buttonWidth / 2,
         buttonY - buttonHeight / 2,
         buttonWidth,
         buttonHeight,
-        12,
+        8,
       );
       this.pauseButtonBg.strokeRoundedRect(
-        layout.centerX - buttonWidth / 2,
+        buttonX - buttonWidth / 2,
         buttonY - buttonHeight / 2,
         buttonWidth,
         buttonHeight,
-        12,
+        8,
       );
     }
 
     this.pauseButtonBg.setVisible(buttonVisible);
     this.pauseButtonText
       .setVisible(buttonVisible)
-      .setPosition(layout.centerX, buttonY)
+      .setPosition(buttonX, buttonY)
       .setText(paused ? 'RESUME' : '||')
       .setColor(textColor);
     this.pauseButtonHit
       .setVisible(buttonVisible)
-      .setPosition(layout.centerX - buttonWidth / 2, buttonY - buttonHeight / 2)
+      .setPosition(buttonX - buttonWidth / 2, buttonY - buttonHeight / 2)
       .setSize(buttonWidth, buttonHeight);
 
     if (this.pauseButtonHit.input) {

@@ -1,5 +1,5 @@
 import { BEAM_WIDTH, PLAYER_RADIUS } from '../data/tuning';
-import { pointInPolygon } from '../utils/collision';
+import { circleIntersectsPolygon, pointInPolygon } from '../utils/collision';
 import type { Player } from '../entities/Player';
 import type { DrifterHazard } from '../entities/DrifterHazard';
 import type { BeamHazard } from '../entities/BeamHazard';
@@ -12,12 +12,12 @@ export class CollisionSystem {
     this.player = player;
   }
 
-  /** Returns the first drifter whose polygon contains the player center, or null. */
+  /** Returns the first drifter whose circle-player collision triggers, or null. */
   checkDrifters(drifters: DrifterHazard[]): DrifterHazard | null {
     for (const drifter of drifters) {
       if (!drifter.active) continue;
 
-      if (pointInPolygon(this.player.x, this.player.y, drifter.getWorldVertices())) {
+      if (circleIntersectsPolygon(this.player.x, this.player.y, PLAYER_RADIUS, drifter.getWorldVertices())) {
         return drifter;
       }
     }

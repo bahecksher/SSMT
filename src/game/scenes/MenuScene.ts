@@ -5,6 +5,7 @@ import { fetchLeaderboard, type LeaderboardEntry } from '../services/Leaderboard
 import { SalvageDebris } from '../entities/SalvageDebris';
 import { DrifterHazard } from '../entities/DrifterHazard';
 import { NPCShip } from '../entities/NPCShip';
+import { GeoSphere } from '../entities/GeoSphere';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { SlickComm } from '../ui/SlickComm';
 import { DRIFTER_SPEED_BASE } from '../data/tuning';
@@ -36,6 +37,7 @@ export class MenuScene extends Phaser.Scene {
   private bgDebris: SalvageDebris[] = [];
   private bgDrifters: DrifterHazard[] = [];
   private bgNpcs: NPCShip[] = [];
+  private geoSphere!: GeoSphere;
   private hologramOverlay!: HologramOverlay;
   private slickComm!: SlickComm;
   private drifterTimer = 0;
@@ -75,6 +77,9 @@ export class MenuScene extends Phaser.Scene {
       starfield.fillStyle(starColor, brightness);
       starfield.fillCircle(sx, sy, size);
     }
+
+    // Rotating geo-sphere behind entities
+    this.geoSphere = new GeoSphere(this);
 
     // Seed initial background entities
     for (let i = 0; i < BG_MAX_DEBRIS; i++) {
@@ -368,6 +373,7 @@ export class MenuScene extends Phaser.Scene {
 
     // Hologram flicker
     this.hologramOverlay.update(delta);
+    this.geoSphere.update(delta);
   }
 
   private cleanupBackground(): void {
@@ -378,6 +384,7 @@ export class MenuScene extends Phaser.Scene {
     for (const npc of this.bgNpcs) npc.destroy();
     this.bgNpcs = [];
     this.hologramOverlay.destroy();
+    this.geoSphere.destroy();
   }
 
   private cleanup(): void {

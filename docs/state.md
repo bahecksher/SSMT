@@ -1,27 +1,24 @@
 # State
-_Last updated: 2026-03-27 1652_
+_Last updated: 2026-03-27 1826_
 
 ## Current focus
-Gameplay usability polish, currently centered on responsive layout follow-through, live pause behavior, and restoring the arcade-style callsign format.
+UI polish pass and gate rework — fixing scaling issues from the responsive layout change and reworking gate visuals for better anticipation.
 
 ## What's working
 - Full scene flow: Boot -> Menu -> Game with in-scene results
 - Core salvage/extract loop, hazards, leaderboard, comms, and HUD remain intact
-- Phaser canvas now resizes to the browser viewport instead of staying fixed at `540x960`
-- Runtime layout metrics now drive arena bounds, starfields, gate placement, spawns, overlays, and key UI positioning
-- Menu and gameplay starfields cover the current viewport with no forced portrait letterboxing
-- Arena frame now changes shape with the browser/device size
-- Bottom-screen pause button is available during countdown and live gameplay
-- The live pause button now uses the `||` pause symbol instead of the word `PAUSE`
-- Pause menu now offers `RESUME` and `ABANDON RUN`
-- Pause no longer fully freezes the run; it now slows the simulation to a near-stop crawl
-- Player control is disabled while paused, but collisions can still kill during the slowed state
-- After death or extraction, phases/gates/spawns now freeze while the existing background motion keeps drifting visually
-- Abandoning from pause returns directly to the main menu without banking the current run
-- Player callsigns now use the `AAA-###` format again
-- The menu callsign editor is back to 3 editable letters
-- Older saved callsigns now normalize automatically into the restored `AAA-###` format
-- Existing menu-to-game background handoff still works with responsive bounds
+- Responsive layout drives arena bounds, starfields, gate placement, spawns, overlays, and key UI positioning
+- HUD credits text scaled down to 14px to fit responsive viewports
+- Pause button relocated to top-right corner with compact 44x28 design
+- Pause menu panel enlarged (0.34 height) so RESUME, ABANDON RUN, and hint text all fit inside the border
+- Gate timer removed from HUD
+- "BEST" score removed from destroyed/extracted results overlay
+- Asteroid hitboxes now use circle-polygon intersection (accounts for player radius), fixing visual mismatch on large asteroids
+- Gate preview: large closing circle appears 10s before gate activates, giving the player time to navigate toward it
+- Gate active: flickering on/off (accelerating blink) for 3s extractable window, with white flash on blink-out
+- Comms trigger when gate becomes extractable, not when it first appears
+- Rotating wireframe geo-sphere behind the arena (bottom-right corner, partially visible)
+- Player callsigns use `AAA-###` format
 - Production build passes
 
 ## In progress
@@ -32,7 +29,7 @@ Nothing active.
 - Mid-run resize/rotation has not been deeply playtested yet
 - Pause interactions have not been deeply playtested on mobile touch edge cases yet
 - Crawl-speed pause factor may still need feel tuning after playtests
-- Result-screen background feel may still need tuning if full-speed motion feels too busy after progression freeze
+- Gate flicker speed and closing-circle timing may need feel tuning after playtests
 - Beam hazards still span full screen width/height, not clipped to arena
 - No audio or voiced delivery for Slick/Regent yet
 - No settings screen (Phase 6)
@@ -45,31 +42,25 @@ Nothing active.
 - Build still warns about large chunk size because Phaser is bundled as one large client chunk
 
 ## Next actions
-1. Playtest callsign editing and saved-name migration so restored `AAA-###` identities read well in the menu and leaderboard
-2. Playtest crawl-speed pause and abandon flow on desktop and mobile
-3. Playtest death/extraction result screens to confirm phase count, gate state, and comm triggers stay frozen
+1. Playtest gate closing-circle preview and flickering active state for readability and feel
+2. Playtest asteroid hitbox accuracy with the circle-polygon collision
+3. Playtest pause button in top-right on desktop and mobile
 
 ## Active plan
-docs/plans/2026-03-27 1652 Plan - Callsign Format Restore.md
+None — working from ad-hoc polish requests.
 
 ## How to verify
 1. Run `npm.cmd run build` or `npm.cmd run dev -- --host 0.0.0.0`
-2. Start a run and use the bottom button to pause during countdown and during live play
-3. Confirm the game slows to an extreme crawl instead of freezing fully
-4. Confirm player control is effectively unusable while paused, but a hazard can still kill on collision
-5. Press `RESUME` and confirm gameplay returns immediately to full speed with no `3 2 1 GO` countdown
-6. Choose `ABANDON RUN` and confirm it returns to the main menu without banking the run
-7. Die or extract and confirm the background still moves, but the phase number and gate state stop advancing
-8. Confirm no new phase-change or gate-change comm lines fire after the run has ended
-9. Confirm result screens and menu navigation still behave normally after using pause
-10. Confirm the menu displays the callsign as `AAA-###` and editing requires exactly 3 letters
+2. Start a run and verify credits text is smaller, pause button is top-right
+3. Wait ~20s and watch the closing circle appear around the gate location
+4. When the circle reaches the gate, confirm it starts flickering with white flashes on blink-out
+5. Fly into the flickering gate to confirm extraction works during the 3s window
+6. Die and confirm no "BEST" score on the destroyed overlay
+7. Confirm the wireframe geo-sphere is visible in the bottom-right corner behind the arena
+8. Pause and confirm all content fits inside the pause panel
 
 ## Recent logs
+- docs/log/2026-03-27 1826 UI Polish and Gate Rework.md — HUD fixes, gate rework with closing-circle preview and flicker, geo-sphere background
 - docs/log/2026-03-27 1652 Callsign Format Restore.md — Restored three-letter arcade callsigns and reformatted them as `AAA-###`
 - docs/log/2026-03-27 1646 Post-run Progression Freeze.md — Froze phases, gates, spawns, and reactive lines after death/extraction while keeping background motion alive
 - docs/log/2026-03-27 1641 Crawl Pause Behavior.md — Replaced hard pause and resume countdown with an ultra-slow danger-live pause state
-- docs/log/2026-03-27 1630 Pause Resume Countdown.md — Added a frozen `3 2 1 GO` countdown before gameplay resumes from pause
-- docs/log/2026-03-27 1626 Pause Symbol Label.md — Swapped the bottom pause button text from `PAUSE` to `||`
-- docs/log/2026-03-27 1623 Pause Feature.md — Added a bottom pause button and pause menu with abandon-run flow
-- docs/log/2026-03-27 1609 Responsive Arena Layout.md — Switched the game from fixed portrait sizing to viewport-responsive arena bounds
-- docs/log/2026-03-27 1555 Exclusive Comms and Line Refresh.md — Refreshed remaining Slick sim-flavored lines and made Slick/Regent comms mutually exclusive
