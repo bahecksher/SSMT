@@ -13,7 +13,9 @@ import { pickAsteroidSize } from '../data/phaseConfig';
 import { getSlickLine } from '../data/slickLines';
 import { getLayout, setLayoutSize } from '../layout';
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
+import { refreshMusicForSettings, setMenuMusic } from '../systems/MusicSystem';
 import { CustomCursor } from '../ui/CustomCursor';
+import { SettingsSlider } from '../ui/SettingsSlider';
 
 type Period = 'daily' | 'weekly';
 type MenuButton = {
@@ -43,11 +45,15 @@ export class MenuScene extends Phaser.Scene {
   private weeklyTab!: Phaser.GameObjects.Text;
   private weeklyTabHit!: Phaser.GameObjects.Zone;
   private settingsButton!: MenuButton;
-  private settingsPanelUi: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text | Phaser.GameObjects.Zone> = [];
+  private settingsPanelUi: Phaser.GameObjects.GameObject[] = [];
   private shakeOnButton!: MenuButton;
   private shakeOffButton!: MenuButton;
   private scanOnButton!: MenuButton;
   private scanOffButton!: MenuButton;
+  private musicOnButton!: MenuButton;
+  private musicOffButton!: MenuButton;
+  private musicVolumeSlider!: SettingsSlider;
+  private fxVolumeSlider!: SettingsSlider;
   private settingsOpen = false;
   private activePeriod: Period = 'daily';
   private leaderboardStartY = 0;
@@ -77,6 +83,7 @@ export class MenuScene extends Phaser.Scene {
   create(): void {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
+    setMenuMusic(this);
     const layout = getLayout();
     const centerX = layout.centerX;
     const save = new SaveSystem();
@@ -483,14 +490,21 @@ export class MenuScene extends Phaser.Scene {
     const buttonWidth = compactMenu ? 84 : 90;
     const buttonCenterX = layout.gameWidth - (compactMenu ? 68 : 72);
     const buttonCenterY = backingTop + (veryCompactMenu ? 14 : 16);
-    const panelWidth = compactMenu ? 162 : 170;
-    const panelHeight = 92;
+    const panelWidth = compactMenu ? 186 : 194;
+    const panelHeight = 212;
     const panelLeft = layout.gameWidth - panelWidth - 24;
     const panelTop = buttonCenterY + 18;
     const rowOneY = panelTop + 26;
     const rowTwoY = panelTop + 58;
+    const rowThreeY = panelTop + 90;
+    const musicVolumeLabelY = panelTop + 122;
+    const musicVolumeY = panelTop + 138;
+    const fxVolumeLabelY = panelTop + 164;
+    const fxVolumeY = panelTop + 180;
     const offX = panelLeft + panelWidth - 26;
     const onX = offX - 44;
+    const sliderLeft = panelLeft + 66;
+    const sliderWidth = panelWidth - 100;
 
     this.settingsButton = this.createMenuButton(
       buttonCenterX,
@@ -533,16 +547,70 @@ export class MenuScene extends Phaser.Scene {
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(uiDepth + 3);
 
+    const musicLabel = this.add.text(panelLeft + 14, rowThreeY, 'MUSIC', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(uiDepth + 3);
+
+    const musicBetaLabel = this.add.text(panelLeft + 48, rowThreeY, '*BETA*', {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(uiDepth + 3).setAlpha(0.9);
+
+    const musicVolumeLabel = this.add.text(panelLeft + 14, musicVolumeLabelY, 'MUSIC VOL', {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(uiDepth + 3).setAlpha(0.72);
+
+    const fxVolumeLabel = this.add.text(panelLeft + 14, fxVolumeLabelY, 'FX VOL', {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(uiDepth + 3).setAlpha(0.72);
+
     this.shakeOnButton = this.createMenuButton(onX, rowOneY, 34, 20, 'ON', uiDepth + 3, '10px', () => this.applyMenuSettings({ screenShake: true }));
     this.shakeOffButton = this.createMenuButton(offX, rowOneY, 38, 20, 'OFF', uiDepth + 3, '10px', () => this.applyMenuSettings({ screenShake: false }));
     this.scanOnButton = this.createMenuButton(onX, rowTwoY, 34, 20, 'ON', uiDepth + 3, '10px', () => this.applyMenuSettings({ scanlines: true }));
     this.scanOffButton = this.createMenuButton(offX, rowTwoY, 38, 20, 'OFF', uiDepth + 3, '10px', () => this.applyMenuSettings({ scanlines: false }));
+    this.musicOnButton = this.createMenuButton(onX, rowThreeY, 34, 20, 'ON', uiDepth + 3, '10px', () => this.applyMenuSettings({ musicEnabled: true }));
+    this.musicOffButton = this.createMenuButton(offX, rowThreeY, 38, 20, 'OFF', uiDepth + 3, '10px', () => this.applyMenuSettings({ musicEnabled: false }));
+    this.musicVolumeSlider = new SettingsSlider({
+      scene: this,
+      left: sliderLeft,
+      y: musicVolumeY,
+      width: sliderWidth,
+      depth: uiDepth + 3,
+      accentColor: COLORS.GATE,
+      initialValue: getSettings().musicVolume,
+      onChange: (value) => this.applyMenuSettings({ musicVolume: value }),
+    });
+    this.fxVolumeSlider = new SettingsSlider({
+      scene: this,
+      left: sliderLeft,
+      y: fxVolumeY,
+      width: sliderWidth,
+      depth: uiDepth + 3,
+      accentColor: COLORS.SALVAGE,
+      initialValue: getSettings().fxVolume,
+      onChange: (value) => this.applyMenuSettings({ fxVolume: value }),
+    });
 
     this.settingsPanelUi = [
       panelBg,
       panelHit,
       shakeLabel,
       scanLabel,
+      musicLabel,
+      musicBetaLabel,
+      musicVolumeLabel,
+      fxVolumeLabel,
       this.shakeOnButton.bg,
       this.shakeOnButton.label,
       this.shakeOnButton.hit,
@@ -555,6 +623,14 @@ export class MenuScene extends Phaser.Scene {
       this.scanOffButton.bg,
       this.scanOffButton.label,
       this.scanOffButton.hit,
+      this.musicOnButton.bg,
+      this.musicOnButton.label,
+      this.musicOnButton.hit,
+      this.musicOffButton.bg,
+      this.musicOffButton.label,
+      this.musicOffButton.hit,
+      ...this.musicVolumeSlider.getObjects(),
+      ...this.fxVolumeSlider.getObjects(),
     ];
 
     this.updateSettingsUi();
@@ -608,7 +684,7 @@ export class MenuScene extends Phaser.Scene {
 
   private setSettingsPanelVisible(visible: boolean): void {
     for (const obj of this.settingsPanelUi) {
-      obj.setVisible(visible);
+      (obj as Phaser.GameObjects.GameObject & { visible: boolean }).visible = visible;
       if ('input' in obj && obj.input) {
         obj.input.enabled = visible;
       }
@@ -624,6 +700,7 @@ export class MenuScene extends Phaser.Scene {
   private applyMenuSettings(partial: Partial<GameSettings>): void {
     const updated = updateSettings(partial);
     this.hologramOverlay.setEnabled(updated.scanlines);
+    refreshMusicForSettings(this);
     this.updateSettingsUi();
   }
 
@@ -635,6 +712,10 @@ export class MenuScene extends Phaser.Scene {
     this.drawMenuButton(this.shakeOffButton, this.shakeOffButton.label.x, this.shakeOffButton.label.y, !settings.screenShake);
     this.drawMenuButton(this.scanOnButton, this.scanOnButton.label.x, this.scanOnButton.label.y, settings.scanlines);
     this.drawMenuButton(this.scanOffButton, this.scanOffButton.label.x, this.scanOffButton.label.y, !settings.scanlines);
+    this.drawMenuButton(this.musicOnButton, this.musicOnButton.label.x, this.musicOnButton.label.y, settings.musicEnabled);
+    this.drawMenuButton(this.musicOffButton, this.musicOffButton.label.x, this.musicOffButton.label.y, !settings.musicEnabled);
+    this.musicVolumeSlider.setValue(settings.musicVolume);
+    this.fxVolumeSlider.setValue(settings.fxVolume);
   }
 
   private updateTabStyles(): void {

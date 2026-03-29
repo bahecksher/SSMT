@@ -15,7 +15,11 @@ import {
 } from '../data/companyData';
 import { CompanyId } from '../types';
 import type { ActiveMission } from '../types';
+import { refreshMusicForSettings, setMissionMusic } from '../systems/MusicSystem';
+import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
 import { CustomCursor } from '../ui/CustomCursor';
+import { HologramOverlay } from '../ui/HologramOverlay';
+import { SettingsSlider } from '../ui/SettingsSlider';
 
 interface HandoffData {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
@@ -44,10 +48,18 @@ interface BriefingLayoutConfig {
   deployButtonHeight: number;
 }
 
+type MissionButton = {
+  bg: Phaser.GameObjects.Graphics;
+  label: Phaser.GameObjects.Text;
+  hit: Phaser.GameObjects.Zone;
+  width: number;
+  height: number;
+};
+
 const CARD_HEIGHT = 68;
 const CARD_GAP = 8;
 const CARD_MARGIN_X = 32;
-const FAVOR_CARD_HEIGHT = 88;
+const FAVOR_CARD_HEIGHT = 100;
 const FAVOR_CARD_GAP = 8;
 const FAVOR_SECTION_GAP = 10;
 const REROLL_BASE_COST = 200;
@@ -65,6 +77,18 @@ export class MissionSelectScene extends Phaser.Scene {
   private rerollsUsedThisVisit = 0;
   private selectedFavorIds = new Set<CompanyId>();
   private cursor!: CustomCursor;
+  private hologramOverlay!: HologramOverlay;
+  private settingsButton!: MissionButton;
+  private settingsPanelUi: Phaser.GameObjects.GameObject[] = [];
+  private shakeOnButton!: MissionButton;
+  private shakeOffButton!: MissionButton;
+  private scanOnButton!: MissionButton;
+  private scanOffButton!: MissionButton;
+  private musicOnButton!: MissionButton;
+  private musicOffButton!: MissionButton;
+  private musicVolumeSlider!: SettingsSlider;
+  private fxVolumeSlider!: SettingsSlider;
+  private settingsOpen = false;
 
   constructor() {
     super(SCENE_KEYS.MISSION_SELECT);
@@ -74,6 +98,7 @@ export class MissionSelectScene extends Phaser.Scene {
     this.events.once('shutdown', this.cleanup, this);
     this.cursor = new CustomCursor(this);
     setLayoutSize(this.scale.width, this.scale.height);
+    setMissionMusic(this);
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
 
@@ -99,6 +124,9 @@ export class MissionSelectScene extends Phaser.Scene {
       starfield.fillCircle(sx, sy, size);
     }
 
+    this.hologramOverlay = new HologramOverlay(this);
+    this.hologramOverlay.setEnabled(getSettings().scanlines);
+
     this.add.text(layout.centerX, briefing.titleY, 'MISSION BRIEFING', {
       fontFamily: 'monospace',
       fontSize: briefing.compact ? '20px' : '22px',
@@ -120,6 +148,7 @@ export class MissionSelectScene extends Phaser.Scene {
     this.drawRerollButton();
     this.drawFavorSection();
     this.drawMenuButton();
+    this.createSettingsUi();
     this.drawDeployButton();
   }
 
@@ -137,7 +166,7 @@ export class MissionSelectScene extends Phaser.Scene {
     const missionToRerollGap = tight ? 8 : compact ? 12 : 14;
     const rerollHeight = compact ? 28 : 32;
     const rerollY = cardTop + cardHeight * 3 + cardGap * 2 + missionToRerollGap;
-    const favorCardHeight = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.085), 78, FAVOR_CARD_HEIGHT);
+    const favorCardHeight = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.096), 86, FAVOR_CARD_HEIGHT);
     const favorCardGap = tight ? 8 : compact ? 10 : FAVOR_CARD_GAP + 2;
     const rerollToWalletGap = tight ? 9 : compact ? 12 : FAVOR_SECTION_GAP + 4;
     const walletToFavorGap = tight ? 12 : compact ? 16 : 18;
@@ -337,6 +366,254 @@ export class MissionSelectScene extends Phaser.Scene {
     this.navUi.push(hit);
   }
 
+  private createSettingsUi(): void {
+    const layout = getLayout();
+    const briefing = this.getBriefingLayoutConfig();
+    const hudColor = colorStr(COLORS.HUD);
+    const buttonWidth = briefing.compact ? 74 : 82;
+    const buttonCenterX = layout.gameWidth - briefing.cardMarginX - buttonWidth / 2 + 4;
+    const buttonCenterY = briefing.compact ? 24 : 28;
+    const panelWidth = briefing.compact ? 186 : 194;
+    const panelHeight = 212;
+    const panelLeft = layout.gameWidth - panelWidth - 24;
+    const panelTop = buttonCenterY + 18;
+    const rowOneY = panelTop + 26;
+    const rowTwoY = panelTop + 58;
+    const rowThreeY = panelTop + 90;
+    const musicVolumeLabelY = panelTop + 122;
+    const musicVolumeY = panelTop + 138;
+    const fxVolumeLabelY = panelTop + 164;
+    const fxVolumeY = panelTop + 180;
+    const offX = panelLeft + panelWidth - 26;
+    const onX = offX - 44;
+    const sliderLeft = panelLeft + 66;
+    const sliderWidth = panelWidth - 100;
+
+    this.settingsButton = this.createUiButton(
+      buttonCenterX,
+      buttonCenterY,
+      buttonWidth,
+      briefing.compact ? 22 : 24,
+      'SETTINGS',
+      11,
+      '10px',
+      () => this.setSettingsOpen(!this.settingsOpen),
+    );
+
+    const blocker = this.add.zone(0, 0, layout.gameWidth, layout.gameHeight)
+      .setOrigin(0, 0)
+      .setDepth(18)
+      .setInteractive({ useHandCursor: false });
+    blocker.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      this.setSettingsOpen(false);
+    });
+
+    const panelBg = this.add.graphics().setDepth(19);
+    panelBg.fillStyle(COLORS.BG, 0.95);
+    panelBg.lineStyle(1.1, COLORS.HUD, 0.34);
+    panelBg.fillRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 10);
+    panelBg.strokeRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 10);
+    panelBg.fillStyle(COLORS.HUD, 0.04);
+    panelBg.fillRoundedRect(panelLeft + 4, panelTop + 4, panelWidth - 8, panelHeight - 8, 8);
+
+    const panelHit = this.add.zone(panelLeft, panelTop, panelWidth, panelHeight)
+      .setOrigin(0, 0)
+      .setDepth(22)
+      .setInteractive({ useHandCursor: false });
+    panelHit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+    });
+
+    const shakeLabel = this.add.text(panelLeft + 14, rowOneY, 'SHAKE', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(20);
+
+    const scanLabel = this.add.text(panelLeft + 14, rowTwoY, 'SCAN', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(20);
+
+    const musicLabel = this.add.text(panelLeft + 14, rowThreeY, 'MUSIC', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(20);
+
+    const musicBetaLabel = this.add.text(panelLeft + 48, rowThreeY, '*BETA*', {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: colorStr(COLORS.HAZARD),
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(20).setAlpha(0.9);
+
+    const musicVolumeLabel = this.add.text(panelLeft + 14, musicVolumeLabelY, 'MUSIC VOL', {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(20).setAlpha(0.72);
+
+    const fxVolumeLabel = this.add.text(panelLeft + 14, fxVolumeLabelY, 'FX VOL', {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(20).setAlpha(0.72);
+
+    this.shakeOnButton = this.createUiButton(onX, rowOneY, 34, 20, 'ON', 20, '10px', () => this.applySettings({ screenShake: true }));
+    this.shakeOffButton = this.createUiButton(offX, rowOneY, 38, 20, 'OFF', 20, '10px', () => this.applySettings({ screenShake: false }));
+    this.scanOnButton = this.createUiButton(onX, rowTwoY, 34, 20, 'ON', 20, '10px', () => this.applySettings({ scanlines: true }));
+    this.scanOffButton = this.createUiButton(offX, rowTwoY, 38, 20, 'OFF', 20, '10px', () => this.applySettings({ scanlines: false }));
+    this.musicOnButton = this.createUiButton(onX, rowThreeY, 34, 20, 'ON', 20, '10px', () => this.applySettings({ musicEnabled: true }));
+    this.musicOffButton = this.createUiButton(offX, rowThreeY, 38, 20, 'OFF', 20, '10px', () => this.applySettings({ musicEnabled: false }));
+    this.musicVolumeSlider = new SettingsSlider({
+      scene: this,
+      left: sliderLeft,
+      y: musicVolumeY,
+      width: sliderWidth,
+      depth: 20,
+      accentColor: COLORS.GATE,
+      initialValue: getSettings().musicVolume,
+      onChange: (value) => this.applySettings({ musicVolume: value }),
+    });
+    this.fxVolumeSlider = new SettingsSlider({
+      scene: this,
+      left: sliderLeft,
+      y: fxVolumeY,
+      width: sliderWidth,
+      depth: 20,
+      accentColor: COLORS.SALVAGE,
+      initialValue: getSettings().fxVolume,
+      onChange: (value) => this.applySettings({ fxVolume: value }),
+    });
+
+    this.settingsPanelUi = [
+      blocker,
+      panelBg,
+      panelHit,
+      shakeLabel,
+      scanLabel,
+      musicLabel,
+      musicBetaLabel,
+      musicVolumeLabel,
+      fxVolumeLabel,
+      this.shakeOnButton.bg,
+      this.shakeOnButton.label,
+      this.shakeOnButton.hit,
+      this.shakeOffButton.bg,
+      this.shakeOffButton.label,
+      this.shakeOffButton.hit,
+      this.scanOnButton.bg,
+      this.scanOnButton.label,
+      this.scanOnButton.hit,
+      this.scanOffButton.bg,
+      this.scanOffButton.label,
+      this.scanOffButton.hit,
+      this.musicOnButton.bg,
+      this.musicOnButton.label,
+      this.musicOnButton.hit,
+      this.musicOffButton.bg,
+      this.musicOffButton.label,
+      this.musicOffButton.hit,
+      ...this.musicVolumeSlider.getObjects(),
+      ...this.fxVolumeSlider.getObjects(),
+    ];
+
+    this.updateSettingsUi();
+    this.setSettingsPanelVisible(false);
+  }
+
+  private createUiButton(
+    centerX: number,
+    centerY: number,
+    width: number,
+    height: number,
+    label: string,
+    depth: number,
+    fontSize: string,
+    onPointerDown: () => void,
+  ): MissionButton {
+    const bg = this.add.graphics().setDepth(depth);
+    const text = this.add.text(centerX, centerY, label, {
+      fontFamily: 'monospace',
+      fontSize,
+      color: colorStr(COLORS.HUD),
+      align: 'center',
+    }).setOrigin(0.5).setDepth(depth + 1);
+    const hit = this.add.zone(centerX - width / 2, centerY - height / 2, width, height)
+      .setOrigin(0, 0)
+      .setDepth(depth + 2)
+      .setInteractive({ useHandCursor: true });
+
+    hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      onPointerDown();
+    });
+
+    return { bg, label: text, hit, width, height };
+  }
+
+  private drawUiButton(button: MissionButton, centerX: number, centerY: number, active: boolean): void {
+    const left = centerX - button.width / 2;
+    const top = centerY - button.height / 2;
+    button.bg.clear();
+    button.bg.fillStyle(COLORS.BG, active ? 0.94 : 0.84);
+    button.bg.lineStyle(1.1, active ? COLORS.GATE : COLORS.HUD, active ? 0.9 : 0.34);
+    button.bg.fillRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.strokeRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.fillStyle(active ? COLORS.GATE : COLORS.HUD, active ? 0.14 : 0.04);
+    button.bg.fillRoundedRect(left + 4, top + 4, button.width - 8, button.height - 8, 6);
+    button.label.setColor(colorStr(active ? COLORS.GATE : COLORS.HUD));
+    button.label.setAlpha(active ? 1 : 0.78);
+  }
+
+  private setSettingsPanelVisible(visible: boolean): void {
+    for (const obj of this.settingsPanelUi) {
+      (obj as Phaser.GameObjects.GameObject & { visible: boolean }).visible = visible;
+      if ('input' in obj && obj.input) {
+        obj.input.enabled = visible;
+      }
+    }
+  }
+
+  private setSettingsOpen(open: boolean): void {
+    this.settingsOpen = open;
+    this.setSettingsPanelVisible(open);
+    this.updateSettingsUi();
+  }
+
+  private applySettings(partial: Partial<GameSettings>): void {
+    const updated = updateSettings(partial);
+    this.hologramOverlay.setEnabled(updated.scanlines);
+    refreshMusicForSettings(this);
+    this.updateSettingsUi();
+  }
+
+  private updateSettingsUi(): void {
+    if (!this.settingsButton) {
+      return;
+    }
+
+    this.drawUiButton(this.settingsButton, this.settingsButton.label.x, this.settingsButton.label.y, this.settingsOpen);
+
+    const settings = getSettings();
+    this.drawUiButton(this.shakeOnButton, this.shakeOnButton.label.x, this.shakeOnButton.label.y, settings.screenShake);
+    this.drawUiButton(this.shakeOffButton, this.shakeOffButton.label.x, this.shakeOffButton.label.y, !settings.screenShake);
+    this.drawUiButton(this.scanOnButton, this.scanOnButton.label.x, this.scanOnButton.label.y, settings.scanlines);
+    this.drawUiButton(this.scanOffButton, this.scanOffButton.label.x, this.scanOffButton.label.y, !settings.scanlines);
+    this.drawUiButton(this.musicOnButton, this.musicOnButton.label.x, this.musicOnButton.label.y, settings.musicEnabled);
+    this.drawUiButton(this.musicOffButton, this.musicOffButton.label.x, this.musicOffButton.label.y, !settings.musicEnabled);
+    this.musicVolumeSlider.setValue(settings.musicVolume);
+    this.fxVolumeSlider.setValue(settings.fxVolume);
+  }
+
   private executeReroll(): void {
     if (this.rerollsRemaining <= 0) return;
     const rerollCost = this.getCurrentRerollCost();
@@ -408,7 +685,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const walletText = this.add.text(layout.centerX, headerY, `WALLET: ${walletCredits}c`, {
       fontFamily: 'monospace',
-      fontSize: briefing.compact ? '13px' : '14px',
+      fontSize: briefing.compact ? '15px' : '16px',
       fontStyle: 'bold',
       color: colorStr(COLORS.SALVAGE),
       align: 'center',
@@ -473,7 +750,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
       const title = this.add.text(textLeft, cardTop + 7, `${company.name} // ${company.liaison}`, {
         fontFamily: 'monospace',
-        fontSize: briefing.compact ? '8px' : '9px',
+        fontSize: briefing.compact ? '9px' : '10px',
         fontStyle: 'bold',
         color: colorStr(company.color),
         stroke: colorStr(COLORS.BG),
@@ -486,21 +763,22 @@ export class MissionSelectScene extends Phaser.Scene {
       const standingLine = standing.nextRepRequired
         ? `${standing.label} // ${rep} REP // NEXT ${standing.nextRepRequired}`
         : `${standing.label} // ${rep} REP // MAX`;
-      const standingText = this.add.text(textLeft, cardTop + (briefing.compact ? 25 : 28), standingLine, {
+      const standingText = this.add.text(textLeft, cardTop + (briefing.compact ? 28 : 31), standingLine, {
         fontFamily: 'monospace',
-        fontSize: briefing.compact ? '8px' : '9px',
+        fontSize: briefing.compact ? '9px' : '10px',
         color: colorStr(offer ? COLORS.HUD : company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
       }).setDepth(11).setAlpha(offer ? 0.76 : 0.7);
+      standingText.setLineSpacing(-1);
       this.favorUi.push(standingText);
 
       const offerLine = offer
         ? `${offer.label} ${offer.boostValue}`
         : company.boostLabel;
-      const offerText = this.add.text(textLeft, cardTop + (briefing.compact ? 39 : 43), offerLine, {
+      const offerText = this.add.text(textLeft, cardTop + (briefing.compact ? 48 : 52), offerLine, {
         fontFamily: 'monospace',
-        fontSize: briefing.compact ? '9px' : '10px',
+        fontSize: briefing.compact ? '10px' : '11px',
         fontStyle: 'bold',
         color: colorStr(offer ? (selected ? COLORS.GATE : COLORS.SALVAGE) : COLORS.HAZARD),
         stroke: colorStr(COLORS.BG),
@@ -514,9 +792,9 @@ export class MissionSelectScene extends Phaser.Scene {
           : canAfford
             ? `${offer.cost}c // TAP TO ARM`
             : `${offer.cost}c // SHORT ${shortfall}c`;
-        const detailText = this.add.text(textLeft, cardTop + (briefing.compact ? 53 : 58), detailLine, {
+        const detailText = this.add.text(textLeft, cardTop + (briefing.compact ? 64 : 70), detailLine, {
           fontFamily: 'monospace',
-          fontSize: briefing.compact ? '8px' : '9px',
+          fontSize: briefing.compact ? '9px' : '10px',
           color: colorStr(selected || canAfford ? COLORS.HUD : COLORS.HAZARD),
           stroke: colorStr(COLORS.BG),
           strokeThickness: 2,
@@ -548,8 +826,8 @@ export class MissionSelectScene extends Phaser.Scene {
   }
 
   private drawFavorBadge(right: number, top: number, label: string, color: number, compact: boolean): void {
-    const badgeWidth = Math.max(compact ? 42 : 48, label.length * (compact ? 5.2 : 5.7) + 10);
-    const badgeHeight = compact ? 13 : 15;
+    const badgeWidth = Math.max(compact ? 46 : 52, label.length * (compact ? 5.8 : 6.2) + 10);
+    const badgeHeight = compact ? 14 : 16;
     const badgeLeft = right - badgeWidth;
     const badge = this.add.graphics().setDepth(11);
     badge.fillStyle(color, 0.14);
@@ -560,7 +838,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const badgeText = this.add.text(badgeLeft + badgeWidth / 2, top + badgeHeight / 2, label, {
       fontFamily: 'monospace',
-      fontSize: compact ? '7px' : '8px',
+      fontSize: compact ? '8px' : '9px',
       fontStyle: 'bold',
       color: colorStr(color),
       stroke: colorStr(COLORS.BG),
@@ -651,12 +929,14 @@ export class MissionSelectScene extends Phaser.Scene {
     saveMissionSelection(this.missions, this.rerollsRemaining);
   }
 
-  update(): void {
+  update(_time: number, delta: number): void {
+    this.hologramOverlay.update(delta);
     this.cursor.update(this);
   }
 
   private cleanup(): void {
     this.cursor.destroy(this);
+    this.hologramOverlay.destroy();
     this.input.removeAllListeners();
     for (const cardObjs of this.cardUi) {
       for (const obj of cardObjs) obj.destroy();
@@ -670,6 +950,11 @@ export class MissionSelectScene extends Phaser.Scene {
     this.deployUi = [];
     for (const obj of this.favorUi) obj.destroy();
     this.favorUi = [];
+    for (const obj of this.settingsPanelUi) obj.destroy();
+    this.settingsPanelUi = [];
+    this.settingsButton?.bg.destroy();
+    this.settingsButton?.label.destroy();
+    this.settingsButton?.hit.destroy();
   }
 }
 

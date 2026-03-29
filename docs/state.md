@@ -1,52 +1,57 @@
 # State
-_Last updated: 2026-03-29 1307_
+_Last updated: 2026-03-29 1838_
 
 ## Current focus
-Cursor morph-to-button behavior landed. Ready to push to main and open upstream PR.
+Session wrapped after landing the first adaptive music/settings pass on top of the latest cursor improvements already on `main`.
 
 ## What's working
-- Custom cursor morphs to hug interactive elements iPad-style (rounded rect outline, position sticks to element center, pointer tracking dot)
-- Per-button corner radius matching via `setData('cornerRadius', N)` on all interactive zones
-- Morph crossfades reticle out and rounded rect in, with smooth color lerp (white → neon green)
-- Hit detection filtered to `useHandCursor: true` only — blocker zones no longer trigger hover
-- Full scene flow: Menu → MissionSelect → Game with cursor morph working across all three
-- Leaderboard, mission persistence, company standing, favors, rerolls all intact
+- Custom cursor runs on desktop in `Menu`, `MissionSelect`, and `Game`, including the newer morph-to-button behavior for interactive controls
+- Runtime scene flow is still `Menu -> MissionSelect -> Game`, now with scene-based music handoff
+- Boot preloads the three `Phase Lock` stems and the shared music manager keeps them in sync across scene changes
+- Menu targets synth only, MissionSelect targets drums only, and gameplay escalates to drums + bass at phase 4 then full mix at phase 6
+- Music stays wired through the shared system and now defaults to off for fresh installs and older saved settings via a one-time migration
+- Music can be toggled from Menu, MissionSelect, and the in-run pause menu, and all surfaces keep the `*BETA*` marker
+- MissionSelect has its own settings modal with shake, scanline, music, music-volume, and FX-volume controls
+- Menu and pause settings also include `MUSIC VOL` and `FX VOL` sliders
+- Music volume affects the live adaptive mix immediately; FX volume is saved and ready for future SFX
+- Settings normalization now clamps saved volume values safely into the valid range
+- `npm.cmd run build` passes
+- `npm.cmd run dev` starts successfully with Vite's native config loader
 
 ## In progress
 Nothing active.
 
 ## Known issues
-- The compact MissionSelect layout still needs a real short-phone check for tap comfort and text density
+- Browser autoplay restrictions may delay the first audible music start until player interaction after opting in
+- Stem balance and fade timing still need a real feel pass with the current mix
+- Vite may skip to a higher port if 5173 is already occupied
+- The compact MissionSelect layout still needs a real short-phone check for tap comfort and text density, including the expanded settings modal
 - Favor costs and paid-reroll pricing still need balance playtesting together
-- Global text sharpening and larger font sizing still need an on-device readability check
-- Mission HUD shorthand still needs a feel check across longer objective types
-- The new run-start liaison opener still needs a feel check when multiple contract companies are active
 - Retry after extraction still bypasses MissionSelect, so changing favors or contracts requires returning to menu
 - Beam hazards still span full screen width/height, not clipped to arena
-- No audio or voiced delivery for Slick, Regent, or liaisons yet
+- No SFX or voiced delivery for Slick, Regent, or liaisons yet
 - `node`/`npm` not on PowerShell PATH; use `npm.cmd` or set PATH explicitly
 - Windows Firewall may block port `5173` for LAN phone testing
 - Supabase `scores` table must be created manually (see leaderboard plan)
 
 ## Next actions
-1. Push to main and open PR for upstream
-2. Desktop-test the morph cursor across Menu, MissionSelect, and Game for hover feel and timing
-3. Play one short-phone MissionSelect pass to confirm spacing tweaks still feel right
-4. Continue balance playtesting on the 60/40 wallet split, high favor pricing, and paid rerolls
+1. Confirm the next app load starts with music off on existing local saves
+2. Play through the current opt-in music pass and judge stem balance with the music-volume slider
+3. Use the saved FX volume when the first SFX / voice playback pass lands
 
 ## Active plan
-docs/plans/2026-03-29 0145 Plan - Codebase Cleanup.md
+docs/plans/2026-03-29 1753 Plan - Layered Music System.md
 
 ## How to verify
-1. Run `npm.cmd run build`
-2. On desktop, hover over any button — cursor should morph from reticle to rounded rect hugging the button with matching corner radius
-3. While morphed, move mouse inside the button area — a small neon dot should track the actual pointer position
-4. Move mouse away — cursor should smoothly return to the reticle
-5. Confirm morph works on Menu tabs, MissionSelect cards/deploy, pause button, and result screen buttons
+1. Run `npm.cmd run dev` or `npm.cmd run build`
+2. Load the game and confirm music is off by default even if it was previously enabled in an older local save
+3. Open settings in Menu, MissionSelect, and pause, and confirm `MUSIC VOL` and `FX VOL` sliders appear and persist changes
+4. Turn music on and drag `MUSIC VOL`, then confirm the adaptive mix gets quieter/louder immediately
 
 ## Recent logs
-- docs/log/2026-03-29 1307 Cursor Morph-to-Button Behavior.md — iPad-style morph cursor with per-button corner radius and pointer tracking dot
-- docs/log/2026-03-29 0209 Land Cursor Merge on Main.md - fast-forwarded main to the merged cursor branch, rebuilt, and prepared origin/main for push
-- docs/log/2026-03-29 0205 Merge Blake Cursor Branch.md - merged Blake's custom cursor branch into the current flow and kept the GameOverScene cleanup intact
-- docs/log/2026-03-29 0150 Codebase Cleanup Pass.md - removed unused scene/data leftovers and routed MissionSelect persistence through shared mission helpers
-- docs/log/2026-03-29 0140 Favor Status Badge Consistency.md - moved all favor-card status badges like `SHORT` and `SELECTED` to the lower-right for a consistent layout
+- docs/log/2026-03-29 1838 Session Wrap and Push.md - wrapped the adaptive music/settings work into a final session snapshot before pushing
+- docs/log/2026-03-29 1836 Music Default-Off Migration.md - added a one-time settings migration so older saves no longer auto-enable beta music
+- docs/log/2026-03-29 1833 Settings Volume Sliders.md - added persistent music and FX volume sliders and wired music volume into the live mix
+- docs/log/2026-03-29 1828 MissionSelect Settings Access.md - added a MissionSelect settings modal with the same core toggles and immediate scanline/music feedback
+- docs/log/2026-03-29 1825 Music Default Off and Beta Tag.md - defaulted the music feature to off and marked it as beta in both settings UIs
+- docs/log/2026-03-29 1307 Cursor Morph-to-Button Behavior.md - iPad-style morph cursor with per-button corner radius and pointer tracking dot

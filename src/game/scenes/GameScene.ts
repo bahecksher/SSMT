@@ -36,7 +36,9 @@ import { getSlickLine } from '../data/slickLines';
 import { getRegentLine } from '../data/regentLines';
 import { getLayout, setLayoutSize } from '../layout';
 import { getSettings, updateSettings } from '../systems/SettingsSystem';
+import { refreshMusicForSettings, setGameplayMusicForPhase } from '../systems/MusicSystem';
 import { CustomCursor } from '../ui/CustomCursor';
+import { SettingsSlider } from '../ui/SettingsSlider';
 
 interface MenuHandoff {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
@@ -283,6 +285,8 @@ export class GameScene extends Phaser.Scene {
     if (this.debrisList.length === 0) {
       this.spawnDebris();
     }
+
+    setGameplayMusicForPhase(this, 1);
 
     this.hud = new Hud(this);
     this.createPauseButton();
@@ -535,6 +539,7 @@ export class GameScene extends Phaser.Scene {
     if (!runFrozen && !paused && gameplayActive && currentPhase !== prevPhase) {
       this.missionSystem.trackPhaseReached(currentPhase);
       this.difficultySystem.setPhase(currentPhase);
+      setGameplayMusicForPhase(this, currentPhase);
       const slickPhaseLine = Math.random() < 0.16 ? getSlickLine('phaseAdvance') : null;
       let regentPhaseLine: string | null = null;
 
@@ -1639,6 +1644,11 @@ export class GameScene extends Phaser.Scene {
     const settings = getSettings();
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
+    const musicY = settingsY + 90;
+    const musicVolumeLabelY = settingsY + 124;
+    const musicVolumeY = settingsY + 138;
+    const fxVolumeLabelY = settingsY + 156;
+    const fxVolumeY = settingsY + 170;
 
     // Screen shake toggle
     const shakeText = this.add.text(centerX, settingsY + 34, `SCREEN SHAKE: ${settings.screenShake ? 'ON' : 'OFF'}`, {
@@ -1681,10 +1691,83 @@ export class GameScene extends Phaser.Scene {
     );
     this.pauseUi.push(scanText);
 
+    const musicText = this.add.text(centerX, musicY, `MUSIC: ${settings.musicEnabled ? 'ON' : 'OFF'}`, {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      color: settings.musicEnabled ? gateColor : hudColor,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
+    musicText.on(
+      'pointerdown',
+      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+        event.stopPropagation();
+        const s = getSettings();
+        updateSettings({ musicEnabled: !s.musicEnabled });
+        const updated = getSettings();
+        musicText.setText(`MUSIC: ${updated.musicEnabled ? 'ON' : 'OFF'}`);
+        musicText.setColor(updated.musicEnabled ? gateColor : hudColor);
+        refreshMusicForSettings(this);
+      },
+    );
+    this.pauseUi.push(musicText);
+
+    const musicBetaText = this.add.text(centerX, musicY + 16, '*BETA*', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(221).setAlpha(0.82);
+    this.pauseUi.push(musicBetaText);
+
+    const musicVolumeLabel = this.add.text(centerX, musicVolumeLabelY, 'MUSIC VOL', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: hudColor,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(221).setAlpha(0.72);
+    this.pauseUi.push(musicVolumeLabel);
+
+    const musicVolumeSlider = new SettingsSlider({
+      scene: this,
+      left: centerX - 56,
+      y: musicVolumeY,
+      width: 112,
+      depth: 221,
+      accentColor: COLORS.GATE,
+      initialValue: settings.musicVolume,
+      onChange: (value) => {
+        updateSettings({ musicVolume: value });
+        refreshMusicForSettings(this);
+      },
+    });
+    this.pauseUi.push(...musicVolumeSlider.getObjects());
+
+    const fxVolumeLabel = this.add.text(centerX, fxVolumeLabelY, 'FX VOL', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: hudColor,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(221).setAlpha(0.72);
+    this.pauseUi.push(fxVolumeLabel);
+
+    const fxVolumeSlider = new SettingsSlider({
+      scene: this,
+      left: centerX - 56,
+      y: fxVolumeY,
+      width: 112,
+      depth: 221,
+      accentColor: COLORS.SALVAGE,
+      initialValue: settings.fxVolume,
+      onChange: (value) => {
+        updateSettings({ fxVolume: value });
+      },
+    });
+    this.pauseUi.push(...fxVolumeSlider.getObjects());
+
     // Active missions section
     const activeMissions = this.missionSystem.getActiveMissions();
     if (activeMissions.length > 0) {
-      const missionDividerY = settingsY + 92;
+      const missionDividerY = settingsY + 196;
       const mDivider = this.add.graphics().setDepth(221);
       mDivider.lineStyle(1, COLORS.HUD, 0.2);
       mDivider.lineBetween(centerX - 100, missionDividerY, centerX + 100, missionDividerY);
