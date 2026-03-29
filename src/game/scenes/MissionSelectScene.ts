@@ -15,6 +15,7 @@ import {
 } from '../data/companyData';
 import { CompanyId } from '../types';
 import type { ActiveMission } from '../types';
+import { CustomCursor } from '../ui/CustomCursor';
 
 interface HandoffData {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
@@ -63,6 +64,7 @@ export class MissionSelectScene extends Phaser.Scene {
   private rerollsRemaining = MAX_REROLLS;
   private rerollsUsedThisVisit = 0;
   private selectedFavorIds = new Set<CompanyId>();
+  private cursor!: CustomCursor;
 
   constructor() {
     super(SCENE_KEYS.MISSION_SELECT);
@@ -70,6 +72,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
   create(data?: HandoffData): void {
     this.events.once('shutdown', this.cleanup, this);
+    this.cursor = new CustomCursor(this);
     setLayoutSize(this.scale.width, this.scale.height);
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
@@ -645,7 +648,12 @@ export class MissionSelectScene extends Phaser.Scene {
     saveMissionSelection(this.missions, this.rerollsRemaining);
   }
 
+  update(): void {
+    this.cursor.update(this);
+  }
+
   private cleanup(): void {
+    this.cursor.destroy(this);
     this.input.removeAllListeners();
     for (const cardObjs of this.cardUi) {
       for (const obj of cardObjs) obj.destroy();
