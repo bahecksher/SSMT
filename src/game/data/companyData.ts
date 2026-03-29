@@ -32,8 +32,8 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
   [CompanyId.RECLAIM]: {
     id: CompanyId.RECLAIM,
     name: 'RECLAIM CO',
-    color: 0x00ff88,
-    accent: 0x00cc66,
+    color: 0xff00ff,
+    accent: 0xcc00cc,
     liaison: 'VOSS',
     liaisonTitle: 'VOSS // RECLAIM',
     boostLabel: 'SALVAGE YIELD',

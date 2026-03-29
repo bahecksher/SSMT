@@ -1,22 +1,20 @@
 # State
-_Last updated: 2026-03-29 1838_
+_Last updated: 2026-03-29 1950_
 
 ## Current focus
-Session wrapped after landing the first adaptive music/settings pass on top of the latest cursor improvements already on `main`.
+Session wrapped after a full MissionSelect readability and visual-consistency pass plus one related gameplay popup color fix.
 
 ## What's working
-- Custom cursor runs on desktop in `Menu`, `MissionSelect`, and `Game`, including the newer morph-to-button behavior for interactive controls
-- Runtime scene flow is still `Menu -> MissionSelect -> Game`, now with scene-based music handoff
-- Boot preloads the three `Phase Lock` stems and the shared music manager keeps them in sync across scene changes
-- Menu targets synth only, MissionSelect targets drums only, and gameplay escalates to drums + bass at phase 4 then full mix at phase 6
-- Music stays wired through the shared system and now defaults to off for fresh installs and older saved settings via a one-time migration
-- Music can be toggled from Menu, MissionSelect, and the in-run pause menu, and all surfaces keep the `*BETA*` marker
+- Runtime scene flow remains `Menu -> MissionSelect -> Game`, with layered music and shared settings still intact across all scenes
 - MissionSelect has its own settings modal with shake, scanline, music, music-volume, and FX-volume controls
-- Menu and pause settings also include `MUSIC VOL` and `FX VOL` sliders
-- Music volume affects the live adaptive mix immediately; FX volume is saved and ready for future SFX
-- Settings normalization now clamps saved volume values safely into the valid range
+- Favor cards now render as a single full-width vertical stack without changing the deploy flow
+- Favor cards now use company-colored core text and progress fills, red `SHORT` / `LOCKED` state text, and mission-matched inactive borders
+- Favor-card typography and spacing were tuned for readability without changing card size, including clearing the bottom detail line from the progress bar
+- Mission cards keep company-colored text for clearer faction identity
+- Reclaim now uses the in-game purple/magenta palette instead of green
+- Mining floating credit popups now use the orange mining color instead of red
 - `npm.cmd run build` passes
-- `npm.cmd run dev` starts successfully with Vite's native config loader
+- `npm.cmd run dev` still starts successfully with Vite's native config loader
 
 ## In progress
 Nothing active.
@@ -25,7 +23,7 @@ Nothing active.
 - Browser autoplay restrictions may delay the first audible music start until player interaction after opting in
 - Stem balance and fade timing still need a real feel pass with the current mix
 - Vite may skip to a higher port if 5173 is already occupied
-- The compact MissionSelect layout still needs a real short-phone check for tap comfort and text density, including the expanded settings modal
+- The stacked MissionSelect favor layout still needs a real short-phone check for tap comfort and text density, especially with locked and unaffordable states
 - Favor costs and paid-reroll pricing still need balance playtesting together
 - Retry after extraction still bypasses MissionSelect, so changing favors or contracts requires returning to menu
 - Beam hazards still span full screen width/height, not clipped to arena
@@ -35,23 +33,19 @@ Nothing active.
 - Supabase `scores` table must be created manually (see leaderboard plan)
 
 ## Next actions
-1. Confirm the next app load starts with music off on existing local saves
-2. Play through the current opt-in music pass and judge stem balance with the music-volume slider
-3. Use the saved FX volume when the first SFX / voice playback pass lands
+1. Playcheck the stacked MissionSelect favor list on a short phone viewport and tune text density if needed
+2. Confirm the mining popup color and favor-card spacing feel right on-device
+3. Continue the adaptive music feel pass, especially stem balance and volume behavior
 
 ## Active plan
 docs/plans/2026-03-29 1753 Plan - Layered Music System.md
 
 ## How to verify
-1. Run `npm.cmd run dev` or `npm.cmd run build`
-2. Load the game and confirm music is off by default even if it was previously enabled in an older local save
-3. Open settings in Menu, MissionSelect, and pause, and confirm `MUSIC VOL` and `FX VOL` sliders appear and persist changes
-4. Turn music on and drag `MUSIC VOL`, then confirm the adaptive mix gets quieter/louder immediately
+1. Run `npm.cmd run build`
+2. Open MissionSelect and confirm the favor section is a single stacked list with readable spacing, mission-matched inactive borders, and company-colored inner content
+3. Confirm `RECLAIM CO // VOSS` now uses the purple/magenta palette instead of green
+4. Confirm the favor-card bottom detail line no longer overlaps the progress bar
+5. Start gameplay, mine an asteroid, and confirm the floating `+` credit text now uses the orange mining color instead of red
 
 ## Recent logs
-- docs/log/2026-03-29 1838 Session Wrap and Push.md - wrapped the adaptive music/settings work into a final session snapshot before pushing
-- docs/log/2026-03-29 1836 Music Default-Off Migration.md - added a one-time settings migration so older saves no longer auto-enable beta music
-- docs/log/2026-03-29 1833 Settings Volume Sliders.md - added persistent music and FX volume sliders and wired music volume into the live mix
-- docs/log/2026-03-29 1828 MissionSelect Settings Access.md - added a MissionSelect settings modal with the same core toggles and immediate scanline/music feedback
-- docs/log/2026-03-29 1825 Music Default Off and Beta Tag.md - defaulted the music feature to off and marked it as beta in both settings UIs
-- docs/log/2026-03-29 1307 Cursor Morph-to-Button Behavior.md - iPad-style morph cursor with per-button corner radius and pointer tracking dot
+- docs/log/2026-03-29 1950 MissionSelect UI Session Rollup.md - consolidated the MissionSelect styling, readability, and mining-popup color work from this session into one summary

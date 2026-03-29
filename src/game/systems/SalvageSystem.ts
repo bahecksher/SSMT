@@ -157,7 +157,7 @@ export class SalvageSystem {
         const fontSize = dangerClose ? '15px' : '11px';
         this.spawnFloatingText(
           `+${Math.max(1, Math.round(this.miningFloatPoints))}`,
-          `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
+          '#ffaa00',
           fontSize,
           dangerClose,
         );
