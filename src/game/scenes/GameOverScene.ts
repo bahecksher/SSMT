@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { SCENE_KEYS, COLORS } from '../constants';
 import { SaveSystem } from '../systems/SaveSystem';
 import { getLayout, setLayoutSize } from '../layout';
+import { CustomCursor } from '../ui/CustomCursor';
 
 interface GameOverData {
   score: number;
@@ -9,11 +10,15 @@ interface GameOverData {
 }
 
 export class GameOverScene extends Phaser.Scene {
+  private cursor!: CustomCursor;
+
   constructor() {
     super(SCENE_KEYS.GAME_OVER);
   }
 
   create(data: GameOverData): void {
+    this.events.once('shutdown', this.cleanup, this);
+    this.cursor = new CustomCursor(this);
     setLayoutSize(this.scale.width, this.scale.height);
     const layout = getLayout();
     const centerX = layout.centerX;
@@ -92,5 +97,13 @@ export class GameOverScene extends Phaser.Scene {
       });
     });
 
+  }
+
+  update(): void {
+    this.cursor.update(this);
+  }
+
+  private cleanup(): void {
+    this.cursor.destroy(this);
   }
 }
