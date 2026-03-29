@@ -1,6 +1,7 @@
 export const SCENE_KEYS = {
   BOOT: 'BootScene',
   MENU: 'MenuScene',
+  MISSION_SELECT: 'MissionSelectScene',
   GAME: 'GameScene',
   GAME_OVER: 'GameOverScene',
 } as const;
@@ -8,6 +9,8 @@ export const SCENE_KEYS = {
 export const SAVE_KEY = 'ssmt_save';
 export const PLAYER_NAME_KEY = 'ssmt_player_name';
 export const SETTINGS_KEY = 'ssmt_settings';
+export const MISSIONS_KEY = 'ssmt_missions';
+export const COMPANY_REP_KEY = 'ssmt_company_rep';
 
 export const COLORS = {
   BG: 0x020a08,

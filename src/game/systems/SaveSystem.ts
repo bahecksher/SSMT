@@ -1,7 +1,8 @@
 import { SAVE_KEY, PLAYER_NAME_KEY } from '../constants';
+import { getWalletPayout } from '../data/companyData';
 import type { SaveData } from '../types';
 
-const DEFAULT_SAVE: SaveData = { bestScore: 0 };
+const DEFAULT_SAVE: SaveData = { bestScore: 0, walletCredits: 0 };
 const LETTER_COUNT = 3;
 const DIGIT_COUNT = 3;
 const CALLSIGN_SEPARATOR = '-';
@@ -56,7 +57,10 @@ export class SaveSystem {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
-        return JSON.parse(raw) as SaveData;
+        return {
+          ...DEFAULT_SAVE,
+          ...(JSON.parse(raw) as Partial<SaveData>),
+        };
       }
     } catch {
       // Private browsing or corrupted data
@@ -76,11 +80,37 @@ export class SaveSystem {
     return this.data.bestScore;
   }
 
+  getWalletCredits(): number {
+    return this.data.walletCredits;
+  }
+
   saveBestScore(score: number): void {
     if (score > this.data.bestScore) {
       this.data.bestScore = score;
       this.save();
     }
+  }
+
+  addWalletCredits(amount: number): void {
+    const creditAmount = Math.max(0, Math.floor(amount));
+    if (creditAmount <= 0) return;
+    this.data.walletCredits += creditAmount;
+    this.save();
+  }
+
+  spendWalletCredits(amount: number): boolean {
+    const debitAmount = Math.max(0, Math.floor(amount));
+    if (debitAmount <= 0) return true;
+    if (this.data.walletCredits < debitAmount) return false;
+    this.data.walletCredits -= debitAmount;
+    this.save();
+    return true;
+  }
+
+  depositWalletPayout(extractedCredits: number): number {
+    const payout = getWalletPayout(extractedCredits);
+    this.addWalletCredits(payout);
+    return payout;
   }
 
   getPlayerName(): string {

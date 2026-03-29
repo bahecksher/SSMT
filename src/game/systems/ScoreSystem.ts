@@ -30,6 +30,10 @@ export class ScoreSystem {
     return total;
   }
 
+  addBanked(amount: number): void {
+    this.banked += amount;
+  }
+
   clearUnbanked(): void {
     this.unbanked = 0;
   }

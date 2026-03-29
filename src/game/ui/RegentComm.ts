@@ -23,16 +23,17 @@ export class RegentComm {
   private readonly defaultY: number;
   private readonly defaultDepth: number;
   private currentY: number;
+  private wipeIn = false;
 
   constructor(scene: Phaser.Scene, options: RegentCommOptions = {}) {
     this.scene = scene;
     this.autoHideMs = options.autoHideMs ?? 5600;
     const layout = getLayout();
 
-    const width = options.width ?? Math.min(layout.gameWidth - 72, 420);
-    const height = 70;
+    const width = options.width ?? Math.min(layout.gameWidth - 96, 368);
+    const height = 60;
     const x = (layout.gameWidth - width) / 2;
-    const y = 8;
+    const y = 2;
     const depth = options.depth ?? 150;
     this.defaultY = y;
     this.defaultDepth = depth;
@@ -47,21 +48,21 @@ export class RegentComm {
     panel.strokeRoundedRect(4, 4, width - 8, height - 8, 6);
 
     this.portrait = this.createPortrait(scene);
-    this.portrait.setPosition(38, height / 2);
-    this.portrait.setScale(0.82);
+    this.portrait.setPosition(34, height / 2);
+    this.portrait.setScale(0.72);
 
-    this.nameText = scene.add.text(72, 10, 'REGENT // PATROL', {
+    this.nameText = scene.add.text(64, 7, 'REGENT // PATROL', {
       fontFamily: 'monospace',
-      fontSize: '11px',
+      fontSize: '12px',
       color: `#${REGENT_COLOR.toString(16).padStart(6, '0')}`,
     });
 
-    this.text = scene.add.text(72, 24, '', {
+    this.text = scene.add.text(64, 21, '', {
       fontFamily: 'monospace',
-      fontSize: '13px',
+      fontSize: '14px',
       color: `#${REGENT_COLOR.toString(16).padStart(6, '0')}`,
-      wordWrap: { width: width - 84 },
-      lineSpacing: 2,
+      wordWrap: { width: width - 76 },
+      lineSpacing: 1,
     });
 
     this.root = scene.add.container(x, y, [panel, this.portrait, this.nameText, this.text]);
@@ -95,16 +96,33 @@ export class RegentComm {
     }
 
     this.text.setText(message);
-    this.root.setY(this.currentY - 8);
     this.root.setVisible(true);
     this.scene.tweens.killTweensOf(this.root);
-    this.scene.tweens.add({
-      targets: this.root,
-      alpha: 1,
-      y: this.currentY,
-      duration: 200,
-      ease: 'Sine.Out',
-    });
+
+    if (this.wipeIn) {
+      // Horizontal wipe: slide from off-screen right into center
+      const layout = getLayout();
+      const width = Math.min(layout.gameWidth - 96, 368);
+      this.root.setX(layout.gameWidth + 20);
+      this.root.setY(this.currentY);
+      this.root.setAlpha(1);
+      this.scene.tweens.add({
+        targets: this.root,
+        x: (layout.gameWidth - width) / 2,
+        duration: 280,
+        ease: 'Back.Out',
+      });
+    } else {
+      // Normal: slide down from top
+      this.root.setY(this.currentY - 8);
+      this.scene.tweens.add({
+        targets: this.root,
+        alpha: 1,
+        y: this.currentY,
+        duration: 200,
+        ease: 'Sine.Out',
+      });
+    }
 
     this.pulseTween.resume();
     this.scanTween.resume();
@@ -129,12 +147,16 @@ export class RegentComm {
       y: this.currentY - 8,
       duration: 200,
       ease: 'Sine.In',
-      onComplete: () => this.root.setVisible(false),
+      onComplete: () => {
+        this.root.setVisible(false);
+        this.wipeIn = false;
+      },
     });
   }
 
   setPinnedLayout(y: number, depth?: number): void {
     this.currentY = y;
+    this.wipeIn = true;
     this.root.setDepth(depth ?? this.root.depth);
     this.scene.tweens.killTweensOf(this.root);
     if (this.root.visible) {
@@ -144,6 +166,7 @@ export class RegentComm {
 
   resetLayout(): void {
     this.currentY = this.defaultY;
+    this.wipeIn = true;
     this.root.setDepth(this.defaultDepth);
     this.scene.tweens.killTweensOf(this.root);
     if (this.root.visible) {

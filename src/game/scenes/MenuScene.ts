@@ -297,7 +297,7 @@ export class MenuScene extends Phaser.Scene {
           .filter(npc => npc.active)
           .map(npc => ({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy }));
         this.cleanupBackground();
-        this.scene.start(SCENE_KEYS.GAME, { drifterState, debrisState, npcState });
+        this.scene.start(SCENE_KEYS.MISSION_SELECT, { drifterState, debrisState, npcState });
       }
     });
 

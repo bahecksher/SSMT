@@ -26,11 +26,20 @@ export class SalvageSystem {
   private miningFloatTimer = 0;
   private salvageFloatPoints = 0;
   private miningFloatPoints = 0;
+  private frameSalvageIncome = 0;
+  private frameMiningIncome = 0;
+  private salvageYieldMult = 1.0;
+  private miningYieldMult = 1.0;
 
   constructor(scene: Phaser.Scene, player: Player, scoreSystem: ScoreSystem) {
     this.scene = scene;
     this.player = player;
     this.scoreSystem = scoreSystem;
+  }
+
+  setBoosts(salvageMult: number, miningMult: number): void {
+    this.salvageYieldMult = salvageMult;
+    this.miningYieldMult = miningMult;
   }
 
   addDebris(debris: SalvageDebris): void {
@@ -45,6 +54,8 @@ export class SalvageSystem {
   update(delta: number, drifters: DrifterHazard[]): void {
     const dt = delta / 1000;
     this.inRange = false;
+    this.frameSalvageIncome = 0;
+    this.frameMiningIncome = 0;
 
     // --- Salvage scoring: stack all overlapping salvage zones ---
     let totalSalvagePoints = 0;
@@ -61,7 +72,7 @@ export class SalvageSystem {
       );
 
       if (dist <= debris.salvageRadius && !debris.depleted) {
-        const points = SALVAGE_POINTS_PER_SECOND * debris.pointsMultiplier * dt;
+        const points = SALVAGE_POINTS_PER_SECOND * debris.pointsMultiplier * this.salvageYieldMult * dt;
         totalSalvagePoints += points;
         if (debris.isRare) hasRareInRange = true;
 
@@ -76,6 +87,7 @@ export class SalvageSystem {
 
     if (totalSalvagePoints > 0) {
       this.inRange = true;
+      this.frameSalvageIncome = totalSalvagePoints;
       this.scoreSystem.addUnbanked(totalSalvagePoints);
       this.salvageFloatPoints += totalSalvagePoints;
 
@@ -119,7 +131,7 @@ export class SalvageSystem {
         // Proximity multiplier: 0 at outer edge → 1 at asteroid body
         const proximity = 1 - (dist - drifter.radius) / (drifter.miningRadius - drifter.radius);
         const ptsPerSec = DRIFTER_MINING_POINTS_MIN + (DRIFTER_MINING_POINTS_MAX - DRIFTER_MINING_POINTS_MIN) * proximity * proximity;
-        totalMiningPoints += ptsPerSec * dt;
+        totalMiningPoints += ptsPerSec * this.miningYieldMult * dt;
         miningCount++;
         if (proximity > 0.7) dangerClose = true;
 
@@ -134,6 +146,7 @@ export class SalvageSystem {
 
     if (miningCount > 0) {
       this.inRange = true;
+      this.frameMiningIncome = totalMiningPoints;
       this.scoreSystem.addUnbanked(totalMiningPoints);
       this.miningFloatPoints += totalMiningPoints;
 
@@ -198,6 +211,14 @@ export class SalvageSystem {
 
   isInRange(): boolean {
     return this.inRange;
+  }
+
+  getLastFrameSalvageIncome(): number {
+    return this.frameSalvageIncome;
+  }
+
+  getLastFrameMiningIncome(): number {
+    return this.frameMiningIncome;
   }
 
   destroy(): void {

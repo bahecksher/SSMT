@@ -1,87 +1,55 @@
 # State
-_Last updated: 2026-03-28 1247_
+_Last updated: 2026-03-29 0035_
 
 ## Current focus
-Phase 5+ difficulty rebalanced — drifter density capped, arena-scaled entity counts, reduced debris clutter.
+Post-push playtesting and balance for the mission/favor economy, run opener comms, and mobile readability.
 
 ## What's working
-- Full scene flow: Boot -> Menu -> Game with in-scene results
-- Core salvage/extract loop, hazards, leaderboard, comms, and HUD remain intact
-- Responsive layout drives arena bounds, starfields, gate placement, spawns, overlays, and key UI positioning
-- Arena density scaling: entity counts normalized to arena size so phone and desktop have equal density
-- Drifter count caps at 22 for phase 5+ (down from unbounded 28+), spawn rate plateaus at phase 4 level
-- Difficulty at phase 5+ shifts from quantity to lethality (faster, bigger asteroids + beams + enemies)
-- Ship debris reduced to 3 fragments / 1s lifetime for less visual clutter
-- HUD credits text scaled to 14px; pause button is a compact top-right `||` / `▶` control
-- Pause menu panel has abandon run and settings toggles (screen shake, scanlines) — no resume button, resume only via top-right button
-- Menu scene has settings toggles in top-right corner
-- Settings persist to localStorage via SettingsSystem
-- Gate preview: large closing circle appears 10s before activation
-- Gate active: salvage-style flicker for 3s extractable window with white flash on dim frames
-- Bomb power-up: dropped by enemies (25% chance), detonates instantly on player collection (board wipe)
-- NPC bomb collection triggers board wipe AND kills the player
-- Board wipe effect (full white flash, 200ms hold, 1s fade-out) fires on game start, extraction, and bomb detonation — clears all entities with shatter debris
-- Beams obliterate everything: asteroids (shatter), enemies (drop bonus), NPCs (drop shield/bonus), salvage
-- Beam width scales aggressively per phase (20px at ph5 → 120px cap)
-- Beam burst system: rapid-fire beams at phase 8+ with short delays between each
-- Beams and enemies both start at phase 5
-- NPC killed by player shield drops a bonus point pickup
-- Salvage redesigned as modular space-station rectangles (2-3 perpendicular modules, edge-to-edge flush)
-- Salvage visual size 80px normal / 45px rare — larger than biggest asteroids
-- Salvage collection radius 80px for both normal and rare
-- Small asteroids (radiusScale < 1.5) no longer show mining circles
-- All consumables (bonus, bomb, shield) last 30 seconds with 5-second blink warning before expiry
-- Bonus pickups and bombs carry full inertia (no friction), can drift out of arena
-- Comm messages display longer: Slick 5.2s, Regent 5.6s
-- Asteroid mining ring multiplier 1.8x (from radius)
-- Extraction dialogue always triggers
-- Screen shake on death, extraction, game entry, and bomb detonation (toggleable in settings)
-- Scanline overlay toggleable in settings
-- Asteroid hitboxes use circle-polygon intersection (accounts for player radius)
-- Rotating wireframe geo-sphere behind arena on both menu and game scenes
-- Starfield drifts east-to-west
-- All Slick and Regent dialogue updated; Regent triggers kill taunt on ALL deaths at phase 5+
-- Player callsigns use `AAA-###` format
-- Production build passes with Phaser chunk splitting
+- Full scene flow: `Menu -> MissionSelect -> Game`, with retry still skipping the briefing
+- MissionSelect uses an adaptive layout that keeps mission cards, favor cards, comms, and deploy usable on shorter phone screens
+- MissionSelect text, favor state treatment, and mission-card spacing are larger and clearer than before
+- Bottom mission pills now use readable mission-specific shorthand instead of blunt raw-text truncation
+- Briefing-screen liaison chatter has been removed; run start now opens with Slick when no contracts are active or a matching liaison when contracts are active
+- Company rep unlocks favor tiers, wallet credits pay for favors, and extraction banks 35% to wallet while Slick keeps 65%
+- Death retry preserves purchased favors; extraction retry starts fresh
+- Gameplay and results comm panels have smaller footprints, larger text, priority/cooldown handling, and centered results placement
+- Recent mission-system, wallet, comm, and mobile UI work is committed and pushed to `origin/main`
+- Production build passed on the latest gameplay/UI change set
 
 ## In progress
 Nothing active.
 
 ## Known issues
-- Responsive arena balance may need playtest tuning on very wide or very tall displays
-- Mid-run resize/rotation has not been deeply playtested yet
-- Pause interactions have not been deeply playtested on mobile touch edge cases yet
-- Crawl-speed pause factor may still need feel tuning after playtests
-- Gate flicker speed and closing-circle timing may need feel tuning after playtests
+- Favor costs and the 35% wallet payout rate still need balance playtesting
+- MissionSelect still has no explicit "insufficient funds" feedback beyond non-selectable cards
+- The compact MissionSelect layout still needs a real short-phone check for tap comfort and text density
+- Global text sharpening and larger font sizing still need an on-device readability check
+- Mission HUD shorthand still needs a feel check across longer objective types
+- The new run-start liaison opener still needs a feel check when multiple contract companies are active
+- Retry after extraction still bypasses MissionSelect, so changing favors or contracts requires returning to menu
 - Beam hazards still span full screen width/height, not clipped to arena
-- No audio or voiced delivery for Slick/Regent yet
-- NPC spawn rates, bonus drop values/chances, and pickup targeting may still need tuning
-- Save key changed to `ssmt_save` so older local best scores are not migrated
+- No audio or voiced delivery for Slick, Regent, or liaisons yet
 - `node`/`npm` not on PowerShell PATH; use `npm.cmd` or set PATH explicitly
 - Windows Firewall may block port `5173` for LAN phone testing
 - Supabase `scores` table must be created manually (see leaderboard plan)
 
 ## Next actions
-1. Playtest phase 5+ density on phone vs desktop — verify equal feel
-2. Playtest new difficulty curve (drifter cap, speed/size still ramp)
-3. Playtest bomb-on-pickup feel and NPC bomb trigger
-4. Consider audio implementation
+1. Play one short-phone MissionSelect pass to validate card density, favor readability, and tap comfort
+2. Run one no-contract opener and one active-contract opener to validate the new comm handoff
+3. Tune favor costs and the 35% wallet payout after a few extract-spend cycles
 
 ## Active plan
-None — working from ad-hoc difficulty tuning requests.
+docs/plans/2026-03-28 2357 Plan revision - Mission System Economy.md
 
 ## How to verify
-1. Run `npm.cmd run build` or `npm.cmd run dev -- --host 0.0.0.0`
-2. Start a game — confirm white flash + shatter debris + board clear at countdown end
-3. Reach phase 5 — asteroid count should feel similar to phase 4 (capped at 22)
-4. Compare phone vs desktop — density should feel equivalent despite different screen sizes
-5. Beams and enemies appear at phase 5, replacing asteroid swarm as primary threat
-6. Ship destruction debris clears quickly (3 fragments, ~1s)
-7. Die at phase 5+ — Regent should deliver kill taunt regardless of death cause
-8. All pickups blink for 5 seconds before their 30-second expiry
+1. Run `npm.cmd run build`
+2. Open MissionSelect on a phone-sized viewport and confirm the mission cards fit comfortably with favors visible
+3. Start a run with active contracts and confirm the bottom tracker pills stay readable
+4. Toggle a favor on and off and confirm the card clearly changes state
+5. Extract once and confirm the results screen shows the wallet payout and Slick's cut
 
 ## Recent logs
-- docs/log/2026-03-28 1247 Phase 5 Density Cap and Arena Scaling.md — drifter cap, spawn plateau, arena density scaling, debris reduction
-- docs/log/2026-03-28 0055 Consumable Lifetimes and Comm Duration.md — 30s lifetimes, blink warnings, longer comm display
-- docs/log/2026-03-28 0044 Phase 7 Polish and Tuning.md — Beams obliterate entities, difficulty ramp, bomb instant detonate, pickup inertia, UI cleanup
-- docs/log/2026-03-27 2308 Phase 6 Polish Salvage and Tuning.md — Salvage rework, board wipe shatter, NPC bonus drops, mining ring tuning, extraction dialogue fix
+- docs/log/2026-03-29 0035 Git Push.md - committed and pushed the pending mission economy and mobile UI batch to `origin/main`
+- docs/log/2026-03-29 0031 Mission HUD and Card Spacing.md - improved bottom mission readability and removed dead space from mission cards
+- docs/log/2026-03-29 0028 Favor Selection State.md - added a clear selected badge and stronger active-state treatment for favor cards
+- docs/log/2026-03-29 0022 MissionSelect Text and Run Opener.md - enlarged MissionSelect text and moved contract chatter to the run opener

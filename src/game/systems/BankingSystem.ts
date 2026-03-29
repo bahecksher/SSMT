@@ -17,7 +17,7 @@ export class BankingSystem {
     this.saveSystem = saveSystem;
   }
 
-  /** Returns true if player is inside the extractable gate. */
+  /** Returns true if player is inside the extractable gate. Banks the score. */
   checkExtraction(gate: ExitGate | null): boolean {
     if (!gate || !gate.active || !gate.extractable) return false;
 
@@ -29,17 +29,19 @@ export class BankingSystem {
     );
 
     if (dist < PLAYER_RADIUS + EXIT_GATE_HITBOX) {
-      const banked = this.scoreSystem.bankScore();
-      this.saveSystem.saveBestScore(banked);
-
-      // Submit to online leaderboard (fire-and-forget)
-      const playerName = this.saveSystem.getPlayerName();
-      submitScore(playerName, banked);
-
+      this.scoreSystem.bankScore();
       return true;
     }
 
     return false;
+  }
+
+  /** Save best score and submit to leaderboard. Call after mission bonus is added. */
+  finalizeExtraction(): void {
+    const banked = this.scoreSystem.getBanked();
+    this.saveSystem.saveBestScore(banked);
+    const playerName = this.saveSystem.getPlayerName();
+    submitScore(playerName, banked);
   }
 
   destroy(): void {

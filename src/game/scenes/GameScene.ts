@@ -2,8 +2,10 @@ import Phaser from 'phaser';
 import {
   SCENE_KEYS, COLORS,
 } from '../constants';
-import { GameState } from '../types';
+import { GameState, CompanyId } from '../types';
+import type { ActiveMission, RunBoosts } from '../types';
 import { SALVAGE_RESPAWN_DELAY, PLAYER_RADIUS, PLAYER_SHIELD_BREAK_INVULN_MS, NPC_BUMP_FORCE, NPC_BUMP_RADIUS, NPC_BONUS_POINTS } from '../data/tuning';
+import { MissionSystem, loadOrGenerateMissions } from '../systems/MissionSystem';
 import { InputSystem } from '../systems/InputSystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
 import { SalvageSystem } from '../systems/SalvageSystem';
@@ -26,6 +28,9 @@ import { Overlays } from '../ui/Overlays';
 import { GeoSphere } from '../entities/GeoSphere';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { SlickComm } from '../ui/SlickComm';
+import { LiaisonComm } from '../ui/LiaisonComm';
+import { COMPANIES, loadCompanyRep, getRepLevel, getSlickCut, getSlickCutPercent } from '../data/companyData';
+import { getLiaisonLine } from '../data/liaisonLines';
 import { RegentComm } from '../ui/RegentComm';
 import { getSlickLine } from '../data/slickLines';
 import { getRegentLine } from '../data/regentLines';
@@ -37,6 +42,8 @@ interface MenuHandoff {
   debrisState?: { x: number; y: number; vx: number; vy: number }[];
   npcState?: { x: number; y: number; vx: number; vy: number }[];
   retryFromDeath?: boolean;
+  selectedMissions?: ActiveMission[];
+  runBoosts?: RunBoosts;
 }
 
 interface StarfieldStar {
@@ -51,9 +58,20 @@ interface StarfieldStar {
 interface ResultData {
   score: number;
   cause: 'death' | 'extract';
+  missionBonus?: number;
+  walletPayout?: number;
+  slickCut?: number;
+  walletBalance?: number;
+  missionProgress?: { label: string; progress: number; target: number; completed: boolean; reward: number }[];
 }
 
 type DeathCause = 'asteroid' | 'enemy' | 'laser';
+type CommSpeaker = 'slick' | 'regent' | 'liaison';
+
+interface GameplayCommOptions {
+  allowInterrupt?: boolean;
+  ignoreCooldown?: boolean;
+}
 
 export class GameScene extends Phaser.Scene {
   private static readonly COUNTDOWN_PHRASES = ['STAY ALIVE', 'GET PAID', 'GET OUT', 'GO'];
@@ -61,6 +79,12 @@ export class GameScene extends Phaser.Scene {
   private static readonly PAUSE_SLOW_SCALE = 0.025;
   private static readonly STARFIELD_OVERSCAN = 96;
   private static readonly STARFIELD_COUNT = 170;
+  private static readonly GAMEPLAY_COMM_GAP_MS = 2200;
+  private static readonly DEFAULT_COMM_HIDE_MS = {
+    slick: 5200,
+    regent: 5600,
+    liaison: 5400,
+  } as const;
 
   private inputSystem!: InputSystem;
   private scoreSystem!: ScoreSystem;
@@ -70,6 +94,7 @@ export class GameScene extends Phaser.Scene {
   private bankingSystem!: BankingSystem;
   private difficultySystem!: DifficultySystem;
   private saveSystem!: SaveSystem;
+  private missionSystem!: MissionSystem;
   private player!: Player;
   private debrisList: SalvageDebris[] = [];
   private shields: ShieldPickup[] = [];
@@ -92,6 +117,9 @@ export class GameScene extends Phaser.Scene {
   private regentEnemyAnnounced = false;
   private regentBeamAnnounced = false;
   private regentLastPhase = 0;
+  private liaisonComm: LiaisonComm | null = null;
+  private liaisonCompanyId: CompanyId | null = null;
+  private liaisonRepLevel = 0;
   private playerDebris: ShipDebris[] = [];
   private invulnerableTimer = 0;
   private countdownText: Phaser.GameObjects.Text | null = null;
@@ -99,6 +127,11 @@ export class GameScene extends Phaser.Scene {
   private resultUi: Phaser.GameObjects.GameObject[] = [];
   private resultInputLocked = false;
   private lastGateActive = false;
+  private activeRunBoosts: RunBoosts | null = null;
+  private activeCommSpeaker: CommSpeaker | null = null;
+  private activeCommPriority = 0;
+  private activeCommVisibleUntil = 0;
+  private nextGameplayCommAt = 0;
   private pauseButtonBg!: Phaser.GameObjects.Graphics;
   private pauseButtonText!: Phaser.GameObjects.Text;
   private pauseButtonHit!: Phaser.GameObjects.Zone;
@@ -112,6 +145,7 @@ export class GameScene extends Phaser.Scene {
   create(data?: MenuHandoff): void {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
+    const handoff = data ?? {};
     const layout = getLayout();
     this.state = GameState.COUNTDOWN;
     this.rareSalvageTimer = 0;
@@ -120,6 +154,11 @@ export class GameScene extends Phaser.Scene {
     this.resultUi = [];
     this.resultInputLocked = false;
     this.lastGateActive = false;
+    this.activeRunBoosts = handoff.runBoosts ?? null;
+    this.activeCommSpeaker = null;
+    this.activeCommPriority = 0;
+    this.activeCommVisibleUntil = 0;
+    this.nextGameplayCommAt = 0;
     this.pauseUi = [];
     this.pausedFromState = GameState.COUNTDOWN;
     this.regentIntroduced = false;
@@ -195,7 +234,6 @@ export class GameScene extends Phaser.Scene {
     this.difficultySystem = new DifficultySystem(this, 1);
 
     // Carry over background entities from menu for seamless transition
-    const handoff = data ?? {};
     if (handoff.drifterState?.length) {
       for (const d of handoff.drifterState) {
         const drifter = DrifterHazard.createFragment(this, d.x, d.y, d.vx, d.vy, d.radiusScale);
@@ -213,6 +251,29 @@ export class GameScene extends Phaser.Scene {
       for (const npc of handoff.npcState) {
         this.difficultySystem.getNPCs().push(NPCShip.createAt(this, npc.x, npc.y, npc.vx, npc.vy));
       }
+    }
+
+    // Mission system — use selected missions from briefing, or reload from persistence on retry
+    const missionList = handoff.selectedMissions ?? loadOrGenerateMissions().filter((m) => m.accepted);
+    this.missionSystem = new MissionSystem(missionList);
+
+    // Apply per-run boosts from purchased favors
+    if (handoff.runBoosts) {
+      this.salvageSystem.setBoosts(handoff.runBoosts.salvageYieldMult, handoff.runBoosts.miningYieldMult);
+      this.difficultySystem.setBoosts(handoff.runBoosts.npcBonusMult, handoff.runBoosts.bonusDropChanceAdd);
+    }
+
+    // Opening comm comes from an active contract liaison when available; otherwise Slick handles run start.
+    this.liaisonComm = null;
+    this.liaisonCompanyId = null;
+    this.liaisonRepLevel = 0;
+    const repSave = loadCompanyRep();
+    const activeContractCompanies = Array.from(new Set(missionList.map((m) => m.def.company)));
+    if (activeContractCompanies.length > 0) {
+      const openingCompany = Phaser.Utils.Array.GetRandom(activeContractCompanies);
+      this.liaisonCompanyId = openingCompany;
+      this.liaisonRepLevel = Math.max(1, getRepLevel(repSave.rep[openingCompany] ?? 0));
+      this.liaisonComm = new LiaisonComm(this, COMPANIES[openingCompany]);
     }
 
     // Only spawn fresh debris if none carried over
@@ -244,8 +305,17 @@ export class GameScene extends Phaser.Scene {
         },
       },
     ).setOrigin(0.5).setDepth(120).setAlpha(0.9);
-    const openingLineKey = handoff.retryFromDeath && Math.random() < 0.45 ? 'gameOverRetry' : 'runStart';
-    this.showSlickExclusive(getSlickLine(openingLineKey));
+    if (!this.liaisonComm || !this.liaisonCompanyId) {
+      const openingLineKey = handoff.retryFromDeath && Math.random() < 0.45 ? 'gameOverRetry' : 'runStart';
+      this.showSlickExclusive(getSlickLine(openingLineKey));
+    }
+
+    // Liaison intro — show after Slick's opener fades
+    if (this.liaisonComm && this.liaisonCompanyId) {
+      const openingLiaisonKey = handoff.retryFromDeath ? 'runStart' : 'intro';
+      this.showLiaisonExclusive(getLiaisonLine(this.liaisonCompanyId, this.liaisonRepLevel, openingLiaisonKey), 4200);
+    }
+
     this.refreshPauseUi();
 
     this.input.on('pointerdown', this.handlePointerDown, this);
@@ -348,7 +418,8 @@ export class GameScene extends Phaser.Scene {
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, s.x, s.y);
         if (dist < PLAYER_RADIUS + s.radius) {
           this.player.hasShield = true;
-          this.tryShowSlick('shieldPickup', 0.4);
+          this.missionSystem.trackShieldCollected();
+          this.tryShowSlick('shieldPickup', 0.22);
           s.active = false;
           s.destroy();
           this.shields.splice(i, 1);
@@ -459,27 +530,28 @@ export class GameScene extends Phaser.Scene {
     // Phase advanced — update difficulty
     const currentPhase = this.extractionSystem.getPhaseCount();
     if (!runFrozen && !paused && gameplayActive && currentPhase !== prevPhase) {
+      this.missionSystem.trackPhaseReached(currentPhase);
       this.difficultySystem.setPhase(currentPhase);
-      const slickPhaseLine = Math.random() < 0.28 ? getSlickLine('phaseAdvance') : null;
+      const slickPhaseLine = Math.random() < 0.16 ? getSlickLine('phaseAdvance') : null;
       let regentPhaseLine: string | null = null;
 
-      if (currentPhase === 2 && !this.regentIntroduced && Math.random() < 0.5) {
+      if (currentPhase === 2 && !this.regentIntroduced && Math.random() < 0.35) {
         regentPhaseLine = getRegentLine('threatDetected');
       } else if (currentPhase >= 3 && !this.regentIntroduced) {
         this.regentIntroduced = true;
         regentPhaseLine = getRegentLine('gateClose');
       } else if (this.regentIntroduced) {
         if (currentPhase > 7 && currentPhase > this.regentLastPhase) {
-          regentPhaseLine = Math.random() < 0.45 ? getRegentLine('whyWontYouDie') : null;
+          regentPhaseLine = Math.random() < 0.25 ? getRegentLine('whyWontYouDie') : null;
         } else if (currentPhase >= 3) {
-          regentPhaseLine = Math.random() < 0.3 ? getRegentLine('gateClose') : null;
+          regentPhaseLine = Math.random() < 0.18 ? getRegentLine('gateClose') : null;
         }
       }
 
       if (regentPhaseLine) {
-        this.showRegentExclusive(regentPhaseLine, 2600);
+        this.tryShowGameplayRegent(regentPhaseLine, 2600);
       } else if (slickPhaseLine) {
-        this.showSlickExclusive(slickPhaseLine);
+        this.tryShowGameplaySlick(slickPhaseLine);
       }
 
       this.regentLastPhase = currentPhase;
@@ -555,12 +627,12 @@ export class GameScene extends Phaser.Scene {
     // Regent: announce first enemy arrival
     if (!runFrozen && this.regentIntroduced && !this.regentEnemyAnnounced && enemiesBefore === 0 && this.difficultySystem.getEnemies().length > 0) {
       this.regentEnemyAnnounced = true;
-      this.showRegentExclusive(getRegentLine('enemyEnter'));
+      this.tryShowGameplayRegent(getRegentLine('enemyEnter'));
     }
     // Regent: announce first beam activation (phase 7)
     if (!runFrozen && this.regentIntroduced && !this.regentBeamAnnounced && beamsBefore === 0 && this.difficultySystem.getBeams().length > 0) {
       this.regentBeamAnnounced = true;
-      this.showRegentExclusive(getRegentLine('beamUnlock'));
+      this.tryShowGameplayRegent(getRegentLine('beamUnlock'));
     }
 
     // NPC salvage depletion — NPCs drain salvage HP when close
@@ -599,6 +671,7 @@ export class GameScene extends Phaser.Scene {
           this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
           npc.active = false;
           npc.killedByHazard = false;
+          this.missionSystem.trackNpcKill();
           this.playerDebris.push(new ShipDebris(this, npc.x, npc.y, npc.vx, npc.vy, 0xffcc44, npc.radius));
           this.bonusPickups.push(new BonusPickup(this, npc.x, npc.y, NPC_BONUS_POINTS, npc.vx * 0.5, npc.vy * 0.5));
           Overlays.shieldBreakFlash(this);
@@ -643,6 +716,7 @@ export class GameScene extends Phaser.Scene {
     const hitBeam = this.collisionSystem.checkBeams(this.difficultySystem.getBeams());
     const hitEnemy = this.collisionSystem.checkEnemies(this.difficultySystem.getEnemies());
     if (gameplayActive && !invulnerable && (hitDrifter || hitBeam || hitEnemy)) {
+      this.missionSystem.trackDamageTaken();
       if (this.player.hasShield) {
         this.player.hasShield = false;
         this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
@@ -653,6 +727,7 @@ export class GameScene extends Phaser.Scene {
         // Shield destroys enemy on contact
         if (hitEnemy) {
           hitEnemy.active = false;
+          this.missionSystem.trackEnemyKill();
         }
         Overlays.shieldBreakFlash(this);
       } else {
@@ -673,6 +748,22 @@ export class GameScene extends Phaser.Scene {
 
     if (gameplayActive) {
       this.salvageSystem.update(delta, this.difficultySystem.getDrifters());
+      // Mission tracking for income sources and credit thresholds
+      const frameSalvage = this.salvageSystem.getLastFrameSalvageIncome();
+      const frameMining = this.salvageSystem.getLastFrameMiningIncome();
+      if (frameSalvage > 0) this.missionSystem.trackSalvageIncome(frameSalvage);
+      if (frameMining > 0) this.missionSystem.trackMiningIncome(frameMining);
+      this.missionSystem.trackCreditsReached(this.scoreSystem.getUnbanked());
+      // Check for mission completions and show pop-ups
+      const completions = this.missionSystem.consumeNewCompletions();
+      for (const m of completions) {
+        this.salvageSystem.spawnRewardText(
+          `MISSION +${m.def.reward}`,
+          this.player.x,
+          this.player.y - 40,
+          `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
+        );
+      }
     }
 
     // Update player death debris
@@ -696,11 +787,11 @@ export class GameScene extends Phaser.Scene {
     // HUD — comm triggers keyed to extractable transitions
     const gateExtractable = this.extractionSystem.isGateActive();
     const gate = this.extractionSystem.getGate();
-    if (!runFrozen && !paused && gate?.justBecameExtractable && Math.random() < 0.55) {
-      this.showSlickExclusive(getSlickLine('gateOpen'));
+    if (!runFrozen && !paused && gate?.justBecameExtractable && Math.random() < 0.35) {
+      this.tryShowGameplaySlick(getSlickLine('gateOpen'));
     }
-    if (!runFrozen && !paused && !gateExtractable && this.lastGateActive && Math.random() < 0.5) {
-      this.showSlickExclusive(getSlickLine('gateClose'), 2400);
+    if (!runFrozen && !paused && !gateExtractable && this.lastGateActive && Math.random() < 0.25) {
+      this.tryShowGameplaySlick(getSlickLine('gateClose'), 2400);
     }
     if (!runFrozen) {
       this.lastGateActive = gateExtractable;
@@ -712,6 +803,7 @@ export class GameScene extends Phaser.Scene {
       currentPhase,
       this.player.hasShield,
     );
+    this.hud.updateMissions(this.missionSystem.getActiveMissions());
   }
 
   private spawnDebris(): void {
@@ -755,7 +847,15 @@ export class GameScene extends Phaser.Scene {
 
   private handleDeath(cause: DeathCause): void {
     const lostScore = this.scoreSystem.getUnbanked();
-    this.resultData = { score: lostScore, cause: 'death' };
+    const missionProgress = this.missionSystem.getActiveMissions().map((m) => ({
+      label: m.def.label,
+      progress: Math.floor(m.progress),
+      target: m.def.target,
+      completed: m.completed,
+      reward: m.def.reward,
+    }));
+    this.missionSystem.save();
+    this.resultData = { score: lostScore, cause: 'death', missionProgress };
     this.state = GameState.DEAD;
     this.time.timeScale = 1;
     this.tweens.timeScale = 1;
@@ -793,8 +893,36 @@ export class GameScene extends Phaser.Scene {
     this.tweens.timeScale = 1;
     this.hidePauseMenu();
     this.refreshPauseUi();
+    // Check mission completion on extraction
+    this.missionSystem.trackCreditsExtracted(this.scoreSystem.getBanked());
+    this.missionSystem.checkExtraction();
+    const missionBonus = this.missionSystem.getCompletedReward();
+    // Capture mission progress before clearing completed missions
+    const missionProgress = this.missionSystem.getActiveMissions().map((m) => ({
+      label: m.def.label,
+      progress: Math.floor(m.progress),
+      target: m.def.target,
+      completed: m.completed,
+      reward: m.def.reward,
+    }));
+    if (missionBonus > 0) {
+      this.scoreSystem.addBanked(missionBonus);
+    }
+    this.missionSystem.claimAndClear();
     const score = this.scoreSystem.getBanked();
-    this.resultData = { score, cause: 'extract' };
+    const walletPayout = this.saveSystem.depositWalletPayout(score);
+    const walletBalance = this.saveSystem.getWalletCredits();
+    const slickCut = getSlickCut(score);
+    this.bankingSystem.finalizeExtraction();
+    this.resultData = {
+      score,
+      cause: 'extract',
+      missionBonus,
+      walletPayout,
+      slickCut,
+      walletBalance,
+      missionProgress,
+    };
     this.showSlickExclusive(getSlickLine('extraction'), 0);
     this.clearBoard();
     Overlays.bombFlash(this);
@@ -809,17 +937,119 @@ export class GameScene extends Phaser.Scene {
     autoHideMs?: number,
   ): void {
     if (Math.random() >= chance) return;
-    this.showSlickExclusive(getSlickLine(key), autoHideMs);
+    this.tryShowGameplaySlick(getSlickLine(key), autoHideMs);
+  }
+
+  private tryShowGameplaySlick(message: string, autoHideMs?: number): boolean {
+    return this.tryShowGameplayComm('slick', message, autoHideMs);
+  }
+
+  private tryShowGameplayRegent(message: string, autoHideMs?: number): boolean {
+    return this.tryShowGameplayComm('regent', message, autoHideMs, {
+      allowInterrupt: this.regentIntroduced,
+      ignoreCooldown: this.regentIntroduced,
+    });
+  }
+
+  private tryShowGameplayComm(
+    speaker: CommSpeaker,
+    message: string,
+    autoHideMs?: number,
+    options: GameplayCommOptions = {},
+  ): boolean {
+    if (!this.isGameplayCommState()) return false;
+
+    this.syncCommState();
+    const now = this.time.now;
+    const priority = this.getCommPriority(speaker);
+    const commVisible = this.activeCommSpeaker !== null && now < this.activeCommVisibleUntil;
+
+    if (commVisible) {
+      if (!(options.allowInterrupt && priority > this.activeCommPriority)) {
+        return false;
+      }
+    } else if (now < this.nextGameplayCommAt && !options.ignoreCooldown) {
+      return false;
+    }
+
+    this.showCommNow(speaker, message, autoHideMs);
+    return true;
+  }
+
+  private isGameplayCommState(): boolean {
+    return (
+      this.state === GameState.COUNTDOWN ||
+      this.state === GameState.PLAYING ||
+      this.state === GameState.PAUSED
+    );
+  }
+
+  private syncCommState(): void {
+    if (this.activeCommVisibleUntil === Number.POSITIVE_INFINITY) return;
+    if (this.time.now < this.activeCommVisibleUntil) return;
+    this.activeCommSpeaker = null;
+    this.activeCommPriority = 0;
+    this.activeCommVisibleUntil = 0;
+  }
+
+  private getCommPriority(speaker: CommSpeaker): number {
+    if (speaker === 'regent') {
+      return this.regentIntroduced ? 3 : 2;
+    }
+    return speaker === 'slick' ? 2 : 1;
+  }
+
+  private getCommDuration(speaker: CommSpeaker, autoHideMs?: number): number {
+    return autoHideMs ?? GameScene.DEFAULT_COMM_HIDE_MS[speaker];
+  }
+
+  private hideOtherComms(activeSpeaker: CommSpeaker): void {
+    if (activeSpeaker !== 'slick') this.slickComm.hide();
+    if (activeSpeaker !== 'regent') this.regentComm.hide();
+    if (activeSpeaker !== 'liaison') this.liaisonComm?.hide();
+  }
+
+  private clearCommState(): void {
+    this.activeCommSpeaker = null;
+    this.activeCommPriority = 0;
+    this.activeCommVisibleUntil = 0;
+    this.nextGameplayCommAt = this.time.now;
+  }
+
+  private showCommNow(
+    speaker: CommSpeaker,
+    message: string,
+    autoHideMs?: number,
+  ): void {
+    const duration = this.getCommDuration(speaker, autoHideMs);
+    this.hideOtherComms(speaker);
+
+    if (speaker === 'slick') {
+      this.slickComm.show(message, duration);
+    } else if (speaker === 'regent') {
+      this.regentComm.show(message, duration);
+    } else {
+      this.liaisonComm?.show(message, duration);
+    }
+
+    this.activeCommSpeaker = speaker;
+    this.activeCommPriority = this.getCommPriority(speaker);
+    this.activeCommVisibleUntil = duration > 0 ? this.time.now + duration : Number.POSITIVE_INFINITY;
+    this.nextGameplayCommAt = duration > 0
+      ? this.activeCommVisibleUntil + GameScene.GAMEPLAY_COMM_GAP_MS
+      : Number.POSITIVE_INFINITY;
   }
 
   private showSlickExclusive(message: string, autoHideMs?: number): void {
-    this.regentComm.hide();
-    this.slickComm.show(message, autoHideMs);
+    this.showCommNow('slick', message, autoHideMs);
   }
 
   private showRegentExclusive(message: string, autoHideMs?: number): void {
-    this.slickComm.hide();
-    this.regentComm.show(message, autoHideMs);
+    this.showCommNow('regent', message, autoHideMs);
+  }
+
+  private showLiaisonExclusive(message: string, autoHideMs?: number): void {
+    this.showCommNow('liaison', message, autoHideMs);
   }
 
   private cleanup(): void {
@@ -833,6 +1063,7 @@ export class GameScene extends Phaser.Scene {
     this.extractionSystem.destroy();
     this.bankingSystem.destroy();
     this.difficultySystem.destroy();
+    this.missionSystem.destroy();
     this.player.destroy();
     for (const d of this.debrisList) d.destroy();
     this.debrisList = [];
@@ -862,8 +1093,11 @@ export class GameScene extends Phaser.Scene {
     this.pauseButtonHit.destroy();
     this.clearResultUi();
     this.hud.destroy();
+    this.clearCommState();
     this.slickComm.destroy();
     this.regentComm.destroy();
+    this.liaisonComm?.destroy();
+    this.liaisonComm = null;
     this.hologramOverlay.destroy();
     this.geoSphere.destroy();
     this.starfield.destroy();
@@ -957,10 +1191,19 @@ export class GameScene extends Phaser.Scene {
     const centerX = layout.centerX;
     const cause = data.cause;
     const isDeath = cause === 'death';
-    const deathCommY = layout.gameHeight * 0.48;
     const panelTop = layout.gameHeight * 0.18;
     const panelBottom = layout.gameHeight - 50;
     const panelHeight = panelBottom - panelTop;
+    const commPanelWidth = Math.min(layout.gameWidth - 96, 368);
+    const commPanelHeight = 60;
+    const commGap = 8;
+    const buttonWidth = commPanelWidth;
+    const buttonHeight = Phaser.Math.Clamp(Math.round(panelHeight * 0.048), 28, 44);
+    const buttonGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.018), 6, 14);
+    const buttonStackHeight = buttonHeight * 2 + buttonGap * 3;
+    const buttonStackTop = panelBottom - buttonStackHeight;
+    const retryButtonY = buttonStackTop + buttonGap + buttonHeight / 2;
+    const menuButtonY = retryButtonY + buttonHeight + buttonGap;
     const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
     const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
 
@@ -981,7 +1224,7 @@ export class GameScene extends Phaser.Scene {
 
     const scoreText = this.add.text(
       centerX,
-      layout.gameHeight * 0.40,
+      layout.gameHeight * 0.36,
       isDeath ? `CREDITS LOST: ${Math.floor(data.score)}` : `SCORE: ${Math.floor(data.score)}`,
       {
         fontFamily: 'monospace',
@@ -991,43 +1234,120 @@ export class GameScene extends Phaser.Scene {
       },
     ).setOrigin(0.5).setDepth(210);
     this.resultUi.push(scoreText);
+    let resultContentBottomY = scoreText.y + scoreText.height / 2;
 
+    if (!isDeath) {
+      const walletLineY = scoreText.y + 28;
+      const walletText = this.add.text(centerX, walletLineY, `WALLET: +${Math.floor(data.walletPayout ?? 0)}   TOTAL: ${Math.floor(data.walletBalance ?? 0)}`, {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
+        align: 'center',
+      }).setOrigin(0.5).setDepth(210).setAlpha(0.86);
+      this.resultUi.push(walletText);
+      resultContentBottomY = Math.max(resultContentBottomY, walletText.y + walletText.height / 2);
+
+      const cutLineY = walletLineY + 14;
+      const slickCutText = this.add.text(centerX, cutLineY, `SLICK'S CUT: ${getSlickCutPercent()}%  (-${Math.floor(data.slickCut ?? 0)})`, {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+        align: 'center',
+      }).setOrigin(0.5).setDepth(210).setAlpha(0.62);
+      this.resultUi.push(slickCutText);
+      resultContentBottomY = Math.max(resultContentBottomY, slickCutText.y + slickCutText.height / 2);
+    }
+
+    // Mission results section
+    const missions = data.missionProgress ?? [];
+    if (missions.length > 0) {
+      const missionHeaderY = Math.max(layout.gameHeight * 0.43, resultContentBottomY + 22);
+      const headerLabel = isDeath ? 'MISSIONS: INCOMPLETE' : 'MISSIONS:';
+      const headerColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
+      const mHeader = this.add.text(centerX, missionHeaderY, headerLabel, {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: `#${headerColor.toString(16).padStart(6, '0')}`,
+        align: 'center',
+      }).setOrigin(0.5).setDepth(210).setAlpha(0.8);
+      this.resultUi.push(mHeader);
+      resultContentBottomY = Math.max(resultContentBottomY, mHeader.y + mHeader.height / 2);
+
+      for (let i = 0; i < missions.length; i++) {
+        const m = missions[i];
+        const y = missionHeaderY + 18 + i * 16;
+        const prog = Math.min(m.progress, m.target);
+        let line: string;
+        let lineColor: number;
+        if (!isDeath && m.completed) {
+          line = `\u2713 ${m.label}  +${m.reward}`;
+          lineColor = COLORS.GATE;
+        } else {
+          line = `  ${m.label}  ${prog}/${m.target}`;
+          lineColor = isDeath ? COLORS.HAZARD : COLORS.HUD;
+        }
+        const mText = this.add.text(centerX, y, line, {
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          color: `#${lineColor.toString(16).padStart(6, '0')}`,
+          align: 'center',
+        }).setOrigin(0.5).setDepth(210).setAlpha(m.completed ? 0.9 : 0.6);
+        this.resultUi.push(mText);
+        resultContentBottomY = Math.max(resultContentBottomY, mText.y + mText.height / 2);
+      }
+
+      if (!isDeath && data.missionBonus && data.missionBonus > 0) {
+        const bonusY = missionHeaderY + 18 + missions.length * 16 + 4;
+        const bonusText = this.add.text(centerX, bonusY, `BONUS: +${data.missionBonus}`, {
+          fontFamily: 'monospace',
+          fontSize: '14px',
+          color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
+          align: 'center',
+          fontStyle: 'bold',
+        }).setOrigin(0.5).setDepth(210);
+        this.resultUi.push(bonusText);
+        resultContentBottomY = Math.max(resultContentBottomY, bonusText.y + bonusText.height / 2);
+      }
+    }
+
+    const gapTop = resultContentBottomY + commGap;
+    const gapBottom = buttonStackTop - commGap;
+    const gapHeight = Math.max(0, gapBottom - gapTop - commPanelHeight);
+    const resultCommY = gapTop + gapHeight * 0.5;
+
+    this.slickComm.setPinnedLayout(resultCommY, 212);
     if (isDeath) {
-      this.slickComm.setPinnedLayout(deathCommY, 212);
-      this.regentComm.setPinnedLayout(deathCommY, 212);
+      this.regentComm.setPinnedLayout(resultCommY, 212);
     } else {
-      this.slickComm.resetLayout();
       this.regentComm.resetLayout();
     }
 
-    const retryText = this.add.text(centerX, panelBottom - 68, 'TAP TO RETRY', {
-      fontFamily: 'monospace',
-      fontSize: '24px',
-      color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(210);
-    this.resultUi.push(retryText);
+    this.createResultButton(
+      'TAP TO RETRY',
+      centerX,
+      retryButtonY,
+      buttonWidth,
+      buttonHeight,
+      COLORS.GATE,
+      () => {
+        this.scene.start(SCENE_KEYS.GAME, {
+          retryFromDeath: this.resultData?.cause === 'death',
+          runBoosts: this.resultData?.cause === 'death' ? this.activeRunBoosts ?? undefined : undefined,
+        } satisfies MenuHandoff);
+      },
+    );
 
-    this.tweens.add({
-      targets: retryText,
-      alpha: 0.3,
-      duration: 800,
-      yoyo: true,
-      repeat: -1,
-    });
-
-    const menuText = this.add.text(centerX, panelBottom - 30, 'MENU', {
-      fontFamily: 'monospace',
-      fontSize: '18px',
-      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(210).setInteractive({ useHandCursor: true });
-    menuText.on('pointerdown', (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-      event.stopPropagation();
-      if (this.resultInputLocked) return;
-      this.scene.start(SCENE_KEYS.MENU);
-    });
-    this.resultUi.push(menuText);
+    this.createResultButton(
+      'MENU',
+      centerX,
+      menuButtonY,
+      buttonWidth,
+      buttonHeight,
+      COLORS.HUD,
+      () => {
+        this.scene.start(SCENE_KEYS.MENU);
+      },
+    );
   }
 
   private clearResultUi(): void {
@@ -1035,6 +1355,60 @@ export class GameScene extends Phaser.Scene {
       obj.destroy();
     }
     this.resultUi = [];
+  }
+
+  private createResultButton(
+    label: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    accentColor: number,
+    onClick: () => void,
+  ): void {
+    const bg = this.add.graphics().setDepth(210);
+    const labelText = this.add.text(x, y, label, {
+      fontFamily: 'monospace',
+      fontSize: `${Phaser.Math.Clamp(Math.round(height * 0.46), 13, 18)}px`,
+      color: `#${accentColor.toString(16).padStart(6, '0')}`,
+      align: 'center',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(211);
+    const hit = this.add.zone(x, y, width, height)
+      .setOrigin(0.5)
+      .setDepth(212)
+      .setInteractive({ useHandCursor: true });
+
+    const draw = (hovered: boolean, pressed: boolean): void => {
+      const left = x - width / 2;
+      const top = y - height / 2;
+      bg.clear();
+      bg.fillStyle(COLORS.BG, hovered ? 0.92 : 0.82);
+      bg.lineStyle(1.5, accentColor, pressed ? 0.95 : hovered ? 0.72 : 0.45);
+      bg.fillRoundedRect(left, top, width, height, 10);
+      bg.strokeRoundedRect(left, top, width, height, 10);
+      bg.fillStyle(accentColor, pressed ? 0.18 : hovered ? 0.1 : 0.06);
+      bg.fillRoundedRect(left + 4, top + 4, width - 8, height - 8, 8);
+      labelText.setAlpha(pressed ? 1 : hovered ? 0.96 : 0.88);
+    };
+
+    draw(false, false);
+
+    hit.on('pointerover', () => draw(true, false));
+    hit.on('pointerout', () => draw(false, false));
+    hit.on('pointerdown', (
+      _pointer: Phaser.Input.Pointer,
+      _lx: number,
+      _ly: number,
+      event: Phaser.Types.Input.EventData,
+    ) => {
+      event.stopPropagation();
+      if (this.resultInputLocked) return;
+      draw(true, true);
+      onClick();
+    });
+
+    this.resultUi.push(bg, labelText, hit);
   }
 
   private createPauseButton(): void {
@@ -1084,6 +1458,7 @@ export class GameScene extends Phaser.Scene {
     const enemies = this.difficultySystem.getEnemies();
     for (const e of enemies) {
       this.playerDebris.push(new ShipDebris(this, e.x, e.y, e.getVelocityX(), e.getVelocityY(), 0xff00ff, e.radius));
+      this.missionSystem.trackEnemyKill();
       e.destroy();
     }
     enemies.length = 0;
@@ -1173,8 +1548,8 @@ export class GameScene extends Phaser.Scene {
     this.hidePauseMenu();
     const layout = getLayout();
     const centerX = layout.centerX;
-    const panelTop = layout.gameHeight * 0.20;
-    const panelHeight = layout.gameHeight * 0.52;
+    const panelTop = layout.gameHeight * 0.12;
+    const panelHeight = layout.gameHeight * 0.76;
 
     const blocker = this.add.zone(0, 0, layout.gameWidth, layout.gameHeight)
       .setOrigin(0, 0)
@@ -1298,6 +1673,64 @@ export class GameScene extends Phaser.Scene {
       },
     );
     this.pauseUi.push(scanText);
+
+    // Active missions section
+    const activeMissions = this.missionSystem.getActiveMissions();
+    if (activeMissions.length > 0) {
+      const missionDividerY = settingsY + 92;
+      const mDivider = this.add.graphics().setDepth(221);
+      mDivider.lineStyle(1, COLORS.HUD, 0.2);
+      mDivider.lineBetween(centerX - 100, missionDividerY, centerX + 100, missionDividerY);
+      this.pauseUi.push(mDivider);
+
+      const mTitle = this.add.text(centerX, missionDividerY + 16, 'MISSIONS', {
+        fontFamily: 'monospace',
+        fontSize: '16px',
+        color: hudColor,
+        align: 'center',
+      }).setOrigin(0.5).setDepth(221).setAlpha(0.7);
+      this.pauseUi.push(mTitle);
+
+      for (let i = 0; i < activeMissions.length; i++) {
+        const m = activeMissions[i];
+        const my = missionDividerY + 40 + i * 42;
+        const prog = Math.min(Math.floor(m.progress), m.def.target);
+        const done = m.completed;
+
+        // Card background
+        const cardBg = this.add.graphics().setDepth(220);
+        cardBg.fillStyle(COLORS.BG, 0.6);
+        cardBg.fillRoundedRect(40, my - 4, layout.gameWidth - 80, 36, 6);
+        cardBg.lineStyle(1, done ? COLORS.GATE : COLORS.HUD, done ? 0.5 : 0.15);
+        cardBg.strokeRoundedRect(40, my - 4, layout.gameWidth - 80, 36, 6);
+        this.pauseUi.push(cardBg);
+
+        const label = this.add.text(50, my + 2, m.def.label, {
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          color: done ? gateColor : hudColor,
+        }).setDepth(221).setAlpha(done ? 0.9 : 0.7);
+        this.pauseUi.push(label);
+
+        const status = done
+          ? `\u2713 DONE  +${m.def.reward}`
+          : `${prog}/${m.def.target}`;
+        const statusText = this.add.text(layout.gameWidth - 50, my + 2, status, {
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          color: done ? gateColor : hudColor,
+          align: 'right',
+        }).setOrigin(1, 0).setDepth(221).setAlpha(done ? 0.9 : 0.7);
+        this.pauseUi.push(statusText);
+
+        const rewardHint = this.add.text(50, my + 17, `REWARD: +${m.def.reward}`, {
+          fontFamily: 'monospace',
+          fontSize: '9px',
+          color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
+        }).setDepth(221).setAlpha(0.5);
+        this.pauseUi.push(rewardHint);
+      }
+    }
   }
 
   private hidePauseMenu(): void {
@@ -1373,8 +1806,5 @@ export class GameScene extends Phaser.Scene {
   ): void {
     if (this.state !== GameState.RESULTS || this.resultInputLocked) return;
     if (targets.length > 0) return;
-    this.scene.start(SCENE_KEYS.GAME, {
-      retryFromDeath: this.resultData?.cause === 'death',
-    } satisfies MenuHandoff);
   }
 }

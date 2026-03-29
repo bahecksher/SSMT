@@ -164,3 +164,36 @@ At phase 5 and above, Regent delivers the kill taunt on every death regardless o
 
 ### 2026-03-28 - Pause resume only via top-right button
 The pause menu panel no longer has a resume button or play icon. Resume is accessed exclusively via the top-right ▶/|| toggle button.
+
+### 2026-03-28 - Mission system: pre-game briefing with 9 mission types
+Optional per-run objectives chosen on a MissionSelectScene between Menu and Game. 9 mission types across 3 difficulty tiers. Mission cards persist in localStorage; progress resets each run. Rewards are bonus credits added to banked score on extraction only. Retry skips the briefing and reuses the same mission cards.
+
+### 2026-03-28 - Mission progress resets on death (per-run model)
+Mission progress resets each run, consistent with unbanked credits being lost on death. The mission cards themselves persist across sessions until completed (claimed on extraction) or discarded (replaced with new random mission).
+
+### 2026-03-28 - BankingSystem separated detection from finalization
+BankingSystem.checkExtraction() now only banks the score and returns boolean. New finalizeExtraction() saves best score and submits to leaderboard. This allows mission bonus credits to be added between banking and leaderboard submission.
+
+### 2026-03-28 - Mission select uses swipe gestures instead of hold-to-discard
+Swipe right to accept (card snaps right into frame), swipe left for pending discard (card snaps left), second swipe left confirms discard. Replaces the hold-to-discard mechanic which was clunky on mobile. 40px drag threshold.
+
+### 2026-03-28 - In-game mission HUD uses pill-shaped indicators at bottom
+Mission progress during gameplay shown as evenly spaced rounded-rect pills across the bottom of the screen instead of stacked 10px text. More readable and identifiable at a glance.
+
+### 2026-03-28 - Comm panels wipe in horizontally on death/extraction
+Slick wipes in from the left, Regent from the right (Back.Out ease, 280ms). Normal in-gameplay comms retain the slide-down animation. Adds visual impact to the results moment.
+
+### 2026-03-28 - Mission select replaced hold-to-discard with REROLL ALL button
+Multiple swipe and hold-to-discard iterations failed on mobile. Replaced with a simple REROLL button that regenerates all 3 missions (none carried over). Limited to 3 rerolls, replenished by 1 per successful extraction.
+
+### 2026-03-28 - Company reputation system with 4 factions
+4 companies (DEEPCORE, RECLAIM, IRONVEIL, FREEPORT) issue missions. Completing missions awards rep (tier 1=1, tier 2=2, tier 3=4). Rep thresholds at 3/8/16 unlock escalating per-run boosts: mining yield, salvage yield, NPC bounty multiplier, and bonus drop rate.
+
+### 2026-03-28 - Mission data in hand-editable template file
+Mission definitions extracted to `src/game/data/missionData.ts` as plain data arrays with `labelTemplate` strings using `{target}` placeholder. Generation logic stays in `missionCatalog.ts`.
+
+### 2026-03-28 - Liaison NPCs appear at rep level 1+
+When the player has rep >= 1 with any company, the highest-rep company's liaison (Holt/Voss/Kade/Nyla) appears during countdown with intro and boost announcement lines. Each has a unique portrait shape and company-colored comm panel.
+
+### 2026-03-28 - Reputation unlocks spendable favors; Slick keeps 65%
+Company rep no longer auto-applies passive boosts on deploy. Rep now unlocks tiered favor offers on MissionSelect, successful extraction still scores at 100% for best score and leaderboard, and only 35% of extracted credits become persistent wallet money while Slick keeps the other 65%. Death retry preserves the already-purchased favor loadout; changing favors after a completed run requires returning to MissionSelect.

@@ -78,3 +78,6 @@ export const BONUS_COLLECTION_DELAY = 1500;   // 1.5s before bonus can be collec
 // Difficulty
 export const DIFFICULTY_SPEED_SCALE = 0.18;
 export const DIFFICULTY_SPAWN_SCALE = 0.75;
+
+// Missions - tier weights (must sum to 1)
+export const MISSION_TIER_WEIGHTS = [0.50, 0.35, 0.15] as const;

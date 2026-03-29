@@ -36,11 +36,18 @@ export class DifficultySystem {
   private beamBurstTimer = 0;
   private enemyTimer = 0;
   private npcTimer = 0;
+  private npcBonusMult = 1.0;
+  private bonusDropChanceAdd = 0.0;
 
   constructor(scene: Phaser.Scene, phase: number) {
     this.scene = scene;
     this.config = getPhaseConfig(phase);
     this.updateDensityScale();
+  }
+
+  setBoosts(npcBonusMult: number, bonusDropChanceAdd: number): void {
+    this.npcBonusMult = npcBonusMult;
+    this.bonusDropChanceAdd = bonusDropChanceAdd;
   }
 
   setPhase(phase: number): void {
@@ -182,9 +189,9 @@ export class DifficultySystem {
             y: enemy.y,
             vx: enemy.getVelocityX() * 0.45,
             vy: enemy.getVelocityY() * 0.45,
-            points: ENEMY_BONUS_POINTS,
+            points: Math.round(ENEMY_BONUS_POINTS * this.npcBonusMult),
           });
-          if (Math.random() < BOMB_DROP_CHANCE) {
+          if (Math.random() < BOMB_DROP_CHANCE + this.bonusDropChanceAdd) {
             this.bombDropPositions.push({
               x: enemy.x,
               y: enemy.y,
@@ -206,13 +213,13 @@ export class DifficultySystem {
           if (this.canDropShieldAt(npc.x, npc.y)) {
             this.deadNPCPositions.push({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy });
           }
-          if (Math.random() < NPC_BONUS_DROP_CHANCE) {
+          if (Math.random() < NPC_BONUS_DROP_CHANCE + this.bonusDropChanceAdd) {
             this.bonusDropPositions.push({
               x: npc.x,
               y: npc.y,
               vx: npc.vx * 0.5,
               vy: npc.vy * 0.5,
-              points: NPC_BONUS_POINTS,
+              points: Math.round(NPC_BONUS_POINTS * this.npcBonusMult),
             });
           }
         }
@@ -523,7 +530,7 @@ export class DifficultySystem {
           this.bonusDropPositions.push({
             x: enemy.x, y: enemy.y,
             vx: enemy.getVelocityX() * 0.45, vy: enemy.getVelocityY() * 0.45,
-            points: ENEMY_BONUS_POINTS,
+            points: Math.round(ENEMY_BONUS_POINTS * this.npcBonusMult),
           });
         }
       }
