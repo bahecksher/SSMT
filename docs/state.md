@@ -1,18 +1,16 @@
 # State
-_Last updated: 2026-03-29 0209_
+_Last updated: 2026-03-29 1307_
 
 ## Current focus
-Post-merge sanity checking on `main` after landing the desktop cursor into the current `Menu`, `MissionSelect`, and in-run flow.
+Cursor morph-to-button behavior landed. Ready to push to main and open upstream PR.
 
 ## What's working
-- Custom cursor now runs on desktop in `Menu`, `MissionSelect`, and `Game`, replacing the native cursor with a hologram reticle while leaving touch alone
-- Full scene flow is now just `Menu -> MissionSelect -> Game`; the unused legacy `GameOverScene` has been removed from runtime config
-- MissionSelect still supports accepted contracts, paid rerolls, favor selection, and direct return to menu
-- Mission persistence now goes through shared mission helpers instead of raw MissionSelect `localStorage` writes
-- Company standing, favor offers, wallet split, and reroll pricing behavior remain intact after the cleanup pass
-- Stale liaison select/deselect dialogue helpers and several orphaned tuning/constants were removed without breaking the build
-- The merged cursor branch has been fast-forwarded onto local `main`
-- Production build passed on `main` after the cursor merge
+- Custom cursor morphs to hug interactive elements iPad-style (rounded rect outline, position sticks to element center, pointer tracking dot)
+- Per-button corner radius matching via `setData('cornerRadius', N)` on all interactive zones
+- Morph crossfades reticle out and rounded rect in, with smooth color lerp (white → neon green)
+- Hit detection filtered to `useHandCursor: true` only — blocker zones no longer trigger hover
+- Full scene flow: Menu → MissionSelect → Game with cursor morph working across all three
+- Leaderboard, mission persistence, company standing, favors, rerolls all intact
 
 ## In progress
 Nothing active.
@@ -31,22 +29,24 @@ Nothing active.
 - Supabase `scores` table must be created manually (see leaderboard plan)
 
 ## Next actions
-1. Desktop-test the new cursor across `Menu`, `MissionSelect`, and `Game` for hover behavior and aiming feel
-2. Play one short-phone MissionSelect pass to confirm the cleaned persistence flow and recent spacing tweaks still feel right
-3. Continue balance playtesting on the 60/40 wallet split, high favor pricing, and paid rerolls
+1. Push to main and open PR for upstream
+2. Desktop-test the morph cursor across Menu, MissionSelect, and Game for hover feel and timing
+3. Play one short-phone MissionSelect pass to confirm spacing tweaks still feel right
+4. Continue balance playtesting on the 60/40 wallet split, high favor pricing, and paid rerolls
 
 ## Active plan
 docs/plans/2026-03-29 0145 Plan - Codebase Cleanup.md
 
 ## How to verify
 1. Run `npm.cmd run build`
-2. On desktop, confirm the native cursor is hidden and the hologram reticle appears in `Menu`, `MissionSelect`, and `Game`
-3. From the menu, enter MissionSelect, toggle missions/favors, return to menu, reopen MissionSelect, and confirm selections/rerolls still persist as expected
-4. Deploy a run and confirm the normal gameplay/results flow still works without any GameOverScene transition
+2. On desktop, hover over any button — cursor should morph from reticle to rounded rect hugging the button with matching corner radius
+3. While morphed, move mouse inside the button area — a small neon dot should track the actual pointer position
+4. Move mouse away — cursor should smoothly return to the reticle
+5. Confirm morph works on Menu tabs, MissionSelect cards/deploy, pause button, and result screen buttons
 
 ## Recent logs
+- docs/log/2026-03-29 1307 Cursor Morph-to-Button Behavior.md — iPad-style morph cursor with per-button corner radius and pointer tracking dot
 - docs/log/2026-03-29 0209 Land Cursor Merge on Main.md - fast-forwarded main to the merged cursor branch, rebuilt, and prepared origin/main for push
 - docs/log/2026-03-29 0205 Merge Blake Cursor Branch.md - merged Blake's custom cursor branch into the current flow and kept the GameOverScene cleanup intact
 - docs/log/2026-03-29 0150 Codebase Cleanup Pass.md - removed unused scene/data leftovers and routed MissionSelect persistence through shared mission helpers
 - docs/log/2026-03-29 0140 Favor Status Badge Consistency.md - moved all favor-card status badges like `SHORT` and `SELECTED` to the lower-right for a consistent layout
-- docs/log/2026-03-29 0138 MissionSelect Lower Spacing.md - added more breathing room around the reroll button, wallet line, and favor grid on the briefing screen
