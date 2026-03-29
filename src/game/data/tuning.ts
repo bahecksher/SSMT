@@ -9,8 +9,6 @@ export const PLAYER_SHIELD_BREAK_INVULN_MS = 500;
 // Salvage
 export const SALVAGE_RADIUS = 80;
 export const SALVAGE_POINTS_PER_SECOND = 10;
-export const SALVAGE_POINTS_MIN = 2;
-export const SALVAGE_POINTS_MAX = 12;
 export const SALVAGE_DRIFT_SPEED_MIN = 20;
 export const SALVAGE_DRIFT_SPEED_MAX = 50;
 export const SALVAGE_RESPAWN_DELAY = 1500;
@@ -32,9 +30,6 @@ export const DRIFTER_MINING_POINTS_MIN = 1;    // pts/sec at outer edge of minin
 export const DRIFTER_MINING_POINTS_MAX = 15;   // pts/sec when hugging the asteroid body
 export const DRIFTER_MINEABLE_CHANCE = 0.35;   // share of asteroids that show a mining ring and can be mined
 export const DRIFTER_SPAWN_RATE_BASE = 600;
-
-// Salvage collision
-export const SALVAGE_KILL_RADIUS = 18;  // physical body kill zone
 
 // Hazards - Beam
 export const BEAM_WARNING_DURATION = 1_500;

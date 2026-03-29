@@ -1,11 +1,17 @@
 import { SAVE_KEY, PLAYER_NAME_KEY } from '../constants';
-import { getWalletPayout } from '../data/companyData';
+import { getSlickCut, getWalletPayout } from '../data/companyData';
 import type { SaveData } from '../types';
 
 const DEFAULT_SAVE: SaveData = { bestScore: 0, walletCredits: 0 };
 const LETTER_COUNT = 3;
 const DIGIT_COUNT = 3;
 const CALLSIGN_SEPARATOR = '-';
+
+export interface WalletDepositResult {
+  payout: number;
+  slickCut: number;
+  walletBalance: number;
+}
 
 function randomLetters(count: number): string {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -57,9 +63,10 @@ export class SaveSystem {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
+        const parsed = JSON.parse(raw) as Partial<SaveData> & Record<string, unknown>;
         return {
-          ...DEFAULT_SAVE,
-          ...(JSON.parse(raw) as Partial<SaveData>),
+          bestScore: typeof parsed.bestScore === 'number' ? parsed.bestScore : DEFAULT_SAVE.bestScore,
+          walletCredits: typeof parsed.walletCredits === 'number' ? parsed.walletCredits : DEFAULT_SAVE.walletCredits,
         };
       }
     } catch {
@@ -107,10 +114,19 @@ export class SaveSystem {
     return true;
   }
 
-  depositWalletPayout(extractedCredits: number): number {
-    const payout = getWalletPayout(extractedCredits);
-    this.addWalletCredits(payout);
-    return payout;
+  depositWalletPayout(extractedCredits: number): WalletDepositResult {
+    const bankedCredits = Math.max(0, Math.floor(extractedCredits));
+    const payout = getWalletPayout(bankedCredits);
+    const slickCut = getSlickCut(bankedCredits);
+
+    this.data.walletCredits += payout;
+    this.save();
+
+    return {
+      payout,
+      slickCut,
+      walletBalance: this.data.walletCredits,
+    };
   }
 
   getPlayerName(): string {

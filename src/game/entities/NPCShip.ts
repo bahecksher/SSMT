@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { NPC_RADIUS, NPC_SPEED, NPC_TURN_RATE } from '../data/tuning';
+import { NPC_RADIUS, NPC_SALVAGE_RANGE, NPC_SPEED, NPC_TURN_RATE } from '../data/tuning';
 import { getLayout } from '../layout';
 
 const NPC_COLOR = 0xffcc44; // amber/yellow — friendly but distinct
@@ -163,7 +163,7 @@ export class NPCShip {
       const distToTarget = Math.sqrt(
         (this.targetX - this.x) ** 2 + (this.targetY - this.y) ** 2,
       );
-      if (distToTarget < 80) {
+      if (distToTarget < NPC_SALVAGE_RANGE) {
         this.salvaging = true;
         this.salvageTimer += delta;
       } else {

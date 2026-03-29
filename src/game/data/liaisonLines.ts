@@ -173,71 +173,9 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
   },
 };
 
-/** Lines spoken when a mission card is selected on the briefing screen. No rep required. */
-const LIAISON_SELECT_LINES: Record<CompanyId, string[]> = {
-  [CompanyId.DEEPCORE]: [
-    "Holt, DEEPCORE. You take this one, you're on our clock.",
-    "DEEPCORE contract. Mine hard, extract harder.",
-    "That's a DEEPCORE job. We don't pay for half measures.",
-    "Good eye. The rock's been calling.",
-    "DEEPCORE appreciates the initiative.",
-  ],
-  [CompanyId.RECLAIM]: [
-    "Voss here. RECLAIM likes your taste in work.",
-    "A RECLAIM contract. Every scrap counts, pilot.",
-    "RECLAIM CO. We turn wreckage into wealth.",
-    "Smart pick. There's treasure in that debris.",
-    "RECLAIM sees potential. Don't disappoint.",
-  ],
-  [CompanyId.IRONVEIL]: [
-    "Kade. IRONVEIL SEC. You know what this means.",
-    "An IRONVEIL contract. Shoot straight, get paid.",
-    "IRONVEIL doesn't hire squeamish. You in or not?",
-    "Good. We've got targets that need removing.",
-    "IRONVEIL appreciates the trigger discipline.",
-  ],
-  [CompanyId.FREEPORT]: [
-    "Nyla, FREEPORT. Welcome to the family business.",
-    "FREEPORT contract. Survive, and the field provides.",
-    "A FREEPORT job. We look out for our own.",
-    "FREEPORT UNION. Stay sharp and the odds bend your way.",
-    "Good choice. Freeport's got your back out there.",
-  ],
-};
-
-/** Lines when deselecting a mission. */
-const LIAISON_DESELECT_LINES: Record<CompanyId, string[]> = {
-  [CompanyId.DEEPCORE]: [
-    "Your call, pilot.",
-    "DEEPCORE will find someone else.",
-  ],
-  [CompanyId.RECLAIM]: [
-    "Cold feet? We'll keep it open.",
-    "RECLAIM understands. For now.",
-  ],
-  [CompanyId.IRONVEIL]: [
-    "Backing out? Noted.",
-    "IRONVEIL remembers.",
-  ],
-  [CompanyId.FREEPORT]: [
-    "No pressure. FREEPORT's patient.",
-    "The offer stands, pilot.",
-  ],
-};
-
 export function getLiaisonLine(company: CompanyId, level: number, key: LiaisonLineKey): string {
   const clampedLevel = Math.min(3, Math.max(1, level));
   const lines = LIAISON_LINES[company]?.[clampedLevel]?.[key];
   if (!lines || lines.length === 0) return '';
-  return lines[Math.floor(Math.random() * lines.length)];
-}
-
-export function getLiaisonSelectLine(company: CompanyId): string {
-  const lines = LIAISON_SELECT_LINES[company];
-  return lines[Math.floor(Math.random() * lines.length)];
-}
-
-export function getLiaisonDeselectLine(company: CompanyId): string {
-  const lines = LIAISON_DESELECT_LINES[company];
   return lines[Math.floor(Math.random() * lines.length)];
 }

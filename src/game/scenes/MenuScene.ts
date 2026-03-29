@@ -12,9 +12,16 @@ import { DRIFTER_SPEED_BASE } from '../data/tuning';
 import { pickAsteroidSize } from '../data/phaseConfig';
 import { getSlickLine } from '../data/slickLines';
 import { getLayout, setLayoutSize } from '../layout';
-import { getSettings, updateSettings } from '../systems/SettingsSystem';
+import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
 
 type Period = 'daily' | 'weekly';
+type MenuButton = {
+  bg: Phaser.GameObjects.Graphics;
+  label: Phaser.GameObjects.Text;
+  hit: Phaser.GameObjects.Zone;
+  width: number;
+  height: number;
+};
 
 // Background simulation constants (phase 1 feel)
 const BG_MAX_DEBRIS = 2;
@@ -28,9 +35,25 @@ const MENU_STARFIELD_COUNT = 170;
 
 export class MenuScene extends Phaser.Scene {
   private leaderboardTexts: Phaser.GameObjects.Text[] = [];
+  private dailyTabBg!: Phaser.GameObjects.Graphics;
   private dailyTab!: Phaser.GameObjects.Text;
+  private dailyTabHit!: Phaser.GameObjects.Zone;
+  private weeklyTabBg!: Phaser.GameObjects.Graphics;
   private weeklyTab!: Phaser.GameObjects.Text;
+  private weeklyTabHit!: Phaser.GameObjects.Zone;
+  private settingsButton!: MenuButton;
+  private settingsPanelUi: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text | Phaser.GameObjects.Zone> = [];
+  private shakeOnButton!: MenuButton;
+  private shakeOffButton!: MenuButton;
+  private scanOnButton!: MenuButton;
+  private scanOffButton!: MenuButton;
+  private settingsOpen = false;
   private activePeriod: Period = 'daily';
+  private leaderboardStartY = 0;
+  private leaderboardRowHeight = 22;
+  private leaderboardTabWidth = 104;
+  private leaderboardTabHeight = 30;
+  private leaderboardFontSize = '14px';
   private statusText!: Phaser.GameObjects.Text;
   private pilotText!: Phaser.GameObjects.Text;
 
@@ -97,41 +120,54 @@ export class MenuScene extends Phaser.Scene {
 
     // === UI layer (depth 10+) ===
     const uiDepth = 10;
+    const backingTop = layout.gameHeight * 0.06;
+    const compactMenu = layout.gameHeight <= 720 || layout.gameWidth <= 400;
+    const veryCompactMenu = layout.gameHeight <= 560 || layout.gameWidth <= 360;
+    const titlePrimarySize = veryCompactMenu ? '32px' : compactMenu ? '36px' : '40px';
+    const titleSecondarySize = veryCompactMenu ? '20px' : compactMenu ? '22px' : '24px';
+    const titleTertiarySize = veryCompactMenu ? '12px' : '14px';
+    const metaSize = compactMenu ? '13px' : '14px';
+    const hintSize = veryCompactMenu ? '9px' : '10px';
+    const bestSize = compactMenu ? '14px' : '16px';
+    this.leaderboardTabWidth = veryCompactMenu ? 88 : compactMenu ? 94 : 104;
+    this.leaderboardTabHeight = compactMenu ? 28 : 30;
+    this.leaderboardRowHeight = veryCompactMenu ? 20 : 22;
+    this.leaderboardFontSize = veryCompactMenu ? '13px' : '14px';
 
     // Semi-transparent backing so text is readable over the simulation
     const backing = this.add.graphics().setDepth(uiDepth);
     backing.fillStyle(COLORS.BG, 0.7);
-    backing.fillRoundedRect(20, layout.gameHeight * 0.06, layout.gameWidth - 40, layout.gameHeight - layout.gameHeight * 0.06 - 20, 12);
+    backing.fillRoundedRect(20, backingTop, layout.gameWidth - 40, layout.gameHeight - backingTop - 20, 12);
 
     // Title block
-    this.add.text(centerX, layout.gameHeight * 0.12, "SLICK'S", {
+    const titlePrimary = this.add.text(centerX, backingTop + (veryCompactMenu ? 34 : compactMenu ? 36 : 44), "SLICK'S", {
       fontFamily: 'monospace',
-      fontSize: '40px',
+      fontSize: titlePrimarySize,
       color: `#${COLORS.PLAYER.toString(16).padStart(6, '0')}`,
       align: 'center',
-    }).setOrigin(0.5).setDepth(uiDepth);
+    }).setOrigin(0.5, 0).setDepth(uiDepth);
 
-    this.add.text(centerX, layout.gameHeight * 0.19, 'SALVAGE & MINING', {
+    const titleSecondary = this.add.text(centerX, titlePrimary.y + titlePrimary.height + (veryCompactMenu ? 0 : 2), 'SALVAGE & MINING', {
       fontFamily: 'monospace',
-      fontSize: '24px',
+      fontSize: titleSecondarySize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
-    }).setOrigin(0.5).setDepth(uiDepth);
+    }).setOrigin(0.5, 0).setDepth(uiDepth);
 
-    this.add.text(centerX, layout.gameHeight * 0.24, 'REMOTE PILOT INTERFACE', {
+    const titleTertiary = this.add.text(centerX, titleSecondary.y + titleSecondary.height + (veryCompactMenu ? 2 : 4), 'REMOTE PILOT INTERFACE', {
       fontFamily: 'monospace',
-      fontSize: '14px',
+      fontSize: titleTertiarySize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
-    }).setOrigin(0.5).setDepth(uiDepth);
+    }).setOrigin(0.5, 0).setDepth(uiDepth);
 
     // Player name and best score
-    this.pilotText = this.add.text(centerX, layout.gameHeight * 0.30, `PILOT: ${playerName}`, {
+    this.pilotText = this.add.text(centerX, titleTertiary.y + titleTertiary.height + (veryCompactMenu ? 12 : 16), `PILOT: ${playerName}`, {
       fontFamily: 'monospace',
-      fontSize: '14px',
+      fontSize: metaSize,
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
       align: 'center',
-    }).setOrigin(0.5).setDepth(uiDepth).setInteractive({ useHandCursor: true });
+    }).setOrigin(0.5, 0).setDepth(uiDepth).setInteractive({ useHandCursor: true });
 
     this.pilotText.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       pointer.event.stopPropagation();
@@ -144,43 +180,71 @@ export class MenuScene extends Phaser.Scene {
       this.pilotText.setText(`PILOT: ${updatedName}`);
     });
 
-    this.add.text(centerX, layout.gameHeight * 0.33, 'TAP CALLSIGN TO EDIT 3 LETTERS', {
+    const editHint = this.add.text(centerX, this.pilotText.y + this.pilotText.height + 4, 'TAP CALLSIGN TO EDIT 3 LETTERS', {
       fontFamily: 'monospace',
-      fontSize: '10px',
+      fontSize: hintSize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
-    }).setOrigin(0.5).setDepth(uiDepth).setAlpha(0.7);
+    }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.7);
 
+    let leaderboardTitleTop = editHint.y + editHint.height + (veryCompactMenu ? 10 : 14);
     if (best > 0) {
-      this.add.text(centerX, layout.gameHeight * 0.37, `BEST: ${Math.floor(best)}`, {
+      const bestText = this.add.text(centerX, editHint.y + editHint.height + (veryCompactMenu ? 6 : 8), `BEST: ${Math.floor(best)}`, {
         fontFamily: 'monospace',
-        fontSize: '16px',
+        fontSize: bestSize,
         color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
         align: 'center',
-      }).setOrigin(0.5).setDepth(uiDepth);
+      }).setOrigin(0.5, 0).setDepth(uiDepth);
+      leaderboardTitleTop = bestText.y + bestText.height + (veryCompactMenu ? 8 : 12);
     }
 
     // Leaderboard section
-    const lbTop = layout.gameHeight * 0.42;
-    const tabY = lbTop;
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
+    const tabGap = veryCompactMenu ? 12 : 16;
+    const tabOffset = this.leaderboardTabWidth / 2 + tabGap / 2;
+    const dailyTabX = centerX - tabOffset;
+    const weeklyTabX = centerX + tabOffset;
 
-    this.dailyTab = this.add.text(centerX - 60, tabY, 'DAILY', {
+    const leaderboardTitle = this.add.text(centerX, leaderboardTitleTop, 'LEADERBOARD', {
       fontFamily: 'monospace',
-      fontSize: '16px',
-      color: gateColor,
-      align: 'center',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(uiDepth);
-
-    this.weeklyTab = this.add.text(centerX + 60, tabY, 'WEEKLY', {
-      fontFamily: 'monospace',
-      fontSize: '16px',
+      fontSize: '12px',
       color: hudColor,
       align: 'center',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(uiDepth);
+    }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.68);
+    const tabY = leaderboardTitle.y + leaderboardTitle.height + (veryCompactMenu ? 14 : 16) + this.leaderboardTabHeight / 2;
 
-    this.dailyTab.on('pointerdown', (e: Phaser.Input.Pointer) => {
+    this.dailyTabBg = this.add.graphics().setDepth(uiDepth);
+    this.weeklyTabBg = this.add.graphics().setDepth(uiDepth);
+
+    this.dailyTab = this.add.text(dailyTabX, tabY, 'DAILY', {
+      fontFamily: 'monospace',
+      fontSize: compactMenu ? '13px' : '14px',
+      color: gateColor,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(uiDepth + 1);
+
+    this.weeklyTab = this.add.text(weeklyTabX, tabY, 'WEEKLY', {
+      fontFamily: 'monospace',
+      fontSize: compactMenu ? '13px' : '14px',
+      color: hudColor,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(uiDepth + 1);
+
+    this.dailyTabHit = this.add.zone(
+      dailyTabX - this.leaderboardTabWidth / 2,
+      tabY - this.leaderboardTabHeight / 2,
+      this.leaderboardTabWidth,
+      this.leaderboardTabHeight,
+    ).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
+    this.weeklyTabHit = this.add.zone(
+      weeklyTabX - this.leaderboardTabWidth / 2,
+      tabY - this.leaderboardTabHeight / 2,
+      this.leaderboardTabWidth,
+      this.leaderboardTabHeight,
+    ).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
+
+    this.dailyTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
       if (this.activePeriod !== 'daily') {
         this.activePeriod = 'daily';
@@ -189,7 +253,7 @@ export class MenuScene extends Phaser.Scene {
       }
     });
 
-    this.weeklyTab.on('pointerdown', (e: Phaser.Input.Pointer) => {
+    this.weeklyTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
       if (this.activePeriod !== 'weekly') {
         this.activePeriod = 'weekly';
@@ -198,15 +262,19 @@ export class MenuScene extends Phaser.Scene {
       }
     });
 
+    this.updateTabStyles();
+
     // Divider line under tabs
     const divider = this.add.graphics().setDepth(uiDepth);
     divider.lineStyle(1, COLORS.HUD, 0.3);
-    divider.lineBetween(centerX - 120, tabY + 14, centerX + 120, tabY + 14);
+    const dividerY = tabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 8 : 10);
+    divider.lineBetween(centerX - 120, dividerY, centerX + 120, dividerY);
+    this.leaderboardStartY = dividerY + (veryCompactMenu ? 16 : 18);
 
     // Status text (loading / offline)
-    this.statusText = this.add.text(centerX, layout.gameHeight * 0.55, 'LOADING...', {
+    this.statusText = this.add.text(centerX, this.leaderboardStartY + (veryCompactMenu ? 10 : 12), 'LOADING...', {
       fontFamily: 'monospace',
-      fontSize: '14px',
+      fontSize: this.leaderboardFontSize,
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
@@ -233,40 +301,7 @@ export class MenuScene extends Phaser.Scene {
       lineSpacing: 6,
     }).setOrigin(0.5).setDepth(uiDepth);
 
-    // Settings toggles at the top-right
-    const settings = getSettings();
-    const settingsX = layout.gameWidth - 38;
-
-    const shakeBtn = this.add.text(settingsX, layout.gameHeight * 0.08, settings.screenShake ? 'SHAKE:ON' : 'SHAKE:OFF', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
-      color: settings.screenShake ? gateColor : hudColor,
-      align: 'right',
-    }).setOrigin(1, 0.5).setDepth(uiDepth + 1).setInteractive({ useHandCursor: true });
-    shakeBtn.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      p.event.stopPropagation();
-      const s = getSettings();
-      updateSettings({ screenShake: !s.screenShake });
-      const u = getSettings();
-      shakeBtn.setText(u.screenShake ? 'SHAKE:ON' : 'SHAKE:OFF');
-      shakeBtn.setColor(u.screenShake ? gateColor : hudColor);
-    });
-
-    const scanBtn = this.add.text(settingsX, layout.gameHeight * 0.08 + 18, settings.scanlines ? 'SCAN:ON' : 'SCAN:OFF', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
-      color: settings.scanlines ? gateColor : hudColor,
-      align: 'right',
-    }).setOrigin(1, 0.5).setDepth(uiDepth + 1).setInteractive({ useHandCursor: true });
-    scanBtn.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      p.event.stopPropagation();
-      const s = getSettings();
-      updateSettings({ scanlines: !s.scanlines });
-      const u = getSettings();
-      scanBtn.setText(u.scanlines ? 'SCAN:ON' : 'SCAN:OFF');
-      scanBtn.setColor(u.scanlines ? gateColor : hudColor);
-      this.hologramOverlay.setEnabled(u.scanlines);
-    });
+    this.createSettingsUi(uiDepth, backingTop, compactMenu, veryCompactMenu);
 
     this.tweens.add({
       targets: tapText,
@@ -285,20 +320,27 @@ export class MenuScene extends Phaser.Scene {
 
     // Start game on tap (ignore tab taps)
     this.input.on('pointerdown', (_pointer: Phaser.Input.Pointer, targets: Phaser.GameObjects.GameObject[]) => {
-      if (targets.length === 0) {
-        // Snapshot background entity state for seamless handoff
-        const drifterState = this.bgDrifters
-          .filter(d => d.active)
-          .map(d => ({ x: d.x, y: d.y, vx: d.vx, vy: d.vy, radiusScale: d.radiusScale }));
-        const debrisState = this.bgDebris
-          .filter(d => d.active)
-          .map(d => ({ x: d.x, y: d.y, vx: d.driftVx, vy: d.driftVy }));
-        const npcState = this.bgNpcs
-          .filter(npc => npc.active)
-          .map(npc => ({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy }));
-        this.cleanupBackground();
-        this.scene.start(SCENE_KEYS.MISSION_SELECT, { drifterState, debrisState, npcState });
+      if (targets.length > 0) {
+        return;
       }
+
+      if (this.settingsOpen) {
+        this.setSettingsOpen(false);
+        return;
+      }
+
+      // Snapshot background entity state for seamless handoff
+      const drifterState = this.bgDrifters
+        .filter(d => d.active)
+        .map(d => ({ x: d.x, y: d.y, vx: d.vx, vy: d.vy, radiusScale: d.radiusScale }));
+      const debrisState = this.bgDebris
+        .filter(d => d.active)
+        .map(d => ({ x: d.x, y: d.y, vx: d.driftVx, vy: d.driftVy }));
+      const npcState = this.bgNpcs
+        .filter(npc => npc.active)
+        .map(npc => ({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy }));
+      this.cleanupBackground();
+      this.scene.start(SCENE_KEYS.MISSION_SELECT, { drifterState, debrisState, npcState });
     });
 
     // Load initial leaderboard
@@ -430,11 +472,188 @@ export class MenuScene extends Phaser.Scene {
     this.slickComm.destroy();
   }
 
+  private createSettingsUi(uiDepth: number, backingTop: number, compactMenu: boolean, veryCompactMenu: boolean): void {
+    const layout = getLayout();
+    const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
+    const buttonWidth = compactMenu ? 84 : 90;
+    const buttonCenterX = layout.gameWidth - (compactMenu ? 68 : 72);
+    const buttonCenterY = backingTop + (veryCompactMenu ? 14 : 16);
+    const panelWidth = compactMenu ? 162 : 170;
+    const panelHeight = 92;
+    const panelLeft = layout.gameWidth - panelWidth - 24;
+    const panelTop = buttonCenterY + 18;
+    const rowOneY = panelTop + 26;
+    const rowTwoY = panelTop + 58;
+    const offX = panelLeft + panelWidth - 26;
+    const onX = offX - 44;
+
+    this.settingsButton = this.createMenuButton(
+      buttonCenterX,
+      buttonCenterY,
+      buttonWidth,
+      26,
+      'SETTINGS',
+      uiDepth + 1,
+      '10px',
+      () => this.setSettingsOpen(!this.settingsOpen),
+    );
+
+    const panelBg = this.add.graphics().setDepth(uiDepth + 2);
+    panelBg.fillStyle(COLORS.BG, 0.95);
+    panelBg.lineStyle(1.1, COLORS.HUD, 0.34);
+    panelBg.fillRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 10);
+    panelBg.strokeRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 10);
+    panelBg.fillStyle(COLORS.HUD, 0.04);
+    panelBg.fillRoundedRect(panelLeft + 4, panelTop + 4, panelWidth - 8, panelHeight - 8, 8);
+
+    const panelHit = this.add.zone(panelLeft, panelTop, panelWidth, panelHeight)
+      .setOrigin(0, 0)
+      .setDepth(uiDepth + 5)
+      .setInteractive({ useHandCursor: false });
+    panelHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
+      e.event.stopPropagation();
+    });
+
+    const shakeLabel = this.add.text(panelLeft + 14, rowOneY, 'SHAKE', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(uiDepth + 3);
+
+    const scanLabel = this.add.text(panelLeft + 14, rowTwoY, 'SCAN', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(uiDepth + 3);
+
+    this.shakeOnButton = this.createMenuButton(onX, rowOneY, 34, 20, 'ON', uiDepth + 3, '10px', () => this.applyMenuSettings({ screenShake: true }));
+    this.shakeOffButton = this.createMenuButton(offX, rowOneY, 38, 20, 'OFF', uiDepth + 3, '10px', () => this.applyMenuSettings({ screenShake: false }));
+    this.scanOnButton = this.createMenuButton(onX, rowTwoY, 34, 20, 'ON', uiDepth + 3, '10px', () => this.applyMenuSettings({ scanlines: true }));
+    this.scanOffButton = this.createMenuButton(offX, rowTwoY, 38, 20, 'OFF', uiDepth + 3, '10px', () => this.applyMenuSettings({ scanlines: false }));
+
+    this.settingsPanelUi = [
+      panelBg,
+      panelHit,
+      shakeLabel,
+      scanLabel,
+      this.shakeOnButton.bg,
+      this.shakeOnButton.label,
+      this.shakeOnButton.hit,
+      this.shakeOffButton.bg,
+      this.shakeOffButton.label,
+      this.shakeOffButton.hit,
+      this.scanOnButton.bg,
+      this.scanOnButton.label,
+      this.scanOnButton.hit,
+      this.scanOffButton.bg,
+      this.scanOffButton.label,
+      this.scanOffButton.hit,
+    ];
+
+    this.updateSettingsUi();
+    this.setSettingsPanelVisible(false);
+  }
+
+  private createMenuButton(
+    centerX: number,
+    centerY: number,
+    width: number,
+    height: number,
+    label: string,
+    depth: number,
+    fontSize: string,
+    onPointerDown: () => void,
+  ): MenuButton {
+    const bg = this.add.graphics().setDepth(depth);
+    const text = this.add.text(centerX, centerY, label, {
+      fontFamily: 'monospace',
+      fontSize,
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(depth + 1);
+    const hit = this.add.zone(centerX - width / 2, centerY - height / 2, width, height)
+      .setOrigin(0, 0)
+      .setDepth(depth + 2)
+      .setInteractive({ useHandCursor: true });
+
+    hit.on('pointerdown', (e: Phaser.Input.Pointer) => {
+      e.event.stopPropagation();
+      onPointerDown();
+    });
+
+    return { bg, label: text, hit, width, height };
+  }
+
+  private drawMenuButton(button: MenuButton, centerX: number, centerY: number, active: boolean): void {
+    const left = centerX - button.width / 2;
+    const top = centerY - button.height / 2;
+    button.bg.clear();
+    button.bg.fillStyle(COLORS.BG, active ? 0.94 : 0.84);
+    button.bg.lineStyle(1.1, active ? COLORS.GATE : COLORS.HUD, active ? 0.9 : 0.34);
+    button.bg.fillRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.strokeRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.fillStyle(active ? COLORS.GATE : COLORS.HUD, active ? 0.14 : 0.04);
+    button.bg.fillRoundedRect(left + 4, top + 4, button.width - 8, button.height - 8, 6);
+    button.label.setColor(`#${(active ? COLORS.GATE : COLORS.HUD).toString(16).padStart(6, '0')}`);
+    button.label.setAlpha(active ? 1 : 0.78);
+  }
+
+  private setSettingsPanelVisible(visible: boolean): void {
+    for (const obj of this.settingsPanelUi) {
+      obj.setVisible(visible);
+      if ('input' in obj && obj.input) {
+        obj.input.enabled = visible;
+      }
+    }
+  }
+
+  private setSettingsOpen(open: boolean): void {
+    this.settingsOpen = open;
+    this.setSettingsPanelVisible(open);
+    this.updateSettingsUi();
+  }
+
+  private applyMenuSettings(partial: Partial<GameSettings>): void {
+    const updated = updateSettings(partial);
+    this.hologramOverlay.setEnabled(updated.scanlines);
+    this.updateSettingsUi();
+  }
+
+  private updateSettingsUi(): void {
+    this.drawMenuButton(this.settingsButton, this.settingsButton.label.x, this.settingsButton.label.y, this.settingsOpen);
+
+    const settings = getSettings();
+    this.drawMenuButton(this.shakeOnButton, this.shakeOnButton.label.x, this.shakeOnButton.label.y, settings.screenShake);
+    this.drawMenuButton(this.shakeOffButton, this.shakeOffButton.label.x, this.shakeOffButton.label.y, !settings.screenShake);
+    this.drawMenuButton(this.scanOnButton, this.scanOnButton.label.x, this.scanOnButton.label.y, settings.scanlines);
+    this.drawMenuButton(this.scanOffButton, this.scanOffButton.label.x, this.scanOffButton.label.y, !settings.scanlines);
+  }
+
   private updateTabStyles(): void {
     const active = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
     const inactive = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
+    this.drawTabButton(this.dailyTabBg, this.dailyTab.x, this.dailyTab.y, this.activePeriod === 'daily');
+    this.drawTabButton(this.weeklyTabBg, this.weeklyTab.x, this.weeklyTab.y, this.activePeriod === 'weekly');
     this.dailyTab.setColor(this.activePeriod === 'daily' ? active : inactive);
+    this.dailyTab.setAlpha(this.activePeriod === 'daily' ? 1 : 0.72);
     this.weeklyTab.setColor(this.activePeriod === 'weekly' ? active : inactive);
+    this.weeklyTab.setAlpha(this.activePeriod === 'weekly' ? 1 : 0.72);
+  }
+
+  private drawTabButton(bg: Phaser.GameObjects.Graphics, centerX: number, centerY: number, active: boolean): void {
+    const width = this.leaderboardTabWidth;
+    const height = this.leaderboardTabHeight;
+    const left = centerX - width / 2;
+    const top = centerY - height / 2;
+    bg.clear();
+    bg.fillStyle(COLORS.BG, active ? 0.92 : 0.8);
+    bg.lineStyle(1.3, active ? COLORS.GATE : COLORS.HUD, active ? 0.9 : 0.32);
+    bg.fillRoundedRect(left, top, width, height, 8);
+    bg.strokeRoundedRect(left, top, width, height, 8);
+    bg.fillStyle(active ? COLORS.GATE : COLORS.HUD, active ? 0.14 : 0.04);
+    bg.fillRoundedRect(left + 4, top + 4, width - 8, height - 8, 6);
   }
 
   private loadLeaderboard(): void {
@@ -458,8 +677,8 @@ export class MenuScene extends Phaser.Scene {
   private renderLeaderboard(entries: LeaderboardEntry[]): void {
     const layout = getLayout();
     const centerX = layout.centerX;
-    const startY = layout.gameHeight * 0.45;
-    const rowHeight = 22;
+    const startY = this.leaderboardStartY;
+    const rowHeight = this.leaderboardRowHeight;
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const salvageColor = `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`;
     const uiDepth = 10;
@@ -484,7 +703,7 @@ export class MenuScene extends Phaser.Scene {
 
       const text = this.add.text(centerX, y, line, {
         fontFamily: 'monospace',
-        fontSize: '14px',
+        fontSize: this.leaderboardFontSize,
         color: i < 3 ? salvageColor : hudColor,
         align: 'center',
       }).setOrigin(0.5).setDepth(uiDepth);

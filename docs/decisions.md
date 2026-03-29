@@ -197,3 +197,18 @@ When the player has rep >= 1 with any company, the highest-rep company's liaison
 
 ### 2026-03-28 - Reputation unlocks spendable favors; Slick keeps 65%
 Company rep no longer auto-applies passive boosts on deploy. Rep now unlocks tiered favor offers on MissionSelect, successful extraction still scores at 100% for best score and leaderboard, and only 35% of extracted credits become persistent wallet money while Slick keeps the other 65%. Death retry preserves the already-purchased favor loadout; changing favors after a completed run requires returning to MissionSelect.
+
+### 2026-03-29 - MissionSelect shows company standing on each favor card
+Company status stays on the main MissionSelect grid instead of moving to a separate detail panel. Each favor card shows liaison info, current standing, raw rep, next threshold, and the actual offer so all four companies can be compared at a glance on phone-sized screens.
+
+### 2026-03-29 - Slick cut scales with career banked credits
+Slick no longer takes a flat 65% forever. Save data now tracks cumulative career banked credits, and the split improves at 5k / 15k / 30k career banked so the player moves from 35/65 to 40/60, 45/55, and finally 50/50. Current wallet balance does not affect the deal.
+
+### 2026-03-29 - Slick split simplified to a fixed 60/40
+The progressive Slick deal was removed. From the start, the player always keeps 60% of extracted credits for wallet money and Slick always takes 40%. This is easier to read and explain than a scaling deal track.
+
+### 2026-03-29 - Favors are premium purchases, not routine loadout picks
+Favor pricing was moved into the several-exfils range so basic favors cost around 7.5k-9k and higher tiers climb sharply from there. The intent is that buying a favor feels like a deliberate commitment rather than something expected every run.
+
+### 2026-03-29 - Mission rerolls cost stacking wallet credits
+Mission rerolls now cost both a reroll charge and wallet credits. Within a single MissionSelect visit, the costs step up from 200c to 400c to 600c. This makes rerolling a real spend decision without needing a more complex reroll economy.

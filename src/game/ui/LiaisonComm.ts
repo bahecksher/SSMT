@@ -165,7 +165,7 @@ export class LiaisonComm {
 }
 
 /** Shared portrait factory — used by LiaisonComm and MissionSelectScene. */
-export function createLiaisonPortrait(scene: Phaser.Scene, company: CompanyDef): Phaser.GameObjects.Container {
+function createLiaisonPortrait(scene: Phaser.Scene, company: CompanyDef): Phaser.GameObjects.Container {
   const c = company.color;
   const a = company.accent;
 

@@ -29,7 +29,7 @@ import { GeoSphere } from '../entities/GeoSphere';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { SlickComm } from '../ui/SlickComm';
 import { LiaisonComm } from '../ui/LiaisonComm';
-import { COMPANIES, loadCompanyRep, getRepLevel, getSlickCut, getSlickCutPercent } from '../data/companyData';
+import { COMPANIES, loadCompanyRep, getRepLevel, getSlickCutPercent, getWalletSharePercent } from '../data/companyData';
 import { getLiaisonLine } from '../data/liaisonLines';
 import { RegentComm } from '../ui/RegentComm';
 import { getSlickLine } from '../data/slickLines';
@@ -910,17 +910,15 @@ export class GameScene extends Phaser.Scene {
     }
     this.missionSystem.claimAndClear();
     const score = this.scoreSystem.getBanked();
-    const walletPayout = this.saveSystem.depositWalletPayout(score);
-    const walletBalance = this.saveSystem.getWalletCredits();
-    const slickCut = getSlickCut(score);
+    const walletDeposit = this.saveSystem.depositWalletPayout(score);
     this.bankingSystem.finalizeExtraction();
     this.resultData = {
       score,
       cause: 'extract',
       missionBonus,
-      walletPayout,
-      slickCut,
-      walletBalance,
+      walletPayout: walletDeposit.payout,
+      slickCut: walletDeposit.slickCut,
+      walletBalance: walletDeposit.walletBalance,
       missionProgress,
     };
     this.showSlickExclusive(getSlickLine('extraction'), 0);
@@ -1238,7 +1236,7 @@ export class GameScene extends Phaser.Scene {
 
     if (!isDeath) {
       const walletLineY = scoreText.y + 28;
-      const walletText = this.add.text(centerX, walletLineY, `WALLET: +${Math.floor(data.walletPayout ?? 0)}   TOTAL: ${Math.floor(data.walletBalance ?? 0)}`, {
+      const walletText = this.add.text(centerX, walletLineY, `WALLET +${Math.floor(data.walletPayout ?? 0)}c  //  TOTAL ${Math.floor(data.walletBalance ?? 0)}c`, {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
@@ -1248,7 +1246,7 @@ export class GameScene extends Phaser.Scene {
       resultContentBottomY = Math.max(resultContentBottomY, walletText.y + walletText.height / 2);
 
       const cutLineY = walletLineY + 14;
-      const slickCutText = this.add.text(centerX, cutLineY, `SLICK'S CUT: ${getSlickCutPercent()}%  (-${Math.floor(data.slickCut ?? 0)})`, {
+      const slickCutText = this.add.text(centerX, cutLineY, `YOU KEEP ${getWalletSharePercent()}%  //  SLICK TAKES ${getSlickCutPercent()}%  //  SLICK GOT ${Math.floor(data.slickCut ?? 0)}c`, {
         fontFamily: 'monospace',
         fontSize: '11px',
         color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,

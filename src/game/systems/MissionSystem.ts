@@ -168,8 +168,7 @@ export class MissionSystem {
   /** Save current mission cards (progress will be reset on next run). */
   save(): void {
     const saved = loadMissionSave();
-    saved.activeMissions = this.missions;
-    writeMissionSave(saved);
+    saveMissionSelection(this.missions, saved.rerollsRemaining ?? MAX_REROLLS);
   }
 
   /** Remove completed missions from persistence and bump lifetime count. */
@@ -218,6 +217,13 @@ export function loadMissionSave(): MissionSaveData {
 
 /** Max discards a player can hold. Replenished by 1 on each successful extraction. */
 export const MAX_REROLLS = 3;
+
+export function saveMissionSelection(activeMissions: ActiveMission[], rerollsRemaining: number): void {
+  const saved = loadMissionSave();
+  saved.activeMissions = activeMissions;
+  saved.rerollsRemaining = rerollsRemaining;
+  writeMissionSave(saved);
+}
 
 function writeMissionSave(data: MissionSaveData): void {
   try {

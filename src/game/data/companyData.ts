@@ -12,6 +12,13 @@ export interface CompanyDef {
   boostLabel: string;
 }
 
+export interface RepStanding {
+  level: number;
+  label: string;
+  nextRepRequired: number | null;
+  progressToNext: number;
+}
+
 export const COMPANIES: Record<CompanyId, CompanyDef> = {
   [CompanyId.DEEPCORE]: {
     id: CompanyId.DEEPCORE,
@@ -58,7 +65,9 @@ export const COMPANY_IDS = [
   CompanyId.FREEPORT,
 ] as const;
 
-export const WALLET_SHARE = 0.35;
+const PLAYER_WALLET_SHARE = 0.60;
+const PLAYER_WALLET_SHARE_PERCENT = Math.round(PLAYER_WALLET_SHARE * 100);
+const SLICK_CUT_PERCENT = 100 - PLAYER_WALLET_SHARE_PERCENT;
 
 // --- Reputation thresholds ---
 
@@ -78,10 +87,10 @@ const DEEPCORE_MINING_MULT = [1.0, 1.15, 1.30, 1.50];
 const RECLAIM_SALVAGE_MULT = [1.0, 1.15, 1.30, 1.50];
 const IRONVEIL_NPC_MULT    = [1.0, 1.50, 2.00, 3.00];
 const FREEPORT_DROP_ADD    = [0.0, 0.10, 0.20, 0.30];
-const DEEPCORE_FAVOR_COST  = [0, 120, 240, 420];
-const RECLAIM_FAVOR_COST   = [0, 120, 240, 420];
-const IRONVEIL_FAVOR_COST  = [0, 150, 300, 520];
-const FREEPORT_FAVOR_COST  = [0, 100, 200, 360];
+const DEEPCORE_FAVOR_COST  = [0, 8000, 18000, 32000];
+const RECLAIM_FAVOR_COST   = [0, 8000, 18000, 32000];
+const IRONVEIL_FAVOR_COST  = [0, 9000, 20000, 36000];
+const FREEPORT_FAVOR_COST  = [0, 7500, 16500, 29000];
 
 // --- Helpers ---
 
@@ -92,9 +101,27 @@ export function getRepLevel(rep: number): number {
   return 0;
 }
 
-export function getRepLabel(rep: number): string {
+export function getRepStanding(rep: number): RepStanding {
   const level = getRepLevel(rep);
-  return REP_THRESHOLDS[level].label;
+  const current = REP_THRESHOLDS[level];
+  const next = REP_THRESHOLDS[level + 1];
+  if (!next) {
+    return {
+      level,
+      label: current.label,
+      nextRepRequired: null,
+      progressToNext: 1,
+    };
+  }
+
+  const span = Math.max(1, next.repRequired - current.repRequired);
+  const progress = Math.min(1, Math.max(0, (rep - current.repRequired) / span));
+  return {
+    level,
+    label: current.label,
+    nextRepRequired: next.repRequired,
+    progressToNext: progress,
+  };
 }
 
 export function loadCompanyRep(): CompanyRepSave {
@@ -118,7 +145,7 @@ export function saveCompanyRep(data: CompanyRepSave): void {
   } catch { /* private browsing */ }
 }
 
-export function createNeutralRunBoosts(): RunBoosts {
+function createNeutralRunBoosts(): RunBoosts {
   return {
     miningYieldMult: 1.0,
     salvageYieldMult: 1.0,
@@ -128,7 +155,7 @@ export function createNeutralRunBoosts(): RunBoosts {
 }
 
 export function getWalletPayout(extractedCredits: number): number {
-  return Math.max(0, Math.floor(extractedCredits * WALLET_SHARE));
+  return Math.max(0, Math.floor(Math.max(0, extractedCredits) * PLAYER_WALLET_SHARE));
 }
 
 export function getSlickCut(extractedCredits: number): number {
@@ -136,11 +163,11 @@ export function getSlickCut(extractedCredits: number): number {
 }
 
 export function getWalletSharePercent(): number {
-  return Math.round(WALLET_SHARE * 100);
+  return PLAYER_WALLET_SHARE_PERCENT;
 }
 
 export function getSlickCutPercent(): number {
-  return 100 - getWalletSharePercent();
+  return SLICK_CUT_PERCENT;
 }
 
 export function getFavorOffer(companyId: CompanyId, repSave: CompanyRepSave): CompanyFavorOffer | null {
@@ -169,7 +196,7 @@ export function computeRunBoostsFromFavors(selectedCompanies: CompanyId[], repSa
 }
 
 /** Format a boost value for display, e.g. "x1.30" or "+20%" */
-export function formatBoost(companyId: CompanyId, level: number): string {
+function formatBoost(companyId: CompanyId, level: number): string {
   switch (companyId) {
     case CompanyId.DEEPCORE: return `x${DEEPCORE_MINING_MULT[level].toFixed(2)}`;
     case CompanyId.RECLAIM: return `x${RECLAIM_SALVAGE_MULT[level].toFixed(2)}`;

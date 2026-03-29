@@ -3,7 +3,6 @@ export const SCENE_KEYS = {
   MENU: 'MenuScene',
   MISSION_SELECT: 'MissionSelectScene',
   GAME: 'GameScene',
-  GAME_OVER: 'GameOverScene',
 } as const;
 
 export const SAVE_KEY = 'ssmt_save';
