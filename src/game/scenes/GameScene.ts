@@ -1381,6 +1381,7 @@ export class GameScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(211);
     const hit = this.add.zone(x, y, width, height)
+      .setData('cornerRadius', 10)
       .setOrigin(0.5)
       .setDepth(212)
       .setInteractive({ useHandCursor: true });
@@ -1437,7 +1438,7 @@ export class GameScene extends Phaser.Scene {
       buttonY - buttonHeight / 2,
       buttonWidth,
       buttonHeight,
-    ).setOrigin(0, 0).setDepth(232).setInteractive({ useHandCursor: true });
+    ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(232).setInteractive({ useHandCursor: true });
     this.pauseButtonHit.on(
       'pointerdown',
       (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {

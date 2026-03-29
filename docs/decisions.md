@@ -212,3 +212,6 @@ Favor pricing was moved into the several-exfils range so basic favors cost aroun
 
 ### 2026-03-29 - Mission rerolls cost stacking wallet credits
 Mission rerolls now cost both a reroll charge and wallet credits. Within a single MissionSelect visit, the costs step up from 200c to 400c to 600c. This makes rerolling a real spend decision without needing a more complex reroll economy.
+
+### 2026-03-29 - Cursor morphs to hug interactive elements iPad-style
+The hologram reticle cursor now smoothly morphs into a rounded rectangle that hugs interactive buttons when hovered, inspired by iPadOS cursor behavior. Reticle crossfades out, rect fades in, position sticks to element center, and a small neon dot tracks the actual pointer. Each interactive zone is tagged with its visual corner radius via `setData('cornerRadius', N)` so the morph rect matches precisely.

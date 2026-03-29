@@ -238,13 +238,13 @@ export class MenuScene extends Phaser.Scene {
       tabY - this.leaderboardTabHeight / 2,
       this.leaderboardTabWidth,
       this.leaderboardTabHeight,
-    ).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
+    ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
     this.weeklyTabHit = this.add.zone(
       weeklyTabX - this.leaderboardTabWidth / 2,
       tabY - this.leaderboardTabHeight / 2,
       this.leaderboardTabWidth,
       this.leaderboardTabHeight,
-    ).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
+    ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
 
     this.dailyTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
@@ -579,6 +579,7 @@ export class MenuScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5).setDepth(depth + 1);
     const hit = this.add.zone(centerX - width / 2, centerY - height / 2, width, height)
+      .setData('cornerRadius', 8)
       .setOrigin(0, 0)
       .setDepth(depth + 2)
       .setInteractive({ useHandCursor: true });

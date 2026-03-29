@@ -202,6 +202,7 @@ export class MissionSelectScene extends Phaser.Scene {
     this.cardUi[index].push(bg);
 
     const hitZone = this.add.zone(cardLeft, cardTop, cardWidth, briefing.cardHeight)
+      .setData('cornerRadius', 8)
       .setOrigin(0, 0)
       .setDepth(depth + 3)
       .setInteractive({ useHandCursor: true });
@@ -286,6 +287,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     if (canReroll) {
       const rerollHit = this.add.zone(btnX, rerollY, btnWidth, btnHeight)
+        .setData('cornerRadius', 8)
         .setOrigin(0, 0)
         .setDepth(12)
         .setInteractive({ useHandCursor: true });
@@ -327,7 +329,7 @@ export class MissionSelectScene extends Phaser.Scene {
       btnY - btnHeight / 2,
       btnWidth,
       btnHeight,
-    ).setOrigin(0, 0).setDepth(12).setInteractive({ useHandCursor: true });
+    ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(12).setInteractive({ useHandCursor: true });
     hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       this.returnToMenu();
@@ -525,6 +527,7 @@ export class MissionSelectScene extends Phaser.Scene {
       if (!offer) continue;
 
       const hit = this.add.zone(cardLeft, cardTop, cardWidth, briefing.favorCardHeight)
+        .setData('cornerRadius', 8)
         .setOrigin(0, 0)
         .setDepth(12)
         .setInteractive({ useHandCursor: true });
@@ -605,7 +608,7 @@ export class MissionSelectScene extends Phaser.Scene {
       deployY - btnHeight / 2,
       btnWidth,
       btnHeight,
-    ).setOrigin(0, 0).setDepth(12).setInteractive({ useHandCursor: true });
+    ).setData('cornerRadius', 12).setOrigin(0, 0).setDepth(12).setInteractive({ useHandCursor: true });
     deployHit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       this.deploy();
