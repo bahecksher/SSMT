@@ -1,8 +1,8 @@
 # State
-_Last updated: 2026-03-29 0205_
+_Last updated: 2026-03-29 0209_
 
 ## Current focus
-Desktop cursor merge and post-merge sanity checking on the current `Menu`, `MissionSelect`, and in-run flow.
+Post-merge sanity checking on `main` after landing the desktop cursor into the current `Menu`, `MissionSelect`, and in-run flow.
 
 ## What's working
 - Custom cursor now runs on desktop in `Menu`, `MissionSelect`, and `Game`, replacing the native cursor with a hologram reticle while leaving touch alone
@@ -11,7 +11,8 @@ Desktop cursor merge and post-merge sanity checking on the current `Menu`, `Miss
 - Mission persistence now goes through shared mission helpers instead of raw MissionSelect `localStorage` writes
 - Company standing, favor offers, wallet split, and reroll pricing behavior remain intact after the cleanup pass
 - Stale liaison select/deselect dialogue helpers and several orphaned tuning/constants were removed without breaking the build
-- Production build passed after the cleanup pass
+- The merged cursor branch has been fast-forwarded onto local `main`
+- Production build passed on `main` after the cursor merge
 
 ## In progress
 Nothing active.
@@ -44,6 +45,7 @@ docs/plans/2026-03-29 0145 Plan - Codebase Cleanup.md
 4. Deploy a run and confirm the normal gameplay/results flow still works without any GameOverScene transition
 
 ## Recent logs
+- docs/log/2026-03-29 0209 Land Cursor Merge on Main.md - fast-forwarded main to the merged cursor branch, rebuilt, and prepared origin/main for push
 - docs/log/2026-03-29 0205 Merge Blake Cursor Branch.md - merged Blake's custom cursor branch into the current flow and kept the GameOverScene cleanup intact
 - docs/log/2026-03-29 0150 Codebase Cleanup Pass.md - removed unused scene/data leftovers and routed MissionSelect persistence through shared mission helpers
 - docs/log/2026-03-29 0140 Favor Status Badge Consistency.md - moved all favor-card status badges like `SHORT` and `SELECTED` to the lower-right for a consistent layout
