@@ -5,6 +5,7 @@ _Last updated: 2026-03-29 0035_
 Post-push playtesting and balance for the mission/favor economy, run opener comms, and mobile readability.
 
 ## What's working
+- Custom cursor: dim white reticle (circle + crosshair ticks + rotating triangle) replaces native cursor on desktop; turns player-green on interactive hover; triangle eases back to up when paused/menu
 - Full scene flow: `Menu -> MissionSelect -> Game`, with retry still skipping the briefing
 - MissionSelect uses an adaptive layout that keeps mission cards, favor cards, comms, and deploy usable on shorter phone screens
 - MissionSelect text, favor state treatment, and mission-card spacing are larger and clearer than before

@@ -36,6 +36,7 @@ import { getSlickLine } from '../data/slickLines';
 import { getRegentLine } from '../data/regentLines';
 import { getLayout, setLayoutSize } from '../layout';
 import { getSettings, updateSettings } from '../systems/SettingsSystem';
+import { CustomCursor } from '../ui/CustomCursor';
 
 interface MenuHandoff {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
@@ -137,6 +138,7 @@ export class GameScene extends Phaser.Scene {
   private pauseButtonHit!: Phaser.GameObjects.Zone;
   private pauseUi: Phaser.GameObjects.GameObject[] = [];
   private pausedFromState: GameState = GameState.PLAYING;
+  private cursor!: CustomCursor;
 
   constructor() {
     super(SCENE_KEYS.GAME);
@@ -217,6 +219,7 @@ export class GameScene extends Phaser.Scene {
 
     // Hologram scanline overlay
     this.hologramOverlay = new HologramOverlay(this);
+    this.cursor = new CustomCursor(this);
     this.slickComm = new SlickComm(this);
     this.regentComm = new RegentComm(this);
 
@@ -783,6 +786,10 @@ export class GameScene extends Phaser.Scene {
 
     // Hologram overlay
     this.hologramOverlay.update(effectiveDelta);
+    // Pass player coords only during active gameplay so the triangle
+    // eases back to pointing up when paused or on the result screen
+    const cursorTracking = !paused && !this.resultData;
+    this.cursor.update(this, cursorTracking ? this.player.x : undefined, cursorTracking ? this.player.y : undefined);
 
     // HUD — comm triggers keyed to extractable transitions
     const gateExtractable = this.extractionSystem.isGateActive();
@@ -1099,6 +1106,7 @@ export class GameScene extends Phaser.Scene {
     this.liaisonComm?.destroy();
     this.liaisonComm = null;
     this.hologramOverlay.destroy();
+    this.cursor.destroy(this);
     this.geoSphere.destroy();
     this.starfield.destroy();
     this.arenaBorder.destroy();

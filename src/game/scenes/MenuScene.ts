@@ -13,6 +13,7 @@ import { pickAsteroidSize } from '../data/phaseConfig';
 import { getSlickLine } from '../data/slickLines';
 import { getLayout, setLayoutSize } from '../layout';
 import { getSettings, updateSettings } from '../systems/SettingsSystem';
+import { CustomCursor } from '../ui/CustomCursor';
 
 type Period = 'daily' | 'weekly';
 
@@ -44,6 +45,7 @@ export class MenuScene extends Phaser.Scene {
   private drifterTimer = 0;
   private debrisTimer = 0;
   private npcTimer = 0;
+  private cursor!: CustomCursor;
 
   constructor() {
     super(SCENE_KEYS.MENU);
@@ -278,6 +280,7 @@ export class MenuScene extends Phaser.Scene {
 
     // Hologram overlay on top of everything
     this.hologramOverlay = new HologramOverlay(this);
+    this.cursor = new CustomCursor(this);
     this.slickComm = new SlickComm(this, { depth: uiDepth + 1 });
     if (Math.random() < 0.45) {
       this.slickComm.show(getSlickLine('menuIntro'));
@@ -410,6 +413,7 @@ export class MenuScene extends Phaser.Scene {
 
     // Hologram flicker
     this.hologramOverlay.update(delta);
+    this.cursor.update(this);
     this.geoSphere.update(delta);
   }
 
@@ -427,6 +431,7 @@ export class MenuScene extends Phaser.Scene {
   private cleanup(): void {
     this.input.removeAllListeners();
     this.cleanupBackground();
+    this.cursor.destroy(this);
     this.slickComm.destroy();
   }
 
