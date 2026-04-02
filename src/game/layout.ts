@@ -12,6 +12,11 @@ export interface LayoutMetrics {
   arenaHeight: number;
 }
 
+interface LayoutOptions {
+  topInsetOverride?: number;
+  bottomInsetOverride?: number;
+}
+
 export const DEFAULT_GAME_WIDTH = 540;
 export const DEFAULT_GAME_HEIGHT = 960;
 
@@ -24,14 +29,24 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function createLayout(width: number, height: number): LayoutMetrics {
+function createLayout(width: number, height: number, options: LayoutOptions = {}): LayoutMetrics {
   const gameWidth = Math.max(MIN_GAME_WIDTH, Math.round(width));
   const gameHeight = Math.max(MIN_GAME_HEIGHT, Math.round(height));
   const arenaInset = clamp(Math.round(Math.min(gameWidth, gameHeight) * 0.11), MIN_ARENA_INSET, MAX_ARENA_INSET);
+  const arenaTopInset = clamp(
+    Math.round(options.topInsetOverride ?? arenaInset),
+    MIN_ARENA_INSET,
+    gameHeight - MIN_ARENA_INSET,
+  );
+  const arenaBottomInset = clamp(
+    Math.round(options.bottomInsetOverride ?? arenaInset),
+    MIN_ARENA_INSET,
+    gameHeight - arenaTopInset - MIN_ARENA_INSET,
+  );
   const arenaLeft = arenaInset;
-  const arenaTop = arenaInset;
+  const arenaTop = arenaTopInset;
   const arenaRight = gameWidth - arenaInset;
-  const arenaBottom = gameHeight - arenaInset;
+  const arenaBottom = gameHeight - arenaBottomInset;
 
   return {
     gameWidth,
@@ -61,8 +76,8 @@ export function getInitialViewportSize(): { width: number; height: number } {
   };
 }
 
-export function setLayoutSize(width: number, height: number): LayoutMetrics {
-  layout = createLayout(width, height);
+export function setLayoutSize(width: number, height: number, options: LayoutOptions = {}): LayoutMetrics {
+  layout = createLayout(width, height, options);
   return layout;
 }
 

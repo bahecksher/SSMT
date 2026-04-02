@@ -222,8 +222,8 @@ export class GameScene extends Phaser.Scene {
     // Hologram scanline overlay
     this.hologramOverlay = new HologramOverlay(this);
     this.cursor = new CustomCursor(this);
-    this.slickComm = new SlickComm(this);
-    this.regentComm = new RegentComm(this);
+    this.slickComm = new SlickComm(this, { width: layout.gameWidth });
+    this.regentComm = new RegentComm(this, { width: layout.gameWidth });
 
     const spawnX = layout.arenaLeft + layout.arenaWidth / 2;
     const spawnY = layout.arenaTop + layout.arenaHeight * 0.75;
@@ -278,8 +278,9 @@ export class GameScene extends Phaser.Scene {
       const openingCompany = Phaser.Utils.Array.GetRandom(activeContractCompanies);
       this.liaisonCompanyId = openingCompany;
       this.liaisonRepLevel = Math.max(1, getRepLevel(repSave.rep[openingCompany] ?? 0));
-      this.liaisonComm = new LiaisonComm(this, COMPANIES[openingCompany]);
+      this.liaisonComm = new LiaisonComm(this, COMPANIES[openingCompany], { width: layout.gameWidth });
     }
+    this.applyGameplayCommLayout();
 
     // Only spawn fresh debris if none carried over
     if (this.debrisList.length === 0) {
@@ -815,6 +816,11 @@ export class GameScene extends Phaser.Scene {
       currentPhase,
       this.player.hasShield,
     );
+    this.hud.setMissionPillsHidden(
+      this.isGameplayCommState()
+      && this.activeCommSpeaker !== null
+      && this.time.now < this.activeCommVisibleUntil,
+    );
     this.hud.updateMissions(this.missionSystem.getActiveMissions());
   }
 
@@ -1198,6 +1204,10 @@ export class GameScene extends Phaser.Scene {
   private showResultUi(data: ResultData): void {
     this.clearResultUi();
     const layout = getLayout();
+    const resultCommWidth = Math.min(layout.gameWidth - 96, 368);
+    this.slickComm.setPanelWidth(resultCommWidth);
+    this.regentComm.setPanelWidth(resultCommWidth);
+    this.liaisonComm?.setPanelWidth(resultCommWidth);
 
     const centerX = layout.centerX;
     const isDeath = data.cause === 'death';
@@ -1207,13 +1217,14 @@ export class GameScene extends Phaser.Scene {
     const panelWidth = layout.arenaWidth - arenaInset * 2;
     const panelHeight = layout.arenaHeight - arenaInset * 2;
     const panelBottom = panelTop + panelHeight;
+    const compactResults = layout.gameWidth <= 430 || layout.gameHeight <= 760;
     const panelPaddingX = Phaser.Math.Clamp(Math.round(panelWidth * 0.08), 18, 30);
     const panelPaddingTop = Phaser.Math.Clamp(Math.round(panelHeight * 0.055), 18, 30);
     const panelPaddingBottom = Phaser.Math.Clamp(Math.round(panelHeight * 0.05), 18, 28);
     const textWidth = panelWidth - panelPaddingX * 2;
-    const titleGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.026), 10, 18);
+    const titleGap = Phaser.Math.Clamp(Math.round(panelHeight * (compactResults ? 0.018 : 0.022)), 6, compactResults ? 12 : 16);
     const lineGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.014), 6, 10);
-    const sectionGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.03), 12, 22);
+    const sectionGap = Phaser.Math.Clamp(Math.round(panelHeight * (compactResults ? 0.02 : 0.026)), 8, compactResults ? 16 : 20);
     const buttonWidth = Math.min(panelWidth - panelPaddingX * 2, 392);
     const buttonHeight = Phaser.Math.Clamp(Math.round(panelHeight * 0.074), 40, 58);
     const buttonGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.022), 8, 16);
@@ -1228,8 +1239,11 @@ export class GameScene extends Phaser.Scene {
     const retryButtonY = menuButtonY - buttonHeight - buttonGap;
     const retryButtonTop = retryButtonY - buttonHeight / 2;
     const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
-    const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
-    const titleSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.086), 42, 56));
+    const titleText = isDeath ? 'DESTROYED' : 'EXTRACT';
+    const titleBarHeight = Phaser.Math.Clamp(Math.round(panelHeight * (compactResults ? 0.05 : 0.058)), 34, 48);
+    const titleBarTop = panelTop + Phaser.Math.Clamp(Math.round(panelHeight * 0.018), 8, 16);
+    const titleBarBottom = titleBarTop + titleBarHeight;
+    const titleSize = readableFontSize(Phaser.Math.Clamp(Math.round(titleBarHeight * 0.58), 20, 30));
     const scoreSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.053), isDeath ? 24 : 28, 38));
     const metaSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.026), 12, 16));
     const detailSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.022), 11, 14));
@@ -1244,16 +1258,23 @@ export class GameScene extends Phaser.Scene {
     backing.strokeRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
     this.resultUi.push(backing);
 
-    let currentY = panelTop + panelPaddingTop;
+    const titleBar = this.add.graphics().setDepth(208);
+    titleBar.fillStyle(titleColor, 0.94);
+    titleBar.fillRect(0, titleBarTop, layout.gameWidth, titleBarHeight);
+    titleBar.lineStyle(1, COLORS.BG, 0.35);
+    titleBar.lineBetween(0, titleBarTop, layout.gameWidth, titleBarTop);
+    titleBar.lineBetween(0, titleBarBottom, layout.gameWidth, titleBarBottom);
+    this.resultUi.push(titleBar);
 
-    const title = this.add.text(centerX, currentY, titleText, {
+    let currentY = Math.max(panelTop + panelPaddingTop, titleBarBottom + titleGap);
+
+    const title = this.add.text(centerX, titleBarTop + titleBarHeight / 2, titleText, {
       fontFamily: UI_FONT,
       fontSize: titleSize,
-      color: `#${titleColor.toString(16).padStart(6, '0')}`,
+      color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
       align: 'center',
-    }).setOrigin(0.5, 0).setDepth(210);
+    }).setOrigin(0.5).setDepth(210);
     this.resultUi.push(title);
-    currentY += title.height + titleGap;
 
     const scoreText = this.add.text(
       centerX,
@@ -1299,7 +1320,10 @@ export class GameScene extends Phaser.Scene {
     // Mission results section
     const missions = data.missionProgress ?? [];
     if (missions.length > 0) {
-      currentY = Math.max(currentY + sectionGap, panelTop + panelHeight * 0.34);
+      const missionStartRatio = isDeath
+        ? (compactResults ? 0.2 : 0.24)
+        : (compactResults ? 0.24 : 0.28);
+      currentY = Math.max(currentY + sectionGap, panelTop + panelHeight * missionStartRatio);
       const headerLabel = isDeath ? 'MISSIONS: INCOMPLETE' : 'MISSIONS:';
       const headerColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
       const mHeader = this.add.text(centerX, currentY, headerLabel, {
@@ -1353,8 +1377,9 @@ export class GameScene extends Phaser.Scene {
 
     const gapTop = resultContentBottomY + commGap;
     const gapBottom = retryButtonTop - commGap;
+    const commAvailableTravel = Math.max(0, gapBottom - gapTop - commPanelHeight);
     const resultCommY = Phaser.Math.Clamp(
-      gapTop + Math.max(0, gapBottom - gapTop - commPanelHeight) * 0.5,
+      gapTop + commAvailableTravel * (compactResults || isDeath ? 1 : 0.5),
       gapTop,
       Math.max(gapTop, gapBottom - commPanelHeight),
     );
@@ -1392,6 +1417,13 @@ export class GameScene extends Phaser.Scene {
         this.scene.start(SCENE_KEYS.MENU);
       },
     );
+  }
+
+  private applyGameplayCommLayout(): void {
+    const bottomInset = 2;
+    this.slickComm.setBottomPinnedLayout(bottomInset);
+    this.regentComm.setBottomPinnedLayout(bottomInset);
+    this.liaisonComm?.setBottomPinnedLayout(bottomInset);
   }
 
   private clearResultUi(): void {

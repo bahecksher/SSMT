@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { SCENE_KEYS, COLORS, UI_FONT, readableFontSize } from '../constants';
+import { COMPANIES } from '../data/companyData';
 import { SaveSystem } from '../systems/SaveSystem';
 import { fetchLeaderboard, type LeaderboardEntry } from '../services/LeaderboardService';
 import { SalvageDebris } from '../entities/SalvageDebris';
@@ -852,15 +853,20 @@ export class MenuScene extends Phaser.Scene {
     for (let i = 0; i < visibleEntries.length; i++) {
       const entry = visibleEntries[i];
       const y = startY + i * rowHeight;
+      const company = entry.company_id ? COMPANIES[entry.company_id] : null;
       const rank = `${i + 1}.`.padEnd(4);
-      const name = entry.player_name.padEnd(9);
-      const score = String(Math.floor(entry.score));
-      const line = `${rank}${name}${score}`;
+      const companyTag = company ? `${company.leaderboardTag}`.padEnd(4) : ''.padEnd(4);
+      const name = entry.player_name.padEnd(8);
+      const score = String(Math.floor(entry.score)).padStart(6);
+      const line = `${rank}${companyTag}${name}${score}`;
+      const rowColor = company
+        ? `#${company.color.toString(16).padStart(6, '0')}`
+        : i < 3 ? salvageColor : hudColor;
 
       const text = this.add.text(centerX, y, line, {
         fontFamily: UI_FONT,
         fontSize: this.leaderboardFontSize,
-        color: i < 3 ? salvageColor : hudColor,
+        color: rowColor,
         align: 'center',
       }).setOrigin(0.5).setDepth(uiDepth);
 

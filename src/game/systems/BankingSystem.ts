@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PLAYER_RADIUS, EXIT_GATE_HITBOX } from '../data/tuning';
+import { getLeaderboardCompanyId, loadCompanyRep } from '../data/companyData';
 import { submitScore } from '../services/LeaderboardService';
 import type { Player } from '../entities/Player';
 import type { ExitGate } from '../entities/ExitGate';
@@ -41,7 +42,8 @@ export class BankingSystem {
     const banked = this.scoreSystem.getBanked();
     this.saveSystem.saveBestScore(banked);
     const playerName = this.saveSystem.getPlayerName();
-    submitScore(playerName, banked);
+    const companyId = getLeaderboardCompanyId(loadCompanyRep());
+    submitScore(playerName, banked, companyId);
   }
 
   destroy(): void {

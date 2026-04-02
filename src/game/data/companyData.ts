@@ -10,6 +10,7 @@ export interface CompanyDef {
   liaison: string;
   liaisonTitle: string;
   boostLabel: string;
+  leaderboardTag: string;
 }
 
 export interface RepStanding {
@@ -28,6 +29,7 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
     liaison: 'HOLT',
     liaisonTitle: 'HOLT // DEEPCORE',
     boostLabel: 'MINING YIELD',
+    leaderboardTag: 'DPC',
   },
   [CompanyId.RECLAIM]: {
     id: CompanyId.RECLAIM,
@@ -37,6 +39,7 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
     liaison: 'VOSS',
     liaisonTitle: 'VOSS // RECLAIM',
     boostLabel: 'SALVAGE YIELD',
+    leaderboardTag: 'RCL',
   },
   [CompanyId.IRONVEIL]: {
     id: CompanyId.IRONVEIL,
@@ -46,6 +49,7 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
     liaison: 'KADE',
     liaisonTitle: 'KADE // IRONVEIL',
     boostLabel: 'NPC BOUNTY',
+    leaderboardTag: 'IRN',
   },
   [CompanyId.FREEPORT]: {
     id: CompanyId.FREEPORT,
@@ -55,6 +59,7 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
     liaison: 'NYLA',
     liaisonTitle: 'NYLA // FREEPORT',
     boostLabel: 'DROP RATE',
+    leaderboardTag: 'FPT',
   },
 };
 
@@ -68,6 +73,7 @@ export const COMPANY_IDS = [
 const PLAYER_WALLET_SHARE = 0.60;
 const PLAYER_WALLET_SHARE_PERCENT = Math.round(PLAYER_WALLET_SHARE * 100);
 const SLICK_CUT_PERCENT = 100 - PLAYER_WALLET_SHARE_PERCENT;
+const FIXED_FAVOR_LEVEL = 1;
 
 // --- Reputation thresholds ---
 
@@ -170,10 +176,8 @@ export function getSlickCutPercent(): number {
   return SLICK_CUT_PERCENT;
 }
 
-export function getFavorOffer(companyId: CompanyId, repSave: CompanyRepSave): CompanyFavorOffer | null {
-  const level = getRepLevel(repSave.rep[companyId] ?? 0);
-  if (level <= 0) return null;
-
+export function getFavorOffer(companyId: CompanyId): CompanyFavorOffer {
+  const level = FIXED_FAVOR_LEVEL;
   return {
     companyId,
     level,
@@ -183,16 +187,29 @@ export function getFavorOffer(companyId: CompanyId, repSave: CompanyRepSave): Co
   };
 }
 
-export function computeRunBoostsFromFavors(selectedCompanies: CompanyId[], repSave: CompanyRepSave): RunBoosts {
+export function computeRunBoostsFromFavors(selectedCompanies: CompanyId[]): RunBoosts {
   const boosts = createNeutralRunBoosts();
 
   for (const companyId of selectedCompanies) {
-    const level = getRepLevel(repSave.rep[companyId] ?? 0);
-    if (level <= 0) continue;
-    applyCompanyBoost(boosts, companyId, level);
+    applyCompanyBoost(boosts, companyId, FIXED_FAVOR_LEVEL);
   }
 
   return boosts;
+}
+
+export function getLeaderboardCompanyId(repSave: CompanyRepSave): CompanyId | null {
+  let bestCompany: CompanyId | null = null;
+  let bestRep = 0;
+
+  for (const companyId of COMPANY_IDS) {
+    const rep = repSave.rep[companyId] ?? 0;
+    if (rep > bestRep) {
+      bestRep = rep;
+      bestCompany = companyId;
+    }
+  }
+
+  return bestRep > 0 ? bestCompany : null;
 }
 
 /** Format a boost value for display, e.g. "x1.30" or "+20%" */

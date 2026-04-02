@@ -12,6 +12,8 @@ const PILL_HEIGHT = 44;
 const PILL_GAP = 8;
 const PILL_MARGIN_X = 14;
 const PILL_MIN_GUTTER_GAP = 4;
+const PILL_HIDE_OFFSET_Y = -18;
+const PILL_VISIBILITY_TWEEN_MS = 180;
 
 export class Hud {
   private scene: Phaser.Scene;
@@ -19,42 +21,52 @@ export class Hud {
   private bestText: Phaser.GameObjects.Text;
   private phaseText: Phaser.GameObjects.Text;
   private shieldText: Phaser.GameObjects.Text;
+  private missionPillRoot: Phaser.GameObjects.Container;
   private missionPills: Phaser.GameObjects.GameObject[] = [];
   private lastScore = -1;
   private lastBest = -1;
   private lastPhase = -1;
   private lastShield = false;
   private lastMissionHash = '';
+  private missionPillsHidden = false;
+  private missionPillTween: Phaser.Tweens.Tween | null = null;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     const layout = getLayout();
+    const compactHud = layout.gameWidth <= 430;
+    const topMargin = compactHud ? 12 : 16;
+    const scoreFontSize = compactHud ? 13 : 16;
+    const minorFontSize = compactHud ? 11 : 14;
+    const shieldY = topMargin + (compactHud ? 16 : 24);
     const textStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(16),
+      fontSize: readableFontSize(scoreFontSize),
       color: HUD_COLOR,
     };
 
-    this.scoreText = scene.add.text(16, 16, 'CREDITS: 0', {
+    this.scoreText = scene.add.text(16, topMargin, 'CREDITS: 0', {
       ...textStyle,
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
     }).setDepth(100);
 
-    this.bestText = scene.add.text(layout.gameWidth - 16, 16, 'BEST: 0', {
+    this.bestText = scene.add.text(layout.gameWidth - 16, topMargin, 'BEST: 0', {
       ...textStyle,
     }).setOrigin(1, 0).setDepth(100);
 
-    this.phaseText = scene.add.text(layout.centerX, 16, 'PHASE 1', {
+    this.phaseText = scene.add.text(layout.centerX, topMargin, 'PHASE 1', {
       ...textStyle,
-      fontSize: readableFontSize(14),
+      fontSize: readableFontSize(minorFontSize),
       color: HUD_COLOR,
     }).setOrigin(0.5, 0).setAlpha(0.5).setDepth(100);
 
-    this.shieldText = scene.add.text(16, 40, '', {
+    this.shieldText = scene.add.text(16, shieldY, '', {
       ...textStyle,
-      fontSize: readableFontSize(14),
+      fontSize: readableFontSize(minorFontSize),
       color: '#44aaff',
     }).setDepth(100);
+
+    this.missionPillRoot = scene.add.container(0, 0).setDepth(100);
   }
 
   update(score: number, best: number, phase: number = 1, hasShield = false): void {
@@ -88,12 +100,16 @@ export class Hud {
     this.lastMissionHash = hash;
 
     // Clear old pills
-    for (const obj of this.missionPills) obj.destroy();
+    this.missionPillRoot.removeAll(true);
     this.missionPills = [];
 
     if (missions.length === 0) return;
 
     const layout = getLayout();
+    const compactHud = layout.gameWidth <= 430;
+    const missionLabelFontSize = compactHud ? 11 : 13;
+    const missionStatusFontSize = compactHud ? 10 : 12;
+    const missionStrokeThickness = compactHud ? 1 : 2;
     const count = missions.length;
     const availableWidth = layout.gameWidth - PILL_MARGIN_X * 2;
     const pillWidth = Math.min(
@@ -103,9 +119,9 @@ export class Hud {
     const totalWidth = count * pillWidth + (count - 1) * PILL_GAP;
     const startX = (layout.gameWidth - totalWidth) / 2;
     const bottomGutterHeight = layout.gameHeight - layout.arenaBottom;
-    const pillY = layout.arenaBottom + Math.max(
-      PILL_MIN_GUTTER_GAP,
-      (bottomGutterHeight - PILL_HEIGHT) / 2,
+    const pillY = layout.arenaBottom + Math.min(
+      Phaser.Math.Clamp(Math.round(bottomGutterHeight * 0.025), PILL_MIN_GUTTER_GAP, 6),
+      Math.max(PILL_MIN_GUTTER_GAP, bottomGutterHeight - PILL_HEIGHT),
     );
 
     for (let i = 0; i < count; i++) {
@@ -115,7 +131,7 @@ export class Hud {
       const x = startX + i * (pillWidth + PILL_GAP);
 
       // Pill background
-      const bg = this.scene.add.graphics().setDepth(100);
+      const bg = this.scene.add.graphics();
       const bgColor = done ? COLORS.GATE : COLORS.BG;
       const bgAlpha = done ? 0.12 : 0.75;
       const borderColor = done ? COLORS.GATE : COLORS.HUD;
@@ -139,6 +155,7 @@ export class Hud {
         }
       }
 
+      this.missionPillRoot.add(bg);
       this.missionPills.push(bg);
 
       // Mission label (condensed to keep intent readable in the bottom gutter)
@@ -146,11 +163,12 @@ export class Hud {
       const labelColor = done ? GATE_COLOR : HUD_COLOR;
       const labelText = this.scene.add.text(x + pillWidth / 2, pillY + 4, label, {
         fontFamily: UI_FONT,
-        fontSize: readableFontSize(13),
+        fontSize: readableFontSize(missionLabelFontSize),
         color: labelColor,
         stroke: '#020806',
-        strokeThickness: 2,
-      }).setOrigin(0.5, 0).setDepth(101).setAlpha(done ? 0.94 : 0.82);
+        strokeThickness: missionStrokeThickness,
+      }).setOrigin(0.5, 0).setAlpha(done ? 0.94 : 0.82);
+      this.missionPillRoot.add(labelText);
       this.missionPills.push(labelText);
 
       // Progress or done indicator
@@ -158,22 +176,86 @@ export class Hud {
       const statusColor = done ? GATE_COLOR : SALVAGE_COLOR;
       const statusText = this.scene.add.text(x + pillWidth / 2, pillY + 24, statusStr, {
         fontFamily: UI_FONT,
-        fontSize: readableFontSize(12),
+        fontSize: readableFontSize(missionStatusFontSize),
         color: statusColor,
         stroke: '#020806',
-        strokeThickness: 2,
-      }).setOrigin(0.5, 0).setDepth(101).setAlpha(done ? 0.9 : 0.74);
+        strokeThickness: missionStrokeThickness,
+      }).setOrigin(0.5, 0).setAlpha(done ? 0.9 : 0.74);
+      this.missionPillRoot.add(statusText);
       this.missionPills.push(statusText);
     }
+
+    this.applyMissionPillVisibility(false);
+  }
+
+  setMissionPillsHidden(hidden: boolean): void {
+    if (this.missionPillsHidden === hidden) return;
+    this.missionPillsHidden = hidden;
+    this.applyMissionPillVisibility(true);
   }
 
   destroy(): void {
+    if (this.missionPillTween) {
+      this.missionPillTween.stop();
+      this.missionPillTween = null;
+    }
     this.scoreText.destroy();
     this.bestText.destroy();
     this.phaseText.destroy();
     this.shieldText.destroy();
-    for (const obj of this.missionPills) obj.destroy();
+    this.missionPillRoot.destroy(true);
     this.missionPills = [];
+  }
+
+  private applyMissionPillVisibility(animate: boolean): void {
+    if (this.missionPillTween) {
+      this.missionPillTween.stop();
+      this.missionPillTween = null;
+    }
+
+    if (this.missionPills.length === 0) {
+      this.missionPillRoot.setVisible(false);
+      this.missionPillRoot.setAlpha(0);
+      this.missionPillRoot.setY(PILL_HIDE_OFFSET_Y);
+      return;
+    }
+
+    if (!animate) {
+      this.missionPillRoot.setVisible(!this.missionPillsHidden);
+      this.missionPillRoot.setAlpha(this.missionPillsHidden ? 0 : 1);
+      this.missionPillRoot.setY(this.missionPillsHidden ? PILL_HIDE_OFFSET_Y : 0);
+      return;
+    }
+
+    if (this.missionPillsHidden) {
+      this.missionPillRoot.setVisible(true);
+      this.missionPillTween = this.scene.tweens.add({
+        targets: this.missionPillRoot,
+        alpha: 0,
+        y: PILL_HIDE_OFFSET_Y,
+        duration: PILL_VISIBILITY_TWEEN_MS,
+        ease: 'Sine.In',
+        onComplete: () => {
+          this.missionPillRoot.setVisible(false);
+          this.missionPillTween = null;
+        },
+      });
+      return;
+    }
+
+    this.missionPillRoot.setVisible(true);
+    this.missionPillRoot.setAlpha(0);
+    this.missionPillRoot.setY(PILL_HIDE_OFFSET_Y);
+    this.missionPillTween = this.scene.tweens.add({
+      targets: this.missionPillRoot,
+      alpha: 1,
+      y: 0,
+      duration: PILL_VISIBILITY_TWEEN_MS,
+      ease: 'Sine.Out',
+      onComplete: () => {
+        this.missionPillTween = null;
+      },
+    });
   }
 }
 

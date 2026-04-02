@@ -8,10 +8,8 @@ import {
   COMPANIES,
   COMPANY_IDS,
   REP_PER_TIER,
-  loadCompanyRep,
   computeRunBoostsFromFavors,
   getFavorOffer,
-  getRepStanding,
 } from '../data/companyData';
 import { CompanyId } from '../types';
 import type { ActiveMission } from '../types';
@@ -709,11 +707,9 @@ export class MissionSelectScene extends Phaser.Scene {
   }
 
   private getSelectedFavorCost(): number {
-    const repSave = loadCompanyRep();
     let total = 0;
     for (const companyId of this.selectedFavorIds) {
-      const offer = getFavorOffer(companyId, repSave);
-      if (offer) total += offer.cost;
+      total += getFavorOffer(companyId).cost;
     }
     return total;
   }
@@ -724,7 +720,6 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
-    const repSave = loadCompanyRep();
     const walletCredits = this.saveSystem.getWalletCredits();
     const selectedCost = this.getSelectedFavorCost();
     const headerY = this.getFavorSectionTop();
@@ -747,23 +742,16 @@ export class MissionSelectScene extends Phaser.Scene {
     for (let i = 0; i < COMPANY_IDS.length; i++) {
       const companyId = COMPANY_IDS[i];
       const company = COMPANIES[companyId];
-      const offer = getFavorOffer(companyId, repSave);
-      const rep = repSave.rep[companyId] ?? 0;
-      const standing = getRepStanding(rep);
+      const offer = getFavorOffer(companyId);
       const selected = this.selectedFavorIds.has(companyId);
       const cardLeft = briefing.cardMarginX;
       const cardTop = gridTop + i * (briefing.favorCardHeight + briefing.favorCardGap);
-      const canAfford = offer ? selected || (selectedCost + offer.cost <= walletCredits) : false;
-      const shortfall = offer && !selected ? Math.max(0, selectedCost + offer.cost - walletCredits) : 0;
+      const canAfford = selected || (selectedCost + offer.cost <= walletCredits);
+      const shortfall = !selected ? Math.max(0, selectedCost + offer.cost - walletCredits) : 0;
       const borderColor = COLORS.HUD;
-      const progressLeft = cardLeft + 12;
-      const progressWidth = cardWidth - 24;
-      const progressFill = standing.nextRepRequired
-        ? progressWidth * standing.progressToNext
-        : progressWidth;
-      const statusLabel = selected ? 'SELECTED' : !offer ? 'LOCKED' : !canAfford ? 'SHORT' : null;
-      const statusColor = selected ? COLORS.GATE : !offer || !canAfford ? COLORS.HAZARD : company.color;
-      const statusTextColor = !offer || !canAfford ? COLORS.HAZARD : company.color;
+      const statusLabel = selected ? 'SELECTED' : !canAfford ? 'SHORT' : null;
+      const statusColor = selected ? COLORS.GATE : !canAfford ? COLORS.HAZARD : company.color;
+      const statusTextColor = !canAfford ? COLORS.HAZARD : company.color;
       const portraitLeftInset = denseFavorLayout ? 10 : 12;
       const portraitTopClearance = denseFavorLayout ? 8 : 10;
       const portraitBottomPadding = denseFavorLayout ? 6 : 8;
@@ -785,13 +773,12 @@ export class MissionSelectScene extends Phaser.Scene {
       const textWidth = Math.max(132, textRight - textLeft);
       const contentTop = cardTop + (denseFavorLayout ? 5 : briefing.compact ? 7 : 9);
       const headerGap = denseFavorLayout ? 0 : 2;
-      const sectionGap = denseFavorLayout ? 1 : 3;
-      const standingAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.42 : 0.46));
-      const offerAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.63 : 0.66));
-      const detailAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.8 : 0.82));
+      const sectionGap = denseFavorLayout ? 2 : 4;
+      const offerAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.48 : 0.54));
+      const detailAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.72 : 0.78));
 
       const bg = this.add.graphics().setDepth(10);
-      bg.fillStyle(COLORS.BG, offer ? 0.92 : 0.84);
+      bg.fillStyle(COLORS.BG, 0.92);
       bg.fillRoundedRect(cardLeft, cardTop, cardWidth, briefing.favorCardHeight, 8);
       if (selected) {
         bg.fillStyle(company.color, 0.24);
@@ -799,22 +786,16 @@ export class MissionSelectScene extends Phaser.Scene {
       }
       bg.lineStyle(selected ? 2.1 : 1.35, borderColor, selected ? 1 : 0.26);
       bg.strokeRoundedRect(cardLeft, cardTop, cardWidth, briefing.favorCardHeight, 8);
-      bg.fillStyle(company.color, offer ? 0.84 : 0.38);
+      bg.fillStyle(company.color, 0.84);
       bg.fillRoundedRect(cardLeft + 5, cardTop + 5, selected ? 6 : 4, briefing.favorCardHeight - 10, 2);
-      bg.fillStyle(COLORS.GRID, 0.35);
-      bg.fillRoundedRect(progressLeft, cardTop + briefing.favorCardHeight - 8, progressWidth, 2, 1);
-      if (progressFill > 0) {
-        bg.fillStyle(company.color, selected ? 1 : 0.82);
-        bg.fillRoundedRect(progressLeft, cardTop + briefing.favorCardHeight - 8, progressFill, 2, 1);
-      }
       this.favorUi.push(bg);
 
       const portraitFrame = this.add.graphics().setDepth(10.5);
       portraitFrame.fillStyle(COLORS.BG, 0.86);
-      portraitFrame.lineStyle(1.1, company.color, offer ? 0.42 : 0.24);
+      portraitFrame.lineStyle(1.1, company.color, 0.42);
       portraitFrame.fillCircle(portraitCenterX, portraitCenterY, portraitRadius);
       portraitFrame.strokeCircle(portraitCenterX, portraitCenterY, portraitRadius);
-      portraitFrame.lineStyle(1, company.accent, offer ? 0.22 : 0.14);
+      portraitFrame.lineStyle(1, company.accent, 0.22);
       portraitFrame.strokeCircle(portraitCenterX, portraitCenterY, Math.max(8, portraitRadius - 4));
       this.favorUi.push(portraitFrame);
 
@@ -822,7 +803,7 @@ export class MissionSelectScene extends Phaser.Scene {
         .setPosition(portraitCenterX, portraitCenterY)
         .setScale(portraitScale)
         .setDepth(11)
-        .setAlpha(offer ? 0.96 : 0.66);
+        .setAlpha(0.96);
       this.favorUi.push(portrait);
 
       if (statusLabel) {
@@ -855,33 +836,11 @@ export class MissionSelectScene extends Phaser.Scene {
           strokeThickness: 2,
           wordWrap: { width: textWidth },
         },
-      ).setDepth(11).setAlpha(offer ? 0.88 : 0.76);
+      ).setDepth(11).setAlpha(0.88);
       liaisonText.setLineSpacing(-1);
       this.favorUi.push(liaisonText);
 
-      const standingY = Math.max(
-        liaisonText.y + liaisonText.height + sectionGap,
-        standingAnchorY,
-      );
-
-      const standingLine = standing.nextRepRequired
-        ? `${standing.label} // ${rep} REP // NEXT ${standing.nextRepRequired}`
-        : `${standing.label} // ${rep} REP // MAX`;
-      const standingText = this.add.text(textLeft, standingY, standingLine, {
-        fontFamily: UI_FONT,
-        fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
-        color: colorStr(company.color),
-        stroke: colorStr(COLORS.BG),
-        strokeThickness: 2,
-        wordWrap: { width: textWidth },
-      }).setDepth(11).setAlpha(offer ? 0.76 : 0.7);
-      standingText.setLineSpacing(-1);
-      this.favorUi.push(standingText);
-
-      const offerLine = offer
-        ? `${offer.label} ${offer.boostValue}`
-        : company.boostLabel;
-      const offerText = this.add.text(textLeft, Math.max(standingText.y + standingText.height + sectionGap, offerAnchorY), offerLine, {
+      const offerText = this.add.text(textLeft, Math.max(liaisonText.y + liaisonText.height + sectionGap, offerAnchorY), `FAVOR // ${offer.label} ${offer.boostValue}`, {
         fontFamily: UI_FONT,
         fontSize: readableFontSize(denseFavorLayout ? 9 : briefing.compact ? 11 : 12),
         fontStyle: 'bold',
@@ -889,27 +848,23 @@ export class MissionSelectScene extends Phaser.Scene {
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
         wordWrap: { width: textWidth },
-      }).setDepth(11).setAlpha(offer ? 0.96 : 0.8);
+      }).setDepth(11).setAlpha(0.94);
       this.favorUi.push(offerText);
 
-      if (offer) {
-        const detailLine = selected
-          ? `ARMED // ${offer.cost}c`
-          : canAfford
-            ? `${offer.cost}c // TAP TO ARM`
-            : `${offer.cost}c // SHORT ${shortfall}c`;
-        const detailText = this.add.text(textLeft, Math.max(offerText.y + offerText.height + sectionGap, detailAnchorY), detailLine, {
-          fontFamily: UI_FONT,
-          fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
-          color: colorStr(company.color),
-          stroke: colorStr(COLORS.BG),
-          strokeThickness: 2,
-          wordWrap: { width: textWidth },
-        }).setDepth(11).setAlpha(0.76);
-        this.favorUi.push(detailText);
-      }
-
-      if (!offer) continue;
+      const detailLine = selected
+        ? `ARMED // ${offer.cost}c`
+        : canAfford
+          ? `${offer.cost}c // BUY FROM ${company.liaison}`
+          : `${offer.cost}c // SHORT ${shortfall}c`;
+      const detailText = this.add.text(textLeft, Math.max(offerText.y + offerText.height + sectionGap, detailAnchorY), detailLine, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
+        color: colorStr(company.color),
+        stroke: colorStr(COLORS.BG),
+        strokeThickness: 2,
+        wordWrap: { width: textWidth },
+      }).setDepth(11).setAlpha(0.76);
+      this.favorUi.push(detailText);
 
       const hit = this.add.zone(cardLeft, cardTop, cardWidth, briefing.favorCardHeight)
         .setData('cornerRadius', 8)
@@ -1011,7 +966,6 @@ export class MissionSelectScene extends Phaser.Scene {
 
   private deploy(): void {
     this.saveMissions();
-    const repSave = loadCompanyRep();
     const selectedFavorIds = Array.from(this.selectedFavorIds);
     const totalFavorCost = this.getSelectedFavorCost();
     if (!this.saveSystem.spendWalletCredits(totalFavorCost)) {
@@ -1019,7 +973,7 @@ export class MissionSelectScene extends Phaser.Scene {
       return;
     }
 
-    const runBoosts = computeRunBoostsFromFavors(selectedFavorIds, repSave);
+    const runBoosts = computeRunBoostsFromFavors(selectedFavorIds);
     this.scene.start(SCENE_KEYS.GAME, {
       ...this.buildBackgroundHandoff(),
       selectedMissions: this.missions.filter((m) => m.accepted),
