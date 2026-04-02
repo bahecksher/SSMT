@@ -1,8 +1,8 @@
 # State
-_Last updated: 2026-04-02 1813_
+_Last updated: 2026-04-02 1821_
 
 ## Current focus
-Session wrapped after turning the mission tracker hide/show behavior into a slide-and-fade transition so bottom comms take over that lane more gracefully.
+Session closed after pushing the mobile HUD/comms cleanup and leaderboard company affiliation update set to `origin/main`.
 
 ## What's working
 - Runtime scene flow remains `Menu -> MissionSelect -> Game`, with layered music/settings work still intact
@@ -13,10 +13,11 @@ Session wrapped after turning the mission tracker hide/show behavior into a slid
 - Leaderboard fetch/submit now supports an optional `company_id` field and falls back cleanly if the server has not been migrated yet
 - Menu leaderboard rows now show a compact company tag and company-colored text when company affiliation is present
 - `GameScene` uses the original/default arena framing again instead of the temporary symmetric gameplay reserve
-- Gameplay comms still anchor to the bottom of the screen and use a compact bottom-pinned layout with tighter spacing, smaller portraits, and improved readability opacity
-- Active mission pills now animate out with an upward slide and fade when a gameplay comm appears, then slide back in when the comm clears
+- Gameplay comms anchor to the bottom of the screen and use a compact bottom-pinned layout with tighter spacing, smaller portraits, and improved readability opacity
+- Active mission pills slide upward and fade out when a gameplay comm appears, then slide back in when the comm clears
 - Result overlays still use full-width `DESTROYED` / `EXTRACT` bars, and result-state comm panels still keep the fuller pinned layout
 - `npm.cmd run build` passes
+- The session changes are committed as `a609778` and pushed to `origin/main`
 
 ## In progress
 Nothing active.
@@ -44,11 +45,11 @@ docs/plans/2026-03-29 1753 Plan - Layered Music System.md
 1. Run `npm.cmd run build`
 2. Start a run and trigger Slick, Regent, or liaison comms
 3. Confirm the arena is still using the original/default gameplay dimensions
-4. Confirm active mission pills slide upward and fade out when a gameplay comm appears
-5. Confirm the mission pills slide back in after the comm clears
+4. Confirm bottom gameplay comms are compact/readable and mission pills slide out while comms are active
+5. Confirm leaderboard rows show company affiliation when `company_id` is present in score data
 
 ## Recent logs
+- docs/log/2026-04-02 1821 Session Closeout and Push.md - recorded the clean end-of-session state after the final commit was pushed to main
 - docs/log/2026-04-02 1813 Mission Tracker Slide Hide for Gameplay Comms.md - changed mission pills from a hard visibility toggle to a slide-and-fade transition under gameplay comms
 - docs/log/2026-04-02 1812 Bottom Comm Readability Opacity Follow-up.md - increased compact bottom comm opacity after the first transparent pass was too light to read clearly
 - docs/log/2026-04-02 1810 Compact Transparent Bottom Gameplay Comms.md - made bottom gameplay comms thinner and more transparent without changing the restored arena framing
-- docs/log/2026-04-02 1806 Restore Original Arena Dimensions.md - removed the temporary gameplay inset override and returned the arena to its original framing
