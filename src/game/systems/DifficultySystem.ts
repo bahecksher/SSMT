@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import type { PhaseConfig } from '../types';
 import {
+  ASTEROID_DESTROY_BONUS,
+  ASTEROID_DESTROY_DROP_CHANCE,
   BOMB_DROP_CHANCE,
   DRIFTER_MINEABLE_CHANCE,
   DRIFTER_SPEED_BASE,
@@ -26,10 +28,13 @@ export class DifficultySystem {
   private enemies: EnemyShip[] = [];
   private npcs: NPCShip[] = [];
   private deadNPCPositions: { x: number; y: number; vx: number; vy: number }[] = [];
-  private bonusDropPositions: { x: number; y: number; vx: number; vy: number; points: number }[] = [];
+  private bonusDropPositions: { x: number; y: number; vx: number; vy: number; points: number; miningBonus?: boolean }[] = [];
   private bombDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private shipDebris: ShipDebris[] = [];
   private scaledMaxDrifters = 0;
+  private scaledMaxEnemies = 0;
+  private scaledMaxNPCs = 0;
+  private scaledSpawnMult = 1;
   private drifterTimer = 0;
   private beamTimer = 0;
   private beamBurstQueue = 0;
@@ -58,6 +63,10 @@ export class DifficultySystem {
   private updateDensityScale(): void {
     const scale = getArenaDensityScale();
     this.scaledMaxDrifters = Math.max(6, Math.round(this.config.maxConcurrentDrifters * scale));
+    this.scaledMaxEnemies = Math.max(this.config.maxConcurrentEnemies, Math.round(this.config.maxConcurrentEnemies * scale));
+    this.scaledMaxNPCs = Math.max(this.config.maxConcurrentNPCs, Math.round(this.config.maxConcurrentNPCs * scale));
+    // Bigger screens spawn faster to fill the space; small screens get a breather
+    this.scaledSpawnMult = scale >= 1 ? 1 / scale : 1 / Math.pow(scale, 0.5);
   }
 
   getConfig(): PhaseConfig {
@@ -86,7 +95,7 @@ export class DifficultySystem {
     return dead;
   }
 
-  consumeBonusDrops(): { x: number; y: number; vx: number; vy: number; points: number }[] {
+  consumeBonusDrops(): { x: number; y: number; vx: number; vy: number; points: number; miningBonus?: boolean }[] {
     const drops = this.bonusDropPositions;
     this.bonusDropPositions = [];
     return drops;
@@ -100,7 +109,7 @@ export class DifficultySystem {
 
   update(delta: number, playerX = 0, playerY = 0): void {
     this.drifterTimer += delta;
-    if (this.drifterTimer >= this.config.hazardSpawnRate && this.drifters.length < this.scaledMaxDrifters) {
+    if (this.drifterTimer >= this.config.hazardSpawnRate * this.scaledSpawnMult && this.drifters.length < this.scaledMaxDrifters) {
       const speed = DRIFTER_SPEED_BASE * this.config.hazardSpeedMultiplier;
       const sizeScale = pickAsteroidSize(this.config.phaseNumber);
       const adjustedSpeed = speed * (1 / Math.sqrt(sizeScale));
@@ -132,7 +141,7 @@ export class DifficultySystem {
 
     if (this.config.enemyEnabled) {
       this.enemyTimer += delta;
-      if (this.enemyTimer >= this.config.enemySpawnRate && this.enemies.length < this.config.maxConcurrentEnemies) {
+      if (this.enemyTimer >= this.config.enemySpawnRate * this.scaledSpawnMult && this.enemies.length < this.scaledMaxEnemies) {
         this.enemies.push(new EnemyShip(this.scene));
         this.enemyTimer = 0;
       }
@@ -140,7 +149,7 @@ export class DifficultySystem {
 
     if (this.config.npcEnabled) {
       this.npcTimer += delta;
-      if (this.npcTimer >= this.config.npcSpawnRate && this.npcs.length < this.config.maxConcurrentNPCs) {
+      if (this.npcTimer >= this.config.npcSpawnRate * this.scaledSpawnMult && this.npcs.length < this.scaledMaxNPCs) {
         this.npcs.push(new NPCShip(this.scene));
         this.npcTimer = 0;
       }
@@ -332,6 +341,14 @@ export class DifficultySystem {
         childScale,
         target.isMineable,
       ));
+    } else if (Math.random() < ASTEROID_DESTROY_DROP_CHANCE) {
+      // Too small to split — chance to drop a small mining bonus
+      this.bonusDropPositions.push({
+        x: target.x, y: target.y,
+        vx: target.vx * 0.5, vy: target.vy * 0.5,
+        points: ASTEROID_DESTROY_BONUS,
+        miningBonus: true,
+      });
     }
 
     target.active = false;
@@ -379,11 +396,12 @@ export class DifficultySystem {
             a.bounceCount++;
             b.bounceCount++;
 
-            const victims = a.radiusScale <= b.radiusScale && a.radiusScale !== b.radiusScale
+            // Only the smaller splits; equal size picks one at random (max 2 fragments per collision)
+            const victims = a.radiusScale < b.radiusScale
               ? [a]
               : b.radiusScale < a.radiusScale
                 ? [b]
-                : [a, b];
+                : [Math.random() < 0.5 ? a : b];
 
             for (const ast of victims) {
               if (!ast.active) continue;
@@ -419,6 +437,15 @@ export class DifficultySystem {
               } else {
                 ast.active = false;
                 this.shipDebris.push(new ShipDebris(this.scene, ast.x, ast.y, ast.vx, ast.vy, 0xff3366, ast.radius));
+                // Too small to split — chance to drop a small mining bonus
+                if (Math.random() < ASTEROID_DESTROY_DROP_CHANCE) {
+                  this.bonusDropPositions.push({
+                    x: ast.x, y: ast.y,
+                    vx: ast.vx * 0.5, vy: ast.vy * 0.5,
+                    points: ASTEROID_DESTROY_BONUS,
+                    miningBonus: true,
+                  });
+                }
               }
             }
           }

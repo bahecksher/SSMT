@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS } from '../constants';
+import { COLORS, UI_FONT, readableFontSize } from '../constants';
 import { getLayout } from '../layout';
 import { MissionType } from '../types';
 import type { ActiveMission } from '../types';
@@ -8,9 +8,9 @@ const HUD_COLOR = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
 const GATE_COLOR = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
 const SALVAGE_COLOR = `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`;
 
-const PILL_HEIGHT = 34;
-const PILL_GAP = 6;
-const PILL_MARGIN_X = 12;
+const PILL_HEIGHT = 44;
+const PILL_GAP = 8;
+const PILL_MARGIN_X = 14;
 const PILL_MIN_GUTTER_GAP = 4;
 
 export class Hud {
@@ -30,8 +30,8 @@ export class Hud {
     this.scene = scene;
     const layout = getLayout();
     const textStyle: Phaser.Types.GameObjects.Text.TextStyle = {
-      fontFamily: 'monospace',
-      fontSize: '14px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(16),
       color: HUD_COLOR,
     };
 
@@ -46,13 +46,13 @@ export class Hud {
 
     this.phaseText = scene.add.text(layout.centerX, 16, 'PHASE 1', {
       ...textStyle,
-      fontSize: '12px',
+      fontSize: readableFontSize(14),
       color: HUD_COLOR,
     }).setOrigin(0.5, 0).setAlpha(0.5).setDepth(100);
 
-    this.shieldText = scene.add.text(16, 34, '', {
+    this.shieldText = scene.add.text(16, 40, '', {
       ...textStyle,
-      fontSize: '12px',
+      fontSize: readableFontSize(14),
       color: '#44aaff',
     }).setDepth(100);
   }
@@ -144,9 +144,9 @@ export class Hud {
       // Mission label (condensed to keep intent readable in the bottom gutter)
       const label = getHudMissionLabel(m);
       const labelColor = done ? GATE_COLOR : HUD_COLOR;
-      const labelText = this.scene.add.text(x + pillWidth / 2, pillY + 6, label, {
-        fontFamily: 'monospace',
-        fontSize: '11px',
+      const labelText = this.scene.add.text(x + pillWidth / 2, pillY + 4, label, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(13),
         color: labelColor,
         stroke: '#020806',
         strokeThickness: 2,
@@ -156,9 +156,9 @@ export class Hud {
       // Progress or done indicator
       const statusStr = done ? '\u2713 DONE' : `${prog}/${m.def.target}`;
       const statusColor = done ? GATE_COLOR : SALVAGE_COLOR;
-      const statusText = this.scene.add.text(x + pillWidth / 2, pillY + 19, statusStr, {
-        fontFamily: 'monospace',
-        fontSize: '10px',
+      const statusText = this.scene.add.text(x + pillWidth / 2, pillY + 24, statusStr, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(12),
         color: statusColor,
         stroke: '#020806',
         strokeThickness: 2,

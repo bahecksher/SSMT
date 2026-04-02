@@ -73,8 +73,17 @@ export function getLayout(): LayoutMetrics {
 // Reference arena area for density normalization (default 540×960 viewport)
 const REFERENCE_ARENA_AREA = 355_324;
 
-/** Returns 0–1 scale factor: 1.0 on reference (540×960) screens, lower on smaller arenas. */
+/**
+ * Returns density scale: 1.0 on the reference (540×960) phone screen.
+ * Smaller screens get slightly fewer threats; larger screens get more.
+ */
 export function getArenaDensityScale(): number {
   const area = layout.arenaWidth * layout.arenaHeight;
-  return Math.min(1, area / REFERENCE_ARENA_AREA);
+  const ratio = area / REFERENCE_ARENA_AREA;
+  if (ratio <= 1) {
+    // Small screens: slightly gentler than linear
+    return Math.pow(ratio, 1.15);
+  }
+  // Large screens: uncapped, sub-linear so it doesn't explode
+  return Math.pow(ratio, 0.6);
 }

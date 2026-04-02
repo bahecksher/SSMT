@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
 import {
-  SCENE_KEYS, COLORS,
+  SCENE_KEYS, COLORS, UI_FONT, readableFontSize,
 } from '../constants';
 import { GameState, CompanyId } from '../types';
 import type { ActiveMission, RunBoosts } from '../types';
-import { SALVAGE_RESPAWN_DELAY, PLAYER_RADIUS, PLAYER_SHIELD_BREAK_INVULN_MS, NPC_BUMP_FORCE, NPC_BUMP_RADIUS, NPC_BONUS_POINTS } from '../data/tuning';
+import { SALVAGE_RESPAWN_DELAY, PLAYER_RADIUS, PLAYER_SHIELD_BREAK_INVULN_MS, NPC_BUMP_RADIUS, NPC_BONUS_POINTS } from '../data/tuning';
 import { MissionSystem, loadOrGenerateMissions } from '../systems/MissionSystem';
 import { InputSystem } from '../systems/InputSystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
@@ -295,8 +295,8 @@ export class GameScene extends Phaser.Scene {
       layout.centerY,
       GameScene.COUNTDOWN_PHRASES[0],
       {
-        fontFamily: 'monospace',
-        fontSize: '44px',
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(44),
         fontStyle: 'bold',
         color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
         stroke: `#${COLORS.GRID.toString(16).padStart(6, '0')}`,
@@ -661,7 +661,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Player-NPC bump physics — push NPCs away, can't destroy them
+    // Player-NPC collisions — collision = destruction
     const invulnerable = this.invulnerableTimer > 0;
 
     for (const npc of npcs) {
@@ -670,11 +670,10 @@ export class GameScene extends Phaser.Scene {
       const dy = npc.y - this.player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < NPC_BUMP_RADIUS && dist > 0.1) {
-        if (gameplayActive && !invulnerable && npc.hasShield && !this.player.hasShield) {
-          this.handleDeath('asteroid');
-          return;
-        }
-        if (gameplayActive && this.player.hasShield && !npc.hasShield) {
+        if (!gameplayActive || invulnerable) continue;
+
+        if (this.player.hasShield) {
+          // Player shield absorbs hit — NPC destroyed
           this.player.hasShield = false;
           this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
           npc.active = false;
@@ -684,10 +683,11 @@ export class GameScene extends Phaser.Scene {
           this.bonusPickups.push(new BonusPickup(this, npc.x, npc.y, NPC_BONUS_POINTS, npc.vx * 0.5, npc.vy * 0.5));
           Overlays.shieldBreakFlash(this);
           continue;
+        } else {
+          // No shield — collision is lethal
+          this.handleDeath('asteroid');
+          return;
         }
-        const nx = dx / dist;
-        const ny = dy / dist;
-        npc.applyImpulse(nx * NPC_BUMP_FORCE, ny * NPC_BUMP_FORCE);
       }
     }
 
@@ -703,7 +703,7 @@ export class GameScene extends Phaser.Scene {
 
       const bonusDrops = this.difficultySystem.consumeBonusDrops();
       for (const drop of bonusDrops) {
-        this.bonusPickups.push(new BonusPickup(this, drop.x, drop.y, drop.points, drop.vx, drop.vy));
+        this.bonusPickups.push(new BonusPickup(this, drop.x, drop.y, drop.points, drop.vx, drop.vy, undefined, drop.miningBonus));
       }
 
       const bombDrops = this.difficultySystem.consumeBombDrops();
@@ -1200,93 +1200,120 @@ export class GameScene extends Phaser.Scene {
     const layout = getLayout();
 
     const centerX = layout.centerX;
-    const cause = data.cause;
-    const isDeath = cause === 'death';
-    const panelTop = layout.gameHeight * 0.18;
-    const panelBottom = layout.gameHeight - 50;
-    const panelHeight = panelBottom - panelTop;
-    const commPanelWidth = Math.min(layout.gameWidth - 96, 368);
-    const commPanelHeight = 60;
-    const commGap = 8;
-    const buttonWidth = commPanelWidth;
-    const buttonHeight = Phaser.Math.Clamp(Math.round(panelHeight * 0.048), 28, 44);
-    const buttonGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.018), 6, 14);
-    const buttonStackHeight = buttonHeight * 2 + buttonGap * 3;
-    const buttonStackTop = panelBottom - buttonStackHeight;
-    const retryButtonY = buttonStackTop + buttonGap + buttonHeight / 2;
-    const menuButtonY = retryButtonY + buttonHeight + buttonGap;
+    const isDeath = data.cause === 'death';
+    const arenaInset = Phaser.Math.Clamp(Math.round(Math.min(layout.arenaWidth, layout.arenaHeight) * 0.04), 16, 30);
+    const panelLeft = layout.arenaLeft + arenaInset;
+    const panelTop = layout.arenaTop + arenaInset;
+    const panelWidth = layout.arenaWidth - arenaInset * 2;
+    const panelHeight = layout.arenaHeight - arenaInset * 2;
+    const panelBottom = panelTop + panelHeight;
+    const panelPaddingX = Phaser.Math.Clamp(Math.round(panelWidth * 0.08), 18, 30);
+    const panelPaddingTop = Phaser.Math.Clamp(Math.round(panelHeight * 0.055), 18, 30);
+    const panelPaddingBottom = Phaser.Math.Clamp(Math.round(panelHeight * 0.05), 18, 28);
+    const textWidth = panelWidth - panelPaddingX * 2;
+    const titleGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.026), 10, 18);
+    const lineGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.014), 6, 10);
+    const sectionGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.03), 12, 22);
+    const buttonWidth = Math.min(panelWidth - panelPaddingX * 2, 392);
+    const buttonHeight = Phaser.Math.Clamp(Math.round(panelHeight * 0.074), 40, 58);
+    const buttonGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.022), 8, 16);
+    const commPanelHeight = Math.max(
+      96,
+      isDeath
+        ? Math.max(this.slickComm.getPanelHeight(), this.regentComm.getPanelHeight())
+        : this.slickComm.getPanelHeight(),
+    );
+    const commGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.026), 10, 16);
+    const menuButtonY = panelBottom - panelPaddingBottom - buttonHeight / 2;
+    const retryButtonY = menuButtonY - buttonHeight - buttonGap;
+    const retryButtonTop = retryButtonY - buttonHeight / 2;
     const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
     const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
+    const titleSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.086), 42, 56));
+    const scoreSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.053), isDeath ? 24 : 28, 38));
+    const metaSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.026), 12, 16));
+    const detailSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.022), 11, 14));
+    const missionHeaderSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.024), 12, 15));
+    const missionLineSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.022), 11, 14));
+    const bonusSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.03), 14, 18));
 
     const backing = this.add.graphics().setDepth(205);
     backing.fillStyle(COLORS.BG, 0.78);
-    backing.fillRoundedRect(28, panelTop, layout.gameWidth - 56, panelHeight, 16);
+    backing.fillRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
     backing.lineStyle(1.5, titleColor, 0.4);
-    backing.strokeRoundedRect(28, panelTop, layout.gameWidth - 56, panelHeight, 16);
+    backing.strokeRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
     this.resultUi.push(backing);
 
-    const title = this.add.text(centerX, layout.gameHeight * 0.29, titleText, {
-      fontFamily: 'monospace',
-      fontSize: '40px',
+    let currentY = panelTop + panelPaddingTop;
+
+    const title = this.add.text(centerX, currentY, titleText, {
+      fontFamily: UI_FONT,
+      fontSize: titleSize,
       color: `#${titleColor.toString(16).padStart(6, '0')}`,
       align: 'center',
-    }).setOrigin(0.5).setDepth(210);
+    }).setOrigin(0.5, 0).setDepth(210);
     this.resultUi.push(title);
+    currentY += title.height + titleGap;
 
     const scoreText = this.add.text(
       centerX,
-      layout.gameHeight * 0.36,
+      currentY,
       isDeath ? `CREDITS LOST: ${Math.floor(data.score)}` : `SCORE: ${Math.floor(data.score)}`,
       {
-        fontFamily: 'monospace',
-        fontSize: isDeath ? '24px' : '28px',
+        fontFamily: UI_FONT,
+        fontSize: scoreSize,
         color: `#${(isDeath ? COLORS.HAZARD : COLORS.SALVAGE).toString(16).padStart(6, '0')}`,
         align: 'center',
+        wordWrap: { width: textWidth },
       },
-    ).setOrigin(0.5).setDepth(210);
+    ).setOrigin(0.5, 0).setDepth(210);
     this.resultUi.push(scoreText);
-    let resultContentBottomY = scoreText.y + scoreText.height / 2;
+    currentY += scoreText.height;
+    let resultContentBottomY = currentY;
 
     if (!isDeath) {
-      const walletLineY = scoreText.y + 28;
-      const walletText = this.add.text(centerX, walletLineY, `WALLET +${Math.floor(data.walletPayout ?? 0)}c  //  TOTAL ${Math.floor(data.walletBalance ?? 0)}c`, {
-        fontFamily: 'monospace',
-        fontSize: '12px',
+      currentY += lineGap;
+      const walletText = this.add.text(centerX, currentY, `WALLET +${Math.floor(data.walletPayout ?? 0)}c  //  TOTAL ${Math.floor(data.walletBalance ?? 0)}c`, {
+        fontFamily: UI_FONT,
+        fontSize: metaSize,
         color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
         align: 'center',
-      }).setOrigin(0.5).setDepth(210).setAlpha(0.86);
+        wordWrap: { width: textWidth },
+      }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.86);
       this.resultUi.push(walletText);
-      resultContentBottomY = Math.max(resultContentBottomY, walletText.y + walletText.height / 2);
+      currentY += walletText.height + lineGap;
+      resultContentBottomY = currentY;
 
-      const cutLineY = walletLineY + 14;
-      const slickCutText = this.add.text(centerX, cutLineY, `YOU KEEP ${getWalletSharePercent()}%  //  SLICK TAKES ${getSlickCutPercent()}%  //  SLICK GOT ${Math.floor(data.slickCut ?? 0)}c`, {
-        fontFamily: 'monospace',
-        fontSize: '11px',
+      const slickCutText = this.add.text(centerX, currentY, `YOU KEEP ${getWalletSharePercent()}%  //  SLICK TAKES ${getSlickCutPercent()}%  //  SLICK GOT ${Math.floor(data.slickCut ?? 0)}c`, {
+        fontFamily: UI_FONT,
+        fontSize: detailSize,
         color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
         align: 'center',
-      }).setOrigin(0.5).setDepth(210).setAlpha(0.62);
+        wordWrap: { width: textWidth },
+      }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.62);
       this.resultUi.push(slickCutText);
-      resultContentBottomY = Math.max(resultContentBottomY, slickCutText.y + slickCutText.height / 2);
+      currentY += slickCutText.height;
+      resultContentBottomY = currentY;
     }
 
     // Mission results section
     const missions = data.missionProgress ?? [];
     if (missions.length > 0) {
-      const missionHeaderY = Math.max(layout.gameHeight * 0.43, resultContentBottomY + 22);
+      currentY = Math.max(currentY + sectionGap, panelTop + panelHeight * 0.34);
       const headerLabel = isDeath ? 'MISSIONS: INCOMPLETE' : 'MISSIONS:';
       const headerColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
-      const mHeader = this.add.text(centerX, missionHeaderY, headerLabel, {
-        fontFamily: 'monospace',
-        fontSize: '12px',
+      const mHeader = this.add.text(centerX, currentY, headerLabel, {
+        fontFamily: UI_FONT,
+        fontSize: missionHeaderSize,
         color: `#${headerColor.toString(16).padStart(6, '0')}`,
         align: 'center',
-      }).setOrigin(0.5).setDepth(210).setAlpha(0.8);
+      }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.8);
       this.resultUi.push(mHeader);
-      resultContentBottomY = Math.max(resultContentBottomY, mHeader.y + mHeader.height / 2);
+      currentY += mHeader.height + lineGap;
+      resultContentBottomY = currentY;
 
       for (let i = 0; i < missions.length; i++) {
         const m = missions[i];
-        const y = missionHeaderY + 18 + i * 16;
         const prog = Math.min(m.progress, m.target);
         let line: string;
         let lineColor: number;
@@ -1297,34 +1324,40 @@ export class GameScene extends Phaser.Scene {
           line = `  ${m.label}  ${prog}/${m.target}`;
           lineColor = isDeath ? COLORS.HAZARD : COLORS.HUD;
         }
-        const mText = this.add.text(centerX, y, line, {
-          fontFamily: 'monospace',
-          fontSize: '11px',
+        const mText = this.add.text(centerX, currentY, line, {
+          fontFamily: UI_FONT,
+          fontSize: missionLineSize,
           color: `#${lineColor.toString(16).padStart(6, '0')}`,
           align: 'center',
-        }).setOrigin(0.5).setDepth(210).setAlpha(m.completed ? 0.9 : 0.6);
+          wordWrap: { width: textWidth },
+        }).setOrigin(0.5, 0).setDepth(210).setAlpha(m.completed ? 0.9 : 0.6);
         this.resultUi.push(mText);
-        resultContentBottomY = Math.max(resultContentBottomY, mText.y + mText.height / 2);
+        currentY += mText.height + lineGap;
+        resultContentBottomY = currentY;
       }
 
       if (!isDeath && data.missionBonus && data.missionBonus > 0) {
-        const bonusY = missionHeaderY + 18 + missions.length * 16 + 4;
-        const bonusText = this.add.text(centerX, bonusY, `BONUS: +${data.missionBonus}`, {
-          fontFamily: 'monospace',
-          fontSize: '14px',
+        currentY += Math.max(2, lineGap - 2);
+        const bonusText = this.add.text(centerX, currentY, `BONUS: +${data.missionBonus}`, {
+          fontFamily: UI_FONT,
+          fontSize: bonusSize,
           color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
           align: 'center',
           fontStyle: 'bold',
-        }).setOrigin(0.5).setDepth(210);
+        }).setOrigin(0.5, 0).setDepth(210);
         this.resultUi.push(bonusText);
-        resultContentBottomY = Math.max(resultContentBottomY, bonusText.y + bonusText.height / 2);
+        currentY += bonusText.height;
+        resultContentBottomY = currentY;
       }
     }
 
     const gapTop = resultContentBottomY + commGap;
-    const gapBottom = buttonStackTop - commGap;
-    const gapHeight = Math.max(0, gapBottom - gapTop - commPanelHeight);
-    const resultCommY = gapTop + gapHeight * 0.5;
+    const gapBottom = retryButtonTop - commGap;
+    const resultCommY = Phaser.Math.Clamp(
+      gapTop + Math.max(0, gapBottom - gapTop - commPanelHeight) * 0.5,
+      gapTop,
+      Math.max(gapTop, gapBottom - commPanelHeight),
+    );
 
     this.slickComm.setPinnedLayout(resultCommY, 212);
     if (isDeath) {
@@ -1379,8 +1412,8 @@ export class GameScene extends Phaser.Scene {
   ): void {
     const bg = this.add.graphics().setDepth(210);
     const labelText = this.add.text(x, y, label, {
-      fontFamily: 'monospace',
-      fontSize: `${Phaser.Math.Clamp(Math.round(height * 0.46), 13, 18)}px`,
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(Phaser.Math.Clamp(Math.round(height * 0.42), 14, 19)),
       color: `#${accentColor.toString(16).padStart(6, '0')}`,
       align: 'center',
       fontStyle: 'bold',
@@ -1425,15 +1458,15 @@ export class GameScene extends Phaser.Scene {
 
   private createPauseButton(): void {
     const layout = getLayout();
-    const buttonWidth = 44;
-    const buttonHeight = 28;
+    const buttonWidth = 52;
+    const buttonHeight = 34;
     const buttonX = layout.gameWidth - 16 - buttonWidth / 2;
-    const buttonY = 42;
+    const buttonY = 44;
 
     this.pauseButtonBg = this.add.graphics().setDepth(230);
     this.pauseButtonText = this.add.text(buttonX, buttonY, '||', {
-      fontFamily: 'monospace',
-      fontSize: '14px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(231);
@@ -1560,8 +1593,9 @@ export class GameScene extends Phaser.Scene {
     this.hidePauseMenu();
     const layout = getLayout();
     const centerX = layout.centerX;
-    const panelTop = layout.gameHeight * 0.12;
-    const panelHeight = layout.gameHeight * 0.76;
+    const panelMargin = 16;
+    const panelTop = panelMargin;
+    const panelHeight = layout.gameHeight - panelMargin * 2;
 
     const blocker = this.add.zone(0, 0, layout.gameWidth, layout.gameHeight)
       .setOrigin(0, 0)
@@ -1588,24 +1622,24 @@ export class GameScene extends Phaser.Scene {
     this.pauseUi.push(panel);
 
     const title = this.add.text(centerX, panelTop + 36, 'PAUSED', {
-      fontFamily: 'monospace',
-      fontSize: '34px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(34),
       color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221);
     this.pauseUi.push(title);
 
     const subtitle = this.add.text(centerX, panelTop + 72, 'RUN AT CRAWL // DANGER LIVE', {
-      fontFamily: 'monospace',
-      fontSize: '13px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(13),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.8);
     this.pauseUi.push(subtitle);
 
     const abandonText = this.add.text(centerX, panelTop + 116, 'ABANDON RUN', {
-      fontFamily: 'monospace',
-      fontSize: '18px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(18),
       color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
@@ -1619,8 +1653,8 @@ export class GameScene extends Phaser.Scene {
     this.pauseUi.push(abandonText);
 
     const abandonHint = this.add.text(centerX, panelTop + 142, 'RETURN TO MENU WITHOUT BANKING', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.65);
@@ -1634,8 +1668,8 @@ export class GameScene extends Phaser.Scene {
     this.pauseUi.push(divider);
 
     const settingsTitle = this.add.text(centerX, settingsY, 'SETTINGS', {
-      fontFamily: 'monospace',
-      fontSize: '16px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(16),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.7);
@@ -1652,8 +1686,8 @@ export class GameScene extends Phaser.Scene {
 
     // Screen shake toggle
     const shakeText = this.add.text(centerX, settingsY + 34, `SCREEN SHAKE: ${settings.screenShake ? 'ON' : 'OFF'}`, {
-      fontFamily: 'monospace',
-      fontSize: '14px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
       color: settings.screenShake ? gateColor : hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
@@ -1672,8 +1706,8 @@ export class GameScene extends Phaser.Scene {
 
     // Scanlines toggle
     const scanText = this.add.text(centerX, settingsY + 62, `SCANLINES: ${settings.scanlines ? 'ON' : 'OFF'}`, {
-      fontFamily: 'monospace',
-      fontSize: '14px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
       color: settings.scanlines ? gateColor : hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
@@ -1692,8 +1726,8 @@ export class GameScene extends Phaser.Scene {
     this.pauseUi.push(scanText);
 
     const musicText = this.add.text(centerX, musicY, `MUSIC: ${settings.musicEnabled ? 'ON' : 'OFF'}`, {
-      fontFamily: 'monospace',
-      fontSize: '14px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
       color: settings.musicEnabled ? gateColor : hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
@@ -1712,16 +1746,16 @@ export class GameScene extends Phaser.Scene {
     this.pauseUi.push(musicText);
 
     const musicBetaText = this.add.text(centerX, musicY + 16, '*BETA*', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.82);
     this.pauseUi.push(musicBetaText);
 
     const musicVolumeLabel = this.add.text(centerX, musicVolumeLabelY, 'MUSIC VOL', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.72);
@@ -1743,8 +1777,8 @@ export class GameScene extends Phaser.Scene {
     this.pauseUi.push(...musicVolumeSlider.getObjects());
 
     const fxVolumeLabel = this.add.text(centerX, fxVolumeLabelY, 'FX VOL', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.72);
@@ -1774,8 +1808,8 @@ export class GameScene extends Phaser.Scene {
       this.pauseUi.push(mDivider);
 
       const mTitle = this.add.text(centerX, missionDividerY + 16, 'MISSIONS', {
-        fontFamily: 'monospace',
-        fontSize: '16px',
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(16),
         color: hudColor,
         align: 'center',
       }).setOrigin(0.5).setDepth(221).setAlpha(0.7);
@@ -1796,8 +1830,8 @@ export class GameScene extends Phaser.Scene {
         this.pauseUi.push(cardBg);
 
         const label = this.add.text(50, my + 2, m.def.label, {
-          fontFamily: 'monospace',
-          fontSize: '11px',
+          fontFamily: UI_FONT,
+          fontSize: readableFontSize(11),
           color: done ? gateColor : hudColor,
         }).setDepth(221).setAlpha(done ? 0.9 : 0.7);
         this.pauseUi.push(label);
@@ -1806,16 +1840,16 @@ export class GameScene extends Phaser.Scene {
           ? `\u2713 DONE  +${m.def.reward}`
           : `${prog}/${m.def.target}`;
         const statusText = this.add.text(layout.gameWidth - 50, my + 2, status, {
-          fontFamily: 'monospace',
-          fontSize: '11px',
+          fontFamily: UI_FONT,
+          fontSize: readableFontSize(11),
           color: done ? gateColor : hudColor,
           align: 'right',
         }).setOrigin(1, 0).setDepth(221).setAlpha(done ? 0.9 : 0.7);
         this.pauseUi.push(statusText);
 
         const rewardHint = this.add.text(50, my + 17, `REWARD: +${m.def.reward}`, {
-          fontFamily: 'monospace',
-          fontSize: '9px',
+          fontFamily: UI_FONT,
+          fontSize: readableFontSize(9),
           color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
         }).setDepth(221).setAlpha(0.5);
         this.pauseUi.push(rewardHint);
@@ -1840,10 +1874,10 @@ export class GameScene extends Phaser.Scene {
 
   private refreshPauseUi(): void {
     const layout = getLayout();
-    const buttonWidth = 44;
-    const buttonHeight = 28;
+    const buttonWidth = 52;
+    const buttonHeight = 34;
     const buttonX = layout.gameWidth - 16 - buttonWidth / 2;
-    const buttonY = 42;
+    const buttonY = 44;
     const buttonVisible = (
       this.state === GameState.COUNTDOWN ||
       this.state === GameState.PLAYING ||

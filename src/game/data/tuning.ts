@@ -25,9 +25,11 @@ export const EXIT_GATE_INSET = 60;
 export const DRIFTER_SPEED_BASE = 70;
 export const DRIFTER_SPEED_MAX = 200;  // hard cap after bounces
 export const DRIFTER_RADIUS = 16;
-export const DRIFTER_MINING_RADIUS_MULT = 1.8;  // mining zone = radius * this
-export const DRIFTER_MINING_POINTS_MIN = 1;    // pts/sec at outer edge of mining zone
-export const DRIFTER_MINING_POINTS_MAX = 15;   // pts/sec when hugging the asteroid body
+export const DRIFTER_MINING_RADIUS_MULT = 2.8;  // mining zone = radius * this
+export const DRIFTER_MINING_POINTS_MIN = 5;    // pts/sec at outer edge of mining zone
+export const DRIFTER_MINING_POINTS_MAX = 30;   // pts/sec when hugging the asteroid body
+export const ASTEROID_DESTROY_BONUS = 20;      // pts dropped when asteroid destroyed in collision
+export const ASTEROID_DESTROY_DROP_CHANCE = 0.35; // 35% chance to drop
 export const DRIFTER_MINEABLE_CHANCE = 0.35;   // share of asteroids that show a mining ring and can be mined
 export const DRIFTER_SPAWN_RATE_BASE = 600;
 

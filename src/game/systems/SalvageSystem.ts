@@ -4,7 +4,7 @@ import {
   DRIFTER_MINING_POINTS_MIN,
   DRIFTER_MINING_POINTS_MAX,
 } from '../data/tuning';
-import { COLORS } from '../constants';
+import { COLORS, UI_FONT, readableFontSize } from '../constants';
 import type { Player } from '../entities/Player';
 import type { SalvageDebris } from '../entities/SalvageDebris';
 import type { DrifterHazard } from '../entities/DrifterHazard';
@@ -100,7 +100,7 @@ export class SalvageSystem {
         this.spawnFloatingText(
           `+${displayPts}`,
           color,
-          hasRareInRange ? '16px' : '13px',
+          readableFontSize(hasRareInRange ? 18 : 15),
           hasRareInRange,
         );
         this.salvageFloatTimer -= interval;
@@ -154,7 +154,7 @@ export class SalvageSystem {
       this.miningFloatTimer += delta;
       const miningInterval = dangerClose ? 350 : 600;
       if (this.miningFloatTimer >= miningInterval) {
-        const fontSize = dangerClose ? '15px' : '11px';
+        const fontSize = readableFontSize(dangerClose ? 17 : 13);
         this.spawnFloatingText(
           `+${Math.max(1, Math.round(this.miningFloatPoints))}`,
           '#ffaa00',
@@ -195,7 +195,7 @@ export class SalvageSystem {
       y,
       label,
       {
-        fontFamily: 'monospace',
+        fontFamily: UI_FONT,
         fontSize,
         color,
         fontStyle: bold ? 'bold' : 'normal',
@@ -206,7 +206,7 @@ export class SalvageSystem {
   }
 
   spawnRewardText(label: string, x: number, y: number, color = '#ffdd55'): void {
-    this.spawnFloatingText(label, color, '18px', true, x, y);
+    this.spawnFloatingText(label, color, readableFontSize(20), true, x, y);
   }
 
   isInRange(): boolean {

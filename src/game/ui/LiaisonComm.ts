@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { UI_FONT, readableFontSize } from '../constants';
 import { getLayout } from '../layout';
 import type { CompanyDef } from '../data/companyData';
 
@@ -8,6 +9,14 @@ interface LiaisonCommOptions {
   autoHideMs?: number;
 }
 
+const COMM_HEADER_X = 76;
+const COMM_HEADER_Y = 8;
+const COMM_PORTRAIT_X = 38;
+const COMM_MIN_HEIGHT = 96;
+const COMM_TEXT_GAP = 6;
+const COMM_RIGHT_PADDING = 16;
+const COMM_BOTTOM_PADDING = 14;
+
 /**
  * Parameterized comm panel for company liaison NPCs.
  * Portrait shape varies by company; colors come from CompanyDef.
@@ -15,57 +24,58 @@ interface LiaisonCommOptions {
 export class LiaisonComm {
   private scene: Phaser.Scene;
   private root: Phaser.GameObjects.Container;
+  private panel: Phaser.GameObjects.Graphics;
   private portrait: Phaser.GameObjects.Container;
   private text: Phaser.GameObjects.Text;
+  private nameText: Phaser.GameObjects.Text;
   private hideTimer: Phaser.Time.TimerEvent | null = null;
   private pulseTween: Phaser.Tweens.Tween;
   private scanTween: Phaser.Tweens.Tween;
   private autoHideMs: number;
   private readonly defaultY: number;
+  private readonly panelColor: number;
+  private readonly accentColor: number;
+  private readonly panelWidth: number;
   private currentY: number;
+  private panelHeight: number;
 
   constructor(scene: Phaser.Scene, company: CompanyDef, options: LiaisonCommOptions = {}) {
     this.scene = scene;
     this.autoHideMs = options.autoHideMs ?? 5400;
     const layout = getLayout();
 
-    const width = options.width ?? Math.min(layout.gameWidth - 96, 368);
-    const height = 60;
-    const x = (layout.gameWidth - width) / 2;
+    this.panelWidth = options.width ?? Math.min(layout.gameWidth - 96, 368);
+    this.panelHeight = COMM_MIN_HEIGHT;
+    const x = (layout.gameWidth - this.panelWidth) / 2;
     const y = 2;
     const depth = options.depth ?? 148;
     this.defaultY = y;
     this.currentY = y;
+    this.panelColor = company.color;
+    this.accentColor = company.accent;
 
-    const panelBg = darkenColor(company.color, 0.15);
-
-    const panel = scene.add.graphics();
-    panel.fillStyle(panelBg, 0.92);
-    panel.lineStyle(1, company.color, 0.5);
-    panel.fillRoundedRect(0, 0, width, height, 8);
-    panel.strokeRoundedRect(0, 0, width, height, 8);
-    panel.lineStyle(1, company.accent, 0.15);
-    panel.strokeRoundedRect(4, 4, width - 8, height - 8, 6);
+    this.panel = scene.add.graphics();
 
     this.portrait = this.createPortrait(scene, company);
-    this.portrait.setPosition(34, height / 2);
-    this.portrait.setScale(0.72);
+    this.portrait.setPosition(COMM_PORTRAIT_X, this.panelHeight / 2);
+    this.portrait.setScale(0.74);
 
-    const nameText = scene.add.text(64, 7, company.liaisonTitle, {
-      fontFamily: 'monospace',
-      fontSize: '12px',
+    this.nameText = scene.add.text(COMM_HEADER_X, COMM_HEADER_Y, company.liaisonTitle, {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
       color: colorStr(company.color),
     });
 
-    this.text = scene.add.text(64, 21, '', {
-      fontFamily: 'monospace',
-      fontSize: '14px',
+    this.text = scene.add.text(COMM_HEADER_X, 0, '', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(15),
       color: colorStr(company.color),
-      wordWrap: { width: width - 76 },
-      lineSpacing: 1,
+      wordWrap: { width: this.panelWidth - COMM_HEADER_X - COMM_RIGHT_PADDING },
+      lineSpacing: 2,
     });
 
-    this.root = scene.add.container(x, y, [panel, this.portrait, nameText, this.text]);
+    this.root = scene.add.container(x, y, [this.panel, this.portrait, this.nameText, this.text]);
+    this.redrawPanel();
     this.root.setDepth(depth);
     this.root.setAlpha(0);
     this.root.setVisible(false);
@@ -96,6 +106,7 @@ export class LiaisonComm {
     }
 
     this.text.setText(message);
+    this.redrawPanel();
     this.root.setVisible(true);
     this.scene.tweens.killTweensOf(this.root);
 
@@ -159,13 +170,35 @@ export class LiaisonComm {
     this.root.destroy(true);
   }
 
+  getPanelHeight(): number {
+    return this.panelHeight;
+  }
+
+  private redrawPanel(): void {
+    const panelBg = darkenColor(this.panelColor, 0.15);
+    const bodyY = this.nameText.y + this.nameText.height + COMM_TEXT_GAP;
+    this.text.setPosition(COMM_HEADER_X, bodyY);
+    this.panelHeight = Math.max(COMM_MIN_HEIGHT, Math.ceil(bodyY + this.text.height + COMM_BOTTOM_PADDING));
+
+    this.panel.clear();
+    this.panel.fillStyle(panelBg, 0.92);
+    this.panel.lineStyle(1, this.panelColor, 0.5);
+    this.panel.fillRoundedRect(0, 0, this.panelWidth, this.panelHeight, 8);
+    this.panel.strokeRoundedRect(0, 0, this.panelWidth, this.panelHeight, 8);
+    this.panel.lineStyle(1, this.accentColor, 0.15);
+    this.panel.strokeRoundedRect(4, 4, this.panelWidth - 8, this.panelHeight - 8, 6);
+
+    this.portrait.setPosition(COMM_PORTRAIT_X, this.panelHeight / 2);
+    this.root.setSize(this.panelWidth, this.panelHeight);
+  }
+
   private createPortrait(scene: Phaser.Scene, company: CompanyDef): Phaser.GameObjects.Container {
     return createLiaisonPortrait(scene, company);
   }
 }
 
 /** Shared portrait factory — used by LiaisonComm and MissionSelectScene. */
-function createLiaisonPortrait(scene: Phaser.Scene, company: CompanyDef): Phaser.GameObjects.Container {
+export function createLiaisonPortrait(scene: Phaser.Scene, company: CompanyDef): Phaser.GameObjects.Container {
   const c = company.color;
   const a = company.accent;
 

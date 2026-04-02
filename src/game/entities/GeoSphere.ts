@@ -154,8 +154,8 @@ export class GeoSphere {
       const pb = projected[b];
       const avgZ = (pa.z + pb.z) / 2;
       // Map z from [-1,1] to alpha range — back edges dimmer
-      const alpha = 0.03 + (avgZ + 1) * 0.04;
-      g.lineStyle(0.75, COLORS.PLAYER, alpha);
+      const alpha = 0.08 + (avgZ + 1) * 0.10;
+      g.lineStyle(1, COLORS.ENEMY, alpha);
       g.lineBetween(pa.x, pa.y, pb.x, pb.y);
     }
   }

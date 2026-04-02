@@ -195,7 +195,7 @@ export class DrifterHazard {
     const r = this.radius;
     const mr = this.miningRadius;
 
-    const color = this.inverted ? 0x000000 : COLORS.HAZARD;
+    const color = this.inverted ? 0x000000 : (this.isMineable ? COLORS.HAZARD : COLORS.HAZARD_INERT);
     const miningColor = this.inverted ? 0x000000 : 0xffaa00;
 
     if (this.isMineable && this.radiusScale >= 1.5) {
@@ -230,8 +230,8 @@ export class DrifterHazard {
     g.closePath();
     g.strokePath();
 
-    // Subtle hologram fill
-    g.fillStyle(color, 0.05);
+    // Solid fill
+    g.fillStyle(color, 0.4);
     g.beginPath();
     for (let i = 0; i < this.vertices.length; i++) {
       const [rx, ry] = rotatePoint(this.vertices[i][0], this.vertices[i][1], this.angle);
@@ -242,7 +242,7 @@ export class DrifterHazard {
     g.fillPath();
 
     // Inner detail
-    g.fillStyle(color, 0.2);
+    g.fillStyle(color, 0.5);
     g.fillCircle(0, 0, r * 0.25);
 
     // HP bar (shows when damaged)

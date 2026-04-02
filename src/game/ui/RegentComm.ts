@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { UI_FONT, readableFontSize } from '../constants';
 import { getLayout } from '../layout';
 
 const REGENT_COLOR = 0xff3366;
@@ -10,9 +11,18 @@ interface RegentCommOptions {
   autoHideMs?: number;
 }
 
+const COMM_HEADER_X = 76;
+const COMM_HEADER_Y = 8;
+const COMM_PORTRAIT_X = 38;
+const COMM_MIN_HEIGHT = 96;
+const COMM_TEXT_GAP = 6;
+const COMM_RIGHT_PADDING = 16;
+const COMM_BOTTOM_PADDING = 14;
+
 export class RegentComm {
   private scene: Phaser.Scene;
   private root: Phaser.GameObjects.Container;
+  private panel: Phaser.GameObjects.Graphics;
   private portrait: Phaser.GameObjects.Container;
   private text: Phaser.GameObjects.Text;
   private nameText: Phaser.GameObjects.Text;
@@ -22,7 +32,9 @@ export class RegentComm {
   private autoHideMs: number;
   private readonly defaultY: number;
   private readonly defaultDepth: number;
+  private readonly panelWidth: number;
   private currentY: number;
+  private panelHeight: number;
   private wipeIn = false;
 
   constructor(scene: Phaser.Scene, options: RegentCommOptions = {}) {
@@ -30,42 +42,37 @@ export class RegentComm {
     this.autoHideMs = options.autoHideMs ?? 5600;
     const layout = getLayout();
 
-    const width = options.width ?? Math.min(layout.gameWidth - 96, 368);
-    const height = 60;
-    const x = (layout.gameWidth - width) / 2;
+    this.panelWidth = options.width ?? Math.min(layout.gameWidth - 96, 368);
+    this.panelHeight = COMM_MIN_HEIGHT;
+    const x = (layout.gameWidth - this.panelWidth) / 2;
     const y = 2;
     const depth = options.depth ?? 150;
     this.defaultY = y;
     this.defaultDepth = depth;
     this.currentY = y;
 
-    const panel = scene.add.graphics();
-    panel.fillStyle(0x180808, 0.92);
-    panel.lineStyle(1, REGENT_COLOR, 0.5);
-    panel.fillRoundedRect(0, 0, width, height, 8);
-    panel.strokeRoundedRect(0, 0, width, height, 8);
-    panel.lineStyle(1, REGENT_ACCENT, 0.15);
-    panel.strokeRoundedRect(4, 4, width - 8, height - 8, 6);
+    this.panel = scene.add.graphics();
 
     this.portrait = this.createPortrait(scene);
-    this.portrait.setPosition(34, height / 2);
-    this.portrait.setScale(0.72);
+    this.portrait.setPosition(COMM_PORTRAIT_X, this.panelHeight / 2);
+    this.portrait.setScale(0.74);
 
-    this.nameText = scene.add.text(64, 7, 'REGENT // PATROL', {
-      fontFamily: 'monospace',
-      fontSize: '12px',
+    this.nameText = scene.add.text(COMM_HEADER_X, COMM_HEADER_Y, 'REGENT // PATROL', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
       color: `#${REGENT_COLOR.toString(16).padStart(6, '0')}`,
     });
 
-    this.text = scene.add.text(64, 21, '', {
-      fontFamily: 'monospace',
-      fontSize: '14px',
+    this.text = scene.add.text(COMM_HEADER_X, 0, '', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(15),
       color: `#${REGENT_COLOR.toString(16).padStart(6, '0')}`,
-      wordWrap: { width: width - 76 },
-      lineSpacing: 1,
+      wordWrap: { width: this.panelWidth - COMM_HEADER_X - COMM_RIGHT_PADDING },
+      lineSpacing: 2,
     });
 
-    this.root = scene.add.container(x, y, [panel, this.portrait, this.nameText, this.text]);
+    this.root = scene.add.container(x, y, [this.panel, this.portrait, this.nameText, this.text]);
+    this.redrawPanel();
     this.root.setDepth(depth);
     this.root.setAlpha(0);
     this.root.setVisible(false);
@@ -96,19 +103,18 @@ export class RegentComm {
     }
 
     this.text.setText(message);
+    this.redrawPanel();
     this.root.setVisible(true);
     this.scene.tweens.killTweensOf(this.root);
 
     if (this.wipeIn) {
       // Horizontal wipe: slide from off-screen right into center
-      const layout = getLayout();
-      const width = Math.min(layout.gameWidth - 96, 368);
-      this.root.setX(layout.gameWidth + 20);
+      this.root.setX(getLayout().gameWidth + 20);
       this.root.setY(this.currentY);
       this.root.setAlpha(1);
       this.scene.tweens.add({
         targets: this.root,
-        x: (layout.gameWidth - width) / 2,
+        x: (getLayout().gameWidth - this.panelWidth) / 2,
         duration: 280,
         ease: 'Back.Out',
       });
@@ -182,6 +188,27 @@ export class RegentComm {
     this.pulseTween.stop();
     this.scanTween.stop();
     this.root.destroy(true);
+  }
+
+  getPanelHeight(): number {
+    return this.panelHeight;
+  }
+
+  private redrawPanel(): void {
+    const bodyY = this.nameText.y + this.nameText.height + COMM_TEXT_GAP;
+    this.text.setPosition(COMM_HEADER_X, bodyY);
+    this.panelHeight = Math.max(COMM_MIN_HEIGHT, Math.ceil(bodyY + this.text.height + COMM_BOTTOM_PADDING));
+
+    this.panel.clear();
+    this.panel.fillStyle(0x180808, 0.92);
+    this.panel.lineStyle(1, REGENT_COLOR, 0.5);
+    this.panel.fillRoundedRect(0, 0, this.panelWidth, this.panelHeight, 8);
+    this.panel.strokeRoundedRect(0, 0, this.panelWidth, this.panelHeight, 8);
+    this.panel.lineStyle(1, REGENT_ACCENT, 0.15);
+    this.panel.strokeRoundedRect(4, 4, this.panelWidth - 8, this.panelHeight - 8, 6);
+
+    this.portrait.setPosition(COMM_PORTRAIT_X, this.panelHeight / 2);
+    this.root.setSize(this.panelWidth, this.panelHeight);
   }
 
   private createPortrait(scene: Phaser.Scene): Phaser.GameObjects.Container {

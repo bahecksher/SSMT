@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { UI_FONT, readableFontSize } from '../constants';
 
 interface SettingsSliderOptions {
   scene: Phaser.Scene;
@@ -40,13 +41,13 @@ export class SettingsSlider {
 
     this.graphics = this.scene.add.graphics().setDepth(this.depth);
     this.valueText = this.scene.add.text(this.left + this.width + 22, this.y, '0%', {
-      fontFamily: 'monospace',
-      fontSize: options.fontSize ?? '9px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(options.fontSize ?? 11),
       color: `#${this.accentColor.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(this.depth + 1);
 
-    this.hit = this.scene.add.zone(this.left, this.y - 12, this.width, 24)
+    this.hit = this.scene.add.zone(this.left, this.y - 15, this.width, 30)
       .setOrigin(0, 0)
       .setDepth(this.depth + 2)
       .setInteractive({ useHandCursor: true });
@@ -110,27 +111,27 @@ export class SettingsSlider {
 
   private redraw(): void {
     const fillWidth = this.width * this.value;
-    const trackTop = this.y - 2;
+    const trackTop = this.y - 3;
     const knobX = this.left + fillWidth;
 
     this.graphics.clear();
     this.graphics.fillStyle(0x020a08, 0.9);
     this.graphics.lineStyle(1, 0x00ffcc, 0.26);
-    this.graphics.fillRoundedRect(this.left, trackTop, this.width, 4, 2);
-    this.graphics.strokeRoundedRect(this.left, trackTop, this.width, 4, 2);
+    this.graphics.fillRoundedRect(this.left, trackTop, this.width, 6, 3);
+    this.graphics.strokeRoundedRect(this.left, trackTop, this.width, 6, 3);
 
     this.graphics.fillStyle(this.accentColor, 0.18);
-    this.graphics.fillRoundedRect(this.left, trackTop, this.width, 4, 2);
+    this.graphics.fillRoundedRect(this.left, trackTop, this.width, 6, 3);
 
     if (fillWidth > 0) {
       this.graphics.fillStyle(this.accentColor, 0.95);
-      this.graphics.fillRoundedRect(this.left, trackTop, fillWidth, 4, 2);
+      this.graphics.fillRoundedRect(this.left, trackTop, fillWidth, 6, 3);
     }
 
     this.graphics.fillStyle(0x020a08, 1);
     this.graphics.lineStyle(1.2, this.accentColor, 0.92);
-    this.graphics.fillCircle(knobX, this.y, 5);
-    this.graphics.strokeCircle(knobX, this.y, 5);
+    this.graphics.fillCircle(knobX, this.y, 6);
+    this.graphics.strokeCircle(knobX, this.y, 6);
 
     this.valueText.setText(`${Math.round(this.value * 100)}%`);
   }

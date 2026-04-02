@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENE_KEYS, COLORS } from '../constants';
+import { SCENE_KEYS, COLORS, UI_FONT, readableFontSize } from '../constants';
 import { getLayout, setLayoutSize } from '../layout';
 import { loadOrGenerateMissions, loadMissionSave, MAX_REROLLS, saveMissionSelection } from '../systems/MissionSystem';
 import { SaveSystem } from '../systems/SaveSystem';
@@ -19,7 +19,14 @@ import { refreshMusicForSettings, setMissionMusic } from '../systems/MusicSystem
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { HologramOverlay } from '../ui/HologramOverlay';
+import { createLiaisonPortrait } from '../ui/LiaisonComm';
 import { SettingsSlider } from '../ui/SettingsSlider';
+import { SalvageDebris } from '../entities/SalvageDebris';
+import { DrifterHazard } from '../entities/DrifterHazard';
+import { NPCShip } from '../entities/NPCShip';
+import { GeoSphere } from '../entities/GeoSphere';
+import { DRIFTER_SPEED_BASE } from '../data/tuning';
+import { pickAsteroidSize } from '../data/phaseConfig';
 
 interface HandoffData {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
@@ -59,10 +66,18 @@ type MissionButton = {
 const CARD_HEIGHT = 68;
 const CARD_GAP = 8;
 const CARD_MARGIN_X = 32;
-const FAVOR_CARD_HEIGHT = 100;
+const FAVOR_CARD_HEIGHT = 122;
 const FAVOR_CARD_GAP = 8;
 const FAVOR_SECTION_GAP = 10;
 const REROLL_BASE_COST = 200;
+const BG_MAX_DEBRIS = 2;
+const BG_MAX_DRIFTERS = 5;
+const BG_MAX_NPCS = 2;
+const BG_DRIFTER_SPAWN_MS = 800;
+const BG_DEBRIS_SPAWN_MS = 2000;
+const BG_NPC_SPAWN_MS = 2500;
+const BACKGROUND_STARFIELD_OVERSCAN = 96;
+const BACKGROUND_STARFIELD_COUNT = 170;
 
 export class MissionSelectScene extends Phaser.Scene {
   private saveSystem!: SaveSystem;
@@ -89,6 +104,13 @@ export class MissionSelectScene extends Phaser.Scene {
   private musicVolumeSlider!: SettingsSlider;
   private fxVolumeSlider!: SettingsSlider;
   private settingsOpen = false;
+  private bgDebris: SalvageDebris[] = [];
+  private bgDrifters: DrifterHazard[] = [];
+  private bgNpcs: NPCShip[] = [];
+  private geoSphere!: GeoSphere;
+  private drifterTimer = 0;
+  private debrisTimer = 0;
+  private npcTimer = 0;
 
   constructor() {
     super(SCENE_KEYS.MISSION_SELECT);
@@ -107,36 +129,49 @@ export class MissionSelectScene extends Phaser.Scene {
     this.missions = loadOrGenerateMissions();
     this.selectedFavorIds.clear();
     this.rerollsUsedThisVisit = 0;
+    this.bgDebris = [];
+    this.bgDrifters = [];
+    this.bgNpcs = [];
+    this.drifterTimer = 0;
+    this.debrisTimer = 0;
+    this.npcTimer = 0;
 
     const saved = loadMissionSave();
     this.rerollsRemaining = saved.rerollsRemaining ?? MAX_REROLLS;
 
     const starfield = this.add.graphics().setDepth(-1);
     starfield.fillStyle(0x020806, 1);
-    starfield.fillRect(0, 0, layout.gameWidth, layout.gameHeight);
-    for (let i = 0; i < 120; i++) {
-      const sx = Phaser.Math.Between(0, layout.gameWidth);
-      const sy = Phaser.Math.Between(0, layout.gameHeight);
-      const brightness = Phaser.Math.FloatBetween(0.1, 0.35);
-      const size = Phaser.Math.FloatBetween(0.5, 1.1);
+    starfield.fillRect(
+      -BACKGROUND_STARFIELD_OVERSCAN,
+      -BACKGROUND_STARFIELD_OVERSCAN,
+      layout.gameWidth + BACKGROUND_STARFIELD_OVERSCAN * 2,
+      layout.gameHeight + BACKGROUND_STARFIELD_OVERSCAN * 2,
+    );
+    for (let i = 0; i < BACKGROUND_STARFIELD_COUNT; i++) {
+      const sx = Phaser.Math.Between(-BACKGROUND_STARFIELD_OVERSCAN, layout.gameWidth + BACKGROUND_STARFIELD_OVERSCAN);
+      const sy = Phaser.Math.Between(-BACKGROUND_STARFIELD_OVERSCAN, layout.gameHeight + BACKGROUND_STARFIELD_OVERSCAN);
+      const brightness = Phaser.Math.FloatBetween(0.1, 0.4);
+      const size = Phaser.Math.FloatBetween(0.5, 1.2);
       const starColor = Math.random() < 0.6 ? COLORS.PLAYER : 0xffffff;
       starfield.fillStyle(starColor, brightness);
       starfield.fillCircle(sx, sy, size);
     }
+    this.geoSphere = new GeoSphere(this);
+    this.restoreBackgroundEntities();
 
     this.hologramOverlay = new HologramOverlay(this);
     this.hologramOverlay.setEnabled(getSettings().scanlines);
 
     this.add.text(layout.centerX, briefing.titleY, 'MISSION BRIEFING', {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '20px' : '22px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 22 : 24),
       color: colorStr(COLORS.HUD),
       align: 'center',
     }).setOrigin(0.5).setDepth(10);
 
     this.add.text(layout.centerX, briefing.subtitleY, 'TAP TO SELECT', {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '9px' : '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 9 : 10),
       color: colorStr(COLORS.HUD),
       align: 'center',
     }).setOrigin(0.5).setDepth(10).setAlpha(0.6);
@@ -166,18 +201,18 @@ export class MissionSelectScene extends Phaser.Scene {
     const missionToRerollGap = tight ? 8 : compact ? 12 : 14;
     const rerollHeight = compact ? 28 : 32;
     const rerollY = cardTop + cardHeight * 3 + cardGap * 2 + missionToRerollGap;
-    const favorCardGap = tight ? 6 : compact ? 8 : FAVOR_CARD_GAP + 2;
+    const favorCardGap = tight ? 4 : compact ? 6 : FAVOR_CARD_GAP;
     const rerollToWalletGap = tight ? 9 : compact ? 12 : FAVOR_SECTION_GAP + 4;
     const walletToFavorGap = tight ? 12 : compact ? 16 : 18;
     const favorHeaderY = rerollY + rerollHeight + rerollToWalletGap;
     const favorGridTop = favorHeaderY + walletToFavorGap;
     const deployButtonWidth = compact ? 184 : 200;
     const deployButtonHeight = compact ? 40 : 46;
-    const deployY = layout.gameHeight - (compact ? 40 : 58);
+    const deployY = layout.gameHeight - (compact ? 34 : 50);
     const favorCardWidth = cardWidth;
-    const baseFavorCardHeight = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.096), 86, FAVOR_CARD_HEIGHT);
-    const minFavorCardHeight = tight ? 52 : compact ? 58 : 68;
-    const favorToDeployGap = tight ? 8 : compact ? 12 : 14;
+    const baseFavorCardHeight = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.108), 92, FAVOR_CARD_HEIGHT);
+    const minFavorCardHeight = tight ? 56 : compact ? 64 : 76;
+    const favorToDeployGap = tight ? 4 : compact ? 8 : 10;
     const favorCardsAvailableHeight = Math.floor((deployY - deployButtonHeight / 2) - favorToDeployGap - favorGridTop);
     const stackedFavorCardHeight = Math.floor(
       (favorCardsAvailableHeight - favorCardGap * (COMPANY_IDS.length - 1)) / COMPANY_IDS.length,
@@ -259,16 +294,16 @@ export class MissionSelectScene extends Phaser.Scene {
 
     if (isAccepted) {
       const check = this.add.text(cardLeft + cardWidth - 14, cardTop + 7, '\u2713', {
-        fontFamily: 'monospace',
-        fontSize: briefing.compact ? '14px' : '16px',
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(briefing.compact ? 16 : 18),
         color: colorStr(companyColor),
       }).setOrigin(1, 0).setDepth(depth + 1);
       this.cardUi[index].push(check);
     }
 
     const label = this.add.text(cardLeft + 14, cardTop + (briefing.compact ? 13 : 14), mission.def.label, {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '12px' : '14px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 14 : 16),
       color: colorStr(companyColor),
       wordWrap: { width: cardWidth - 28 },
     }).setDepth(depth + 1);
@@ -277,15 +312,15 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const footerY = cardTop + briefing.cardHeight - (briefing.compact ? 8 : 9);
     const companyTag = this.add.text(cardLeft + 14, footerY, `${companyDef.name} +${REP_PER_TIER[mission.def.tier]} REP`, {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '9px' : '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 9 : 10),
       color: colorStr(companyColor),
     }).setOrigin(0, 1).setDepth(depth + 1).setAlpha(0.76);
     this.cardUi[index].push(companyTag);
 
     const rewardText = this.add.text(cardLeft + cardWidth - 14, footerY, `+${mission.def.reward}c`, {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '11px' : '12px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 11 : 12),
       fontStyle: 'bold',
       color: colorStr(companyColor),
     }).setOrigin(1, 1).setDepth(depth + 1);
@@ -318,8 +353,8 @@ export class MissionSelectScene extends Phaser.Scene {
     const labelStr = hasRerolls ? `REROLL ${rerollCost}c (${this.rerollsRemaining})` : 'NO REROLLS';
     const color = canReroll ? COLORS.HUD : COLORS.HAZARD;
     const label = this.add.text(layout.centerX, rerollY + btnHeight / 2, labelStr, {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '11px' : '12px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 11 : 12),
       color: colorStr(color),
       align: 'center',
     }).setOrigin(0.5).setDepth(11).setAlpha(canReroll ? 0.8 : 0.4);
@@ -344,8 +379,8 @@ export class MissionSelectScene extends Phaser.Scene {
     this.navUi = [];
 
     const briefing = this.getBriefingLayoutConfig();
-    const btnWidth = briefing.compact ? 56 : 62;
-    const btnHeight = briefing.compact ? 22 : 24;
+    const btnWidth = briefing.compact ? 68 : 76;
+    const btnHeight = briefing.compact ? 28 : 30;
     const btnX = briefing.cardMarginX + btnWidth / 2 - 4;
     const btnY = briefing.compact ? 24 : 28;
 
@@ -357,8 +392,8 @@ export class MissionSelectScene extends Phaser.Scene {
     this.navUi.push(bg);
 
     const label = this.add.text(btnX, btnY, 'MENU', {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '10px' : '11px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 10 : 11),
       color: colorStr(COLORS.HUD),
       align: 'center',
     }).setOrigin(0.5).setDepth(11).setAlpha(0.82);
@@ -381,33 +416,33 @@ export class MissionSelectScene extends Phaser.Scene {
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
     const hudColor = colorStr(COLORS.HUD);
-    const buttonWidth = briefing.compact ? 74 : 82;
+    const buttonWidth = briefing.compact ? 92 : 102;
     const buttonCenterX = layout.gameWidth - briefing.cardMarginX - buttonWidth / 2 + 4;
-    const buttonCenterY = briefing.compact ? 24 : 28;
-    const panelWidth = briefing.compact ? 186 : 194;
-    const panelHeight = 212;
+    const buttonCenterY = briefing.compact ? 26 : 30;
+    const panelWidth = briefing.compact ? 216 : 228;
+    const panelHeight = 236;
     const panelLeft = layout.gameWidth - panelWidth - 24;
-    const panelTop = buttonCenterY + 18;
-    const rowOneY = panelTop + 26;
-    const rowTwoY = panelTop + 58;
-    const rowThreeY = panelTop + 90;
-    const musicVolumeLabelY = panelTop + 122;
-    const musicVolumeY = panelTop + 138;
-    const fxVolumeLabelY = panelTop + 164;
-    const fxVolumeY = panelTop + 180;
-    const offX = panelLeft + panelWidth - 26;
-    const onX = offX - 44;
-    const sliderLeft = panelLeft + 66;
-    const sliderWidth = panelWidth - 100;
+    const panelTop = buttonCenterY + 22;
+    const rowOneY = panelTop + 30;
+    const rowTwoY = panelTop + 66;
+    const rowThreeY = panelTop + 102;
+    const musicVolumeLabelY = panelTop + 142;
+    const musicVolumeY = panelTop + 160;
+    const fxVolumeLabelY = panelTop + 188;
+    const fxVolumeY = panelTop + 206;
+    const offX = panelLeft + panelWidth - 30;
+    const onX = offX - 52;
+    const sliderLeft = panelLeft + 80;
+    const sliderWidth = panelWidth - 122;
 
     this.settingsButton = this.createUiButton(
       buttonCenterX,
       buttonCenterY,
       buttonWidth,
-      briefing.compact ? 22 : 24,
+      briefing.compact ? 28 : 32,
       'SETTINGS',
       11,
-      '10px',
+      readableFontSize(10),
       () => this.setSettingsOpen(!this.settingsOpen),
     );
 
@@ -437,53 +472,53 @@ export class MissionSelectScene extends Phaser.Scene {
     });
 
     const shakeLabel = this.add.text(panelLeft + 14, rowOneY, 'SHAKE', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(20);
 
     const scanLabel = this.add.text(panelLeft + 14, rowTwoY, 'SCAN', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(20);
 
     const musicLabel = this.add.text(panelLeft + 14, rowThreeY, 'MUSIC', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(20);
 
     const musicBetaLabel = this.add.text(panelLeft + 48, rowThreeY, '*BETA*', {
-      fontFamily: 'monospace',
-      fontSize: '9px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(9),
       color: colorStr(COLORS.HAZARD),
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(20).setAlpha(0.9);
 
     const musicVolumeLabel = this.add.text(panelLeft + 14, musicVolumeLabelY, 'MUSIC VOL', {
-      fontFamily: 'monospace',
-      fontSize: '9px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(9),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(20).setAlpha(0.72);
 
     const fxVolumeLabel = this.add.text(panelLeft + 14, fxVolumeLabelY, 'FX VOL', {
-      fontFamily: 'monospace',
-      fontSize: '9px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(9),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(20).setAlpha(0.72);
 
-    this.shakeOnButton = this.createUiButton(onX, rowOneY, 34, 20, 'ON', 20, '10px', () => this.applySettings({ screenShake: true }));
-    this.shakeOffButton = this.createUiButton(offX, rowOneY, 38, 20, 'OFF', 20, '10px', () => this.applySettings({ screenShake: false }));
-    this.scanOnButton = this.createUiButton(onX, rowTwoY, 34, 20, 'ON', 20, '10px', () => this.applySettings({ scanlines: true }));
-    this.scanOffButton = this.createUiButton(offX, rowTwoY, 38, 20, 'OFF', 20, '10px', () => this.applySettings({ scanlines: false }));
-    this.musicOnButton = this.createUiButton(onX, rowThreeY, 34, 20, 'ON', 20, '10px', () => this.applySettings({ musicEnabled: true }));
-    this.musicOffButton = this.createUiButton(offX, rowThreeY, 38, 20, 'OFF', 20, '10px', () => this.applySettings({ musicEnabled: false }));
+    this.shakeOnButton = this.createUiButton(onX, rowOneY, 42, 24, 'ON', 20, readableFontSize(10), () => this.applySettings({ screenShake: true }));
+    this.shakeOffButton = this.createUiButton(offX, rowOneY, 46, 24, 'OFF', 20, readableFontSize(10), () => this.applySettings({ screenShake: false }));
+    this.scanOnButton = this.createUiButton(onX, rowTwoY, 42, 24, 'ON', 20, readableFontSize(10), () => this.applySettings({ scanlines: true }));
+    this.scanOffButton = this.createUiButton(offX, rowTwoY, 46, 24, 'OFF', 20, readableFontSize(10), () => this.applySettings({ scanlines: false }));
+    this.musicOnButton = this.createUiButton(onX, rowThreeY, 42, 24, 'ON', 20, readableFontSize(10), () => this.applySettings({ musicEnabled: true }));
+    this.musicOffButton = this.createUiButton(offX, rowThreeY, 46, 24, 'OFF', 20, readableFontSize(10), () => this.applySettings({ musicEnabled: false }));
     this.musicVolumeSlider = new SettingsSlider({
       scene: this,
       left: sliderLeft,
@@ -553,7 +588,7 @@ export class MissionSelectScene extends Phaser.Scene {
   ): MissionButton {
     const bg = this.add.graphics().setDepth(depth);
     const text = this.add.text(centerX, centerY, label, {
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT,
       fontSize,
       color: colorStr(COLORS.HUD),
       align: 'center',
@@ -695,8 +730,8 @@ export class MissionSelectScene extends Phaser.Scene {
     const headerY = this.getFavorSectionTop();
 
     const walletText = this.add.text(layout.centerX, headerY, `WALLET: ${walletCredits}c`, {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '15px' : '16px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 15 : 16),
       fontStyle: 'bold',
       color: colorStr(COLORS.SALVAGE),
       align: 'center',
@@ -707,7 +742,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const gridTop = briefing.favorGridTop;
     const cardWidth = briefing.favorCardWidth;
-    const denseFavorLayout = briefing.favorCardHeight <= 64;
+    const denseFavorLayout = briefing.favorCardHeight <= 68;
 
     for (let i = 0; i < COMPANY_IDS.length; i++) {
       const companyId = COMPANY_IDS[i];
@@ -721,7 +756,6 @@ export class MissionSelectScene extends Phaser.Scene {
       const canAfford = offer ? selected || (selectedCost + offer.cost <= walletCredits) : false;
       const shortfall = offer && !selected ? Math.max(0, selectedCost + offer.cost - walletCredits) : 0;
       const borderColor = COLORS.HUD;
-      const textLeft = cardLeft + 14;
       const progressLeft = cardLeft + 12;
       const progressWidth = cardWidth - 24;
       const progressFill = standing.nextRepRequired
@@ -730,6 +764,31 @@ export class MissionSelectScene extends Phaser.Scene {
       const statusLabel = selected ? 'SELECTED' : !offer ? 'LOCKED' : !canAfford ? 'SHORT' : null;
       const statusColor = selected ? COLORS.GATE : !offer || !canAfford ? COLORS.HAZARD : company.color;
       const statusTextColor = !offer || !canAfford ? COLORS.HAZARD : company.color;
+      const portraitLeftInset = denseFavorLayout ? 10 : 12;
+      const portraitTopClearance = denseFavorLayout ? 8 : 10;
+      const portraitBottomPadding = denseFavorLayout ? 6 : 8;
+      const portraitRadius = Phaser.Math.Clamp(
+        Math.floor((briefing.favorCardHeight - portraitTopClearance - portraitBottomPadding) / 2),
+        denseFavorLayout ? 16 : briefing.compact ? 20 : 24,
+        42,
+      );
+      const portraitCenterX = cardLeft + portraitLeftInset + portraitRadius;
+      const portraitCenterY = cardTop + portraitTopClearance + portraitRadius;
+      const portraitScale = Phaser.Math.Clamp(
+        (portraitRadius * 2 - 8) / 56,
+        denseFavorLayout ? 0.56 : 0.68,
+        1.18,
+      );
+      const textLeft = portraitCenterX + portraitRadius + (denseFavorLayout ? 10 : 14);
+      const badgeReserve = statusLabel ? (denseFavorLayout ? 62 : briefing.compact ? 72 : 82) : 14;
+      const textRight = cardLeft + cardWidth - badgeReserve;
+      const textWidth = Math.max(132, textRight - textLeft);
+      const contentTop = cardTop + (denseFavorLayout ? 5 : briefing.compact ? 7 : 9);
+      const headerGap = denseFavorLayout ? 0 : 2;
+      const sectionGap = denseFavorLayout ? 1 : 3;
+      const standingAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.42 : 0.46));
+      const offerAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.63 : 0.66));
+      const detailAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.8 : 0.82));
 
       const bg = this.add.graphics().setDepth(10);
       bg.fillStyle(COLORS.BG, offer ? 0.92 : 0.84);
@@ -750,34 +809,71 @@ export class MissionSelectScene extends Phaser.Scene {
       }
       this.favorUi.push(bg);
 
+      const portraitFrame = this.add.graphics().setDepth(10.5);
+      portraitFrame.fillStyle(COLORS.BG, 0.86);
+      portraitFrame.lineStyle(1.1, company.color, offer ? 0.42 : 0.24);
+      portraitFrame.fillCircle(portraitCenterX, portraitCenterY, portraitRadius);
+      portraitFrame.strokeCircle(portraitCenterX, portraitCenterY, portraitRadius);
+      portraitFrame.lineStyle(1, company.accent, offer ? 0.22 : 0.14);
+      portraitFrame.strokeCircle(portraitCenterX, portraitCenterY, Math.max(8, portraitRadius - 4));
+      this.favorUi.push(portraitFrame);
+
+      const portrait = createLiaisonPortrait(this, company)
+        .setPosition(portraitCenterX, portraitCenterY)
+        .setScale(portraitScale)
+        .setDepth(11)
+        .setAlpha(offer ? 0.96 : 0.66);
+      this.favorUi.push(portrait);
+
       if (statusLabel) {
-        const badgeTop = denseFavorLayout
-          ? cardTop + 6
-          : cardTop + briefing.favorCardHeight - (briefing.compact ? 24 : 26);
+        const badgeTop = cardTop + (denseFavorLayout ? 5 : 7);
         this.drawFavorBadge(cardLeft + cardWidth - 8, badgeTop, statusLabel, statusColor, statusTextColor, briefing.compact);
       }
 
-      const title = this.add.text(textLeft, cardTop + (denseFavorLayout ? 5 : briefing.compact ? 6 : 7), `${company.name} // ${company.liaison}`, {
-        fontFamily: 'monospace',
-        fontSize: denseFavorLayout ? '9px' : briefing.compact ? '10px' : '11px',
+      const companyText = this.add.text(textLeft, contentTop, company.name, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(denseFavorLayout ? 10 : briefing.compact ? 12 : 13),
         fontStyle: 'bold',
         color: colorStr(company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
-        wordWrap: { width: cardWidth - 28 },
+        wordWrap: { width: textWidth },
       }).setDepth(11).setAlpha(0.96);
-      title.setLineSpacing(-1);
-      this.favorUi.push(title);
+      companyText.setLineSpacing(-1);
+      this.favorUi.push(companyText);
+
+      const liaisonText = this.add.text(
+        textLeft,
+        companyText.y + companyText.height + headerGap,
+        `LIAISON // ${company.liaison}`,
+        {
+          fontFamily: UI_FONT,
+          fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 9 : 10),
+          fontStyle: 'bold',
+          color: colorStr(company.color),
+          stroke: colorStr(COLORS.BG),
+          strokeThickness: 2,
+          wordWrap: { width: textWidth },
+        },
+      ).setDepth(11).setAlpha(offer ? 0.88 : 0.76);
+      liaisonText.setLineSpacing(-1);
+      this.favorUi.push(liaisonText);
+
+      const standingY = Math.max(
+        liaisonText.y + liaisonText.height + sectionGap,
+        standingAnchorY,
+      );
 
       const standingLine = standing.nextRepRequired
         ? `${standing.label} // ${rep} REP // NEXT ${standing.nextRepRequired}`
         : `${standing.label} // ${rep} REP // MAX`;
-      const standingText = this.add.text(textLeft, cardTop + (denseFavorLayout ? 19 : briefing.compact ? 29 : 32), standingLine, {
-        fontFamily: 'monospace',
-        fontSize: denseFavorLayout ? '9px' : briefing.compact ? '10px' : '11px',
+      const standingText = this.add.text(textLeft, standingY, standingLine, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
         color: colorStr(company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
+        wordWrap: { width: textWidth },
       }).setDepth(11).setAlpha(offer ? 0.76 : 0.7);
       standingText.setLineSpacing(-1);
       this.favorUi.push(standingText);
@@ -785,13 +881,14 @@ export class MissionSelectScene extends Phaser.Scene {
       const offerLine = offer
         ? `${offer.label} ${offer.boostValue}`
         : company.boostLabel;
-      const offerText = this.add.text(textLeft, cardTop + (denseFavorLayout ? 33 : briefing.compact ? 50 : 54), offerLine, {
-        fontFamily: 'monospace',
-        fontSize: denseFavorLayout ? '10px' : briefing.compact ? '11px' : '12px',
+      const offerText = this.add.text(textLeft, Math.max(standingText.y + standingText.height + sectionGap, offerAnchorY), offerLine, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(denseFavorLayout ? 9 : briefing.compact ? 11 : 12),
         fontStyle: 'bold',
         color: colorStr(company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
+        wordWrap: { width: textWidth },
       }).setDepth(11).setAlpha(offer ? 0.96 : 0.8);
       this.favorUi.push(offerText);
 
@@ -801,12 +898,13 @@ export class MissionSelectScene extends Phaser.Scene {
           : canAfford
             ? `${offer.cost}c // TAP TO ARM`
             : `${offer.cost}c // SHORT ${shortfall}c`;
-        const detailText = this.add.text(textLeft, cardTop + (denseFavorLayout ? 42 : briefing.compact ? 61 : 68), detailLine, {
-          fontFamily: 'monospace',
-          fontSize: denseFavorLayout ? '9px' : briefing.compact ? '10px' : '11px',
+        const detailText = this.add.text(textLeft, Math.max(offerText.y + offerText.height + sectionGap, detailAnchorY), detailLine, {
+          fontFamily: UI_FONT,
+          fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
           color: colorStr(company.color),
           stroke: colorStr(COLORS.BG),
           strokeThickness: 2,
+          wordWrap: { width: textWidth },
         }).setDepth(11).setAlpha(0.76);
         this.favorUi.push(detailText);
       }
@@ -846,8 +944,8 @@ export class MissionSelectScene extends Phaser.Scene {
     this.favorUi.push(badge);
 
     const badgeText = this.add.text(badgeLeft + badgeWidth / 2, top + badgeHeight / 2, label, {
-      fontFamily: 'monospace',
-      fontSize: compact ? '8px' : '9px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(compact ? 8 : 9),
       fontStyle: 'bold',
       color: colorStr(textColor),
       stroke: colorStr(COLORS.BG),
@@ -875,8 +973,8 @@ export class MissionSelectScene extends Phaser.Scene {
     this.deployUi.push(deployBg);
 
     const deployText = this.add.text(layout.centerX, deployY, 'DEPLOY', {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '26px' : '30px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 26 : 30),
       color: colorStr(COLORS.GATE),
       align: 'center',
     }).setOrigin(0.5).setDepth(11);
@@ -903,8 +1001,8 @@ export class MissionSelectScene extends Phaser.Scene {
     this.deployUi.push(deployHit);
 
     const hint = this.add.text(layout.centerX, deployY + btnHeight / 2 + (briefing.compact ? 8 : 10), 'DEPLOYS WITH ACCEPTED CONTRACTS + ARMED FAVORS', {
-      fontFamily: 'monospace',
-      fontSize: briefing.compact ? '9px' : '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 9 : 10),
       color: colorStr(COLORS.HUD),
       align: 'center',
     }).setOrigin(0.5).setDepth(10).setAlpha(0.5);
@@ -923,7 +1021,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const runBoosts = computeRunBoostsFromFavors(selectedFavorIds, repSave);
     this.scene.start(SCENE_KEYS.GAME, {
-      ...this.handoff,
+      ...this.buildBackgroundHandoff(),
       selectedMissions: this.missions.filter((m) => m.accepted),
       runBoosts: selectedFavorIds.length > 0 ? runBoosts : undefined,
     });
@@ -931,7 +1029,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
   private returnToMenu(): void {
     this.saveMissions();
-    this.scene.start(SCENE_KEYS.MENU);
+    this.scene.start(SCENE_KEYS.MENU, this.buildBackgroundHandoff());
   }
 
   private saveMissions(): void {
@@ -939,11 +1037,14 @@ export class MissionSelectScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    this.updateBackground(delta);
     this.hologramOverlay.update(delta);
     this.cursor.update(this);
+    this.geoSphere.update(delta);
   }
 
   private cleanup(): void {
+    this.cleanupBackground();
     this.cursor.destroy(this);
     this.hologramOverlay.destroy();
     this.input.removeAllListeners();
@@ -964,6 +1065,180 @@ export class MissionSelectScene extends Phaser.Scene {
     this.settingsButton?.bg.destroy();
     this.settingsButton?.label.destroy();
     this.settingsButton?.hit.destroy();
+  }
+
+  private restoreBackgroundEntities(): void {
+    if (this.handoff.debrisState) {
+      for (const debris of this.handoff.debrisState) {
+        this.bgDebris.push(SalvageDebris.createAt(this, debris.x, debris.y, debris.vx, debris.vy));
+      }
+    } else {
+      for (let i = 0; i < BG_MAX_DEBRIS; i++) {
+        this.bgDebris.push(new SalvageDebris(this));
+      }
+    }
+
+    if (this.handoff.drifterState) {
+      for (const drifter of this.handoff.drifterState) {
+        this.bgDrifters.push(
+          DrifterHazard.createFragment(this, drifter.x, drifter.y, drifter.vx, drifter.vy, drifter.radiusScale),
+        );
+      }
+    } else {
+      for (let i = 0; i < 3; i++) {
+        const sizeScale = pickAsteroidSize(1);
+        const speed = DRIFTER_SPEED_BASE * (1 / Math.sqrt(sizeScale));
+        this.bgDrifters.push(new DrifterHazard(this, speed, sizeScale));
+      }
+    }
+
+    if (this.handoff.npcState) {
+      for (const npc of this.handoff.npcState) {
+        this.bgNpcs.push(NPCShip.createAt(this, npc.x, npc.y, npc.vx, npc.vy));
+      }
+    } else {
+      for (let i = 0; i < BG_MAX_NPCS; i++) {
+        this.bgNpcs.push(new NPCShip(this));
+      }
+    }
+  }
+
+  private buildBackgroundHandoff(): HandoffData {
+    return {
+      drifterState: this.bgDrifters
+        .filter((drifter) => drifter.active)
+        .map((drifter) => ({
+          x: drifter.x,
+          y: drifter.y,
+          vx: drifter.vx,
+          vy: drifter.vy,
+          radiusScale: drifter.radiusScale,
+        })),
+      debrisState: this.bgDebris
+        .filter((debris) => debris.active)
+        .map((debris) => ({
+          x: debris.x,
+          y: debris.y,
+          vx: debris.driftVx,
+          vy: debris.driftVy,
+        })),
+      npcState: this.bgNpcs
+        .filter((npc) => npc.active)
+        .map((npc) => ({
+          x: npc.x,
+          y: npc.y,
+          vx: npc.vx,
+          vy: npc.vy,
+        })),
+    };
+  }
+
+  private updateBackground(delta: number): void {
+    for (let i = this.bgDebris.length - 1; i >= 0; i--) {
+      this.bgDebris[i].update(delta);
+      if (!this.bgDebris[i].active) {
+        this.bgDebris[i].destroy();
+        this.bgDebris.splice(i, 1);
+      }
+    }
+
+    for (let i = this.bgDrifters.length - 1; i >= 0; i--) {
+      this.bgDrifters[i].update(delta);
+      if (!this.bgDrifters[i].active) {
+        this.bgDrifters[i].destroy();
+        this.bgDrifters.splice(i, 1);
+      }
+    }
+
+    for (const npc of this.bgNpcs) {
+      if (!npc.active) continue;
+
+      let bestTarget: SalvageDebris | null = null;
+      let bestDist = Infinity;
+      for (const debris of this.bgDebris) {
+        if (!debris.active || debris.depleted) continue;
+        const dist = Phaser.Math.Distance.Between(npc.x, npc.y, debris.x, debris.y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestTarget = debris;
+        }
+      }
+
+      if (bestTarget) {
+        npc.setTarget(bestTarget.x, bestTarget.y);
+      } else {
+        npc.clearTarget();
+      }
+    }
+
+    for (let i = this.bgNpcs.length - 1; i >= 0; i--) {
+      const npc = this.bgNpcs[i];
+      npc.update(delta);
+      if (!npc.active) {
+        npc.destroy();
+        this.bgNpcs.splice(i, 1);
+      }
+    }
+
+    for (const npc of this.bgNpcs) {
+      if (!npc.active || !npc.isSalvaging()) continue;
+      for (const debris of this.bgDebris) {
+        if (!debris.active || debris.depleted) continue;
+        const dist = Phaser.Math.Distance.Between(npc.x, npc.y, debris.x, debris.y);
+        if (dist < debris.salvageRadius) {
+          debris.hp -= delta / 1000;
+          if (debris.hp <= 0) {
+            debris.hp = 0;
+            debris.depleted = true;
+          }
+        }
+      }
+    }
+
+    for (const npc of this.bgNpcs) {
+      if (!npc.active) continue;
+      for (const drifter of this.bgDrifters) {
+        if (!drifter.active) continue;
+        const dx = npc.x - drifter.x;
+        const dy = npc.y - drifter.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < npc.radius + drifter.radius) {
+          npc.active = false;
+          npc.killedByHazard = true;
+          break;
+        }
+      }
+    }
+
+    this.debrisTimer += delta;
+    if (this.debrisTimer >= BG_DEBRIS_SPAWN_MS && this.bgDebris.length < BG_MAX_DEBRIS) {
+      this.bgDebris.push(new SalvageDebris(this));
+      this.debrisTimer = 0;
+    }
+
+    this.drifterTimer += delta;
+    if (this.drifterTimer >= BG_DRIFTER_SPAWN_MS && this.bgDrifters.length < BG_MAX_DRIFTERS) {
+      const sizeScale = pickAsteroidSize(1);
+      const speed = DRIFTER_SPEED_BASE * (1 / Math.sqrt(sizeScale));
+      this.bgDrifters.push(new DrifterHazard(this, speed, sizeScale));
+      this.drifterTimer = 0;
+    }
+
+    this.npcTimer += delta;
+    if (this.npcTimer >= BG_NPC_SPAWN_MS && this.bgNpcs.length < BG_MAX_NPCS) {
+      this.bgNpcs.push(new NPCShip(this));
+      this.npcTimer = 0;
+    }
+  }
+
+  private cleanupBackground(): void {
+    for (const debris of this.bgDebris) debris.destroy();
+    this.bgDebris = [];
+    for (const drifter of this.bgDrifters) drifter.destroy();
+    this.bgDrifters = [];
+    for (const npc of this.bgNpcs) npc.destroy();
+    this.bgNpcs = [];
+    this.geoSphere?.destroy();
   }
 }
 

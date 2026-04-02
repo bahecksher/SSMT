@@ -5,6 +5,18 @@ export const SCENE_KEYS = {
   GAME: 'GameScene',
 } as const;
 
+export const UI_FONT = 'Consolas, "Lucida Console", Menlo, Monaco, monospace';
+
+export function readableFontSize(size: number | string): string {
+  const numeric = typeof size === 'number' ? size : Number.parseFloat(size);
+  if (!Number.isFinite(numeric)) {
+    return typeof size === 'number' ? `${size}px` : size;
+  }
+
+  const scale = numeric <= 10 ? 1.22 : numeric <= 14 ? 1.18 : numeric <= 18 ? 1.14 : 1.1;
+  return `${Math.ceil(numeric * scale)}px`;
+}
+
 export const SAVE_KEY = 'ssmt_save';
 export const PLAYER_NAME_KEY = 'ssmt_player_name';
 export const SETTINGS_KEY = 'ssmt_settings';
@@ -18,6 +30,8 @@ export const COLORS = {
   SALVAGE: 0x00ff88,
   SALVAGE_RADIUS: 0x00ff88,
   HAZARD: 0xff3366,
+  HAZARD_INERT: 0xaa5566,
+  ENEMY: 0xff00ff,
   BEAM: 0xff0044,
   GATE: 0x44ff88,
   HUD: 0x00ffcc,

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENE_KEYS, COLORS } from '../constants';
+import { SCENE_KEYS, COLORS, UI_FONT, readableFontSize } from '../constants';
 import { SaveSystem } from '../systems/SaveSystem';
 import { fetchLeaderboard, type LeaderboardEntry } from '../services/LeaderboardService';
 import { SalvageDebris } from '../entities/SalvageDebris';
@@ -7,7 +7,7 @@ import { DrifterHazard } from '../entities/DrifterHazard';
 import { NPCShip } from '../entities/NPCShip';
 import { GeoSphere } from '../entities/GeoSphere';
 import { HologramOverlay } from '../ui/HologramOverlay';
-import { SlickComm } from '../ui/SlickComm';
+import { SlickComm, createSlickPortrait } from '../ui/SlickComm';
 import { DRIFTER_SPEED_BASE } from '../data/tuning';
 import { pickAsteroidSize } from '../data/phaseConfig';
 import { getSlickLine } from '../data/slickLines';
@@ -18,6 +18,12 @@ import { CustomCursor } from '../ui/CustomCursor';
 import { SettingsSlider } from '../ui/SettingsSlider';
 
 type Period = 'daily' | 'weekly';
+interface BackgroundHandoffData {
+  drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
+  debrisState?: { x: number; y: number; vx: number; vy: number }[];
+  npcState?: { x: number; y: number; vx: number; vy: number }[];
+}
+
 type MenuButton = {
   bg: Phaser.GameObjects.Graphics;
   label: Phaser.GameObjects.Text;
@@ -80,7 +86,7 @@ export class MenuScene extends Phaser.Scene {
     super(SCENE_KEYS.MENU);
   }
 
-  create(): void {
+  create(data?: BackgroundHandoffData): void {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
     setMenuMusic(this);
@@ -89,6 +95,13 @@ export class MenuScene extends Phaser.Scene {
     const save = new SaveSystem();
     const best = save.getBestScore();
     const playerName = save.getPlayerName();
+    const handoff = data ?? {};
+    this.bgDebris = [];
+    this.bgDrifters = [];
+    this.bgNpcs = [];
+    this.drifterTimer = 0;
+    this.debrisTimer = 0;
+    this.npcTimer = 0;
 
     // === Background layer (depth -1 to 5) ===
 
@@ -114,34 +127,23 @@ export class MenuScene extends Phaser.Scene {
     // Rotating geo-sphere behind entities
     this.geoSphere = new GeoSphere(this);
 
-    // Seed initial background entities
-    for (let i = 0; i < BG_MAX_DEBRIS; i++) {
-      this.bgDebris.push(new SalvageDebris(this));
-    }
-    for (let i = 0; i < 3; i++) {
-      const sizeScale = pickAsteroidSize(1);
-      const speed = DRIFTER_SPEED_BASE * (1 / Math.sqrt(sizeScale));
-      this.bgDrifters.push(new DrifterHazard(this, speed, sizeScale));
-    }
-    for (let i = 0; i < BG_MAX_NPCS; i++) {
-      this.bgNpcs.push(new NPCShip(this));
-    }
+    this.restoreBackgroundEntities(handoff);
 
     // === UI layer (depth 10+) ===
     const uiDepth = 10;
     const backingTop = layout.gameHeight * 0.06;
     const compactMenu = layout.gameHeight <= 720 || layout.gameWidth <= 400;
     const veryCompactMenu = layout.gameHeight <= 560 || layout.gameWidth <= 360;
-    const titlePrimarySize = veryCompactMenu ? '32px' : compactMenu ? '36px' : '40px';
-    const titleSecondarySize = veryCompactMenu ? '20px' : compactMenu ? '22px' : '24px';
-    const titleTertiarySize = veryCompactMenu ? '12px' : '14px';
-    const metaSize = compactMenu ? '13px' : '14px';
-    const hintSize = veryCompactMenu ? '9px' : '10px';
-    const bestSize = compactMenu ? '14px' : '16px';
-    this.leaderboardTabWidth = veryCompactMenu ? 88 : compactMenu ? 94 : 104;
-    this.leaderboardTabHeight = compactMenu ? 28 : 30;
-    this.leaderboardRowHeight = veryCompactMenu ? 20 : 22;
-    this.leaderboardFontSize = veryCompactMenu ? '13px' : '14px';
+    const titlePrimarySize = readableFontSize(veryCompactMenu ? 34 : compactMenu ? 38 : 42);
+    const titleSecondarySize = readableFontSize(veryCompactMenu ? 22 : compactMenu ? 24 : 26);
+    const titleTertiarySize = readableFontSize(veryCompactMenu ? 14 : 16);
+    const metaSize = readableFontSize(compactMenu ? 15 : 16);
+    const hintSize = readableFontSize(veryCompactMenu ? 11 : 12);
+    const bestSize = readableFontSize(compactMenu ? 16 : 18);
+    this.leaderboardTabWidth = veryCompactMenu ? 104 : compactMenu ? 112 : 122;
+    this.leaderboardTabHeight = compactMenu ? 34 : 38;
+    this.leaderboardRowHeight = veryCompactMenu ? 24 : 28;
+    this.leaderboardFontSize = readableFontSize(veryCompactMenu ? 15 : 16);
 
     // Semi-transparent backing so text is readable over the simulation
     const backing = this.add.graphics().setDepth(uiDepth);
@@ -149,22 +151,38 @@ export class MenuScene extends Phaser.Scene {
     backing.fillRoundedRect(20, backingTop, layout.gameWidth - 40, layout.gameHeight - backingTop - 20, 12);
 
     // Title block
-    const titlePrimary = this.add.text(centerX, backingTop + (veryCompactMenu ? 34 : compactMenu ? 36 : 44), "SLICK'S", {
-      fontFamily: 'monospace',
+    const portraitRadius = veryCompactMenu ? 28 : compactMenu ? 34 : 40;
+    const portraitCenterY = backingTop + portraitRadius + (veryCompactMenu ? 8 : compactMenu ? 10 : 14);
+    const portraitFrame = this.add.graphics().setDepth(uiDepth);
+    portraitFrame.fillStyle(COLORS.BG, 0.88);
+    portraitFrame.lineStyle(1.2, COLORS.HUD, 0.36);
+    portraitFrame.fillCircle(centerX, portraitCenterY, portraitRadius + 8);
+    portraitFrame.strokeCircle(centerX, portraitCenterY, portraitRadius + 8);
+    portraitFrame.lineStyle(1, COLORS.PLAYER, 0.18);
+    portraitFrame.strokeCircle(centerX, portraitCenterY, portraitRadius + 2);
+
+    createSlickPortrait(this)
+      .setPosition(centerX, portraitCenterY)
+      .setScale(veryCompactMenu ? 0.92 : compactMenu ? 1.06 : 1.18)
+      .setDepth(uiDepth + 1)
+      .setAlpha(0.96);
+
+    const titlePrimary = this.add.text(centerX, portraitCenterY + portraitRadius + (veryCompactMenu ? 8 : compactMenu ? 10 : 14), "SLICK'S", {
+      fontFamily: UI_FONT,
       fontSize: titlePrimarySize,
       color: `#${COLORS.PLAYER.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth);
 
     const titleSecondary = this.add.text(centerX, titlePrimary.y + titlePrimary.height + (veryCompactMenu ? 0 : 2), 'SALVAGE & MINING', {
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT,
       fontSize: titleSecondarySize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth);
 
     const titleTertiary = this.add.text(centerX, titleSecondary.y + titleSecondary.height + (veryCompactMenu ? 2 : 4), 'REMOTE PILOT INTERFACE', {
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT,
       fontSize: titleTertiarySize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
@@ -172,7 +190,7 @@ export class MenuScene extends Phaser.Scene {
 
     // Player name and best score
     this.pilotText = this.add.text(centerX, titleTertiary.y + titleTertiary.height + (veryCompactMenu ? 12 : 16), `PILOT: ${playerName}`, {
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT,
       fontSize: metaSize,
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
       align: 'center',
@@ -190,7 +208,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     const editHint = this.add.text(centerX, this.pilotText.y + this.pilotText.height + 4, 'TAP CALLSIGN TO EDIT 3 LETTERS', {
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT,
       fontSize: hintSize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
@@ -199,7 +217,7 @@ export class MenuScene extends Phaser.Scene {
     let leaderboardTitleTop = editHint.y + editHint.height + (veryCompactMenu ? 10 : 14);
     if (best > 0) {
       const bestText = this.add.text(centerX, editHint.y + editHint.height + (veryCompactMenu ? 6 : 8), `BEST: ${Math.floor(best)}`, {
-        fontFamily: 'monospace',
+        fontFamily: UI_FONT,
         fontSize: bestSize,
         color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
         align: 'center',
@@ -216,8 +234,8 @@ export class MenuScene extends Phaser.Scene {
     const weeklyTabX = centerX + tabOffset;
 
     const leaderboardTitle = this.add.text(centerX, leaderboardTitleTop, 'LEADERBOARD', {
-      fontFamily: 'monospace',
-      fontSize: '12px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.68);
@@ -227,15 +245,15 @@ export class MenuScene extends Phaser.Scene {
     this.weeklyTabBg = this.add.graphics().setDepth(uiDepth);
 
     this.dailyTab = this.add.text(dailyTabX, tabY, 'DAILY', {
-      fontFamily: 'monospace',
-      fontSize: compactMenu ? '13px' : '14px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(compactMenu ? 15 : 16),
       color: gateColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth + 1);
 
     this.weeklyTab = this.add.text(weeklyTabX, tabY, 'WEEKLY', {
-      fontFamily: 'monospace',
-      fontSize: compactMenu ? '13px' : '14px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(compactMenu ? 15 : 16),
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth + 1);
@@ -282,7 +300,7 @@ export class MenuScene extends Phaser.Scene {
 
     // Status text (loading / offline)
     this.statusText = this.add.text(centerX, this.leaderboardStartY + (veryCompactMenu ? 10 : 12), 'LOADING...', {
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT,
       fontSize: this.leaderboardFontSize,
       color: hudColor,
       align: 'center',
@@ -291,25 +309,13 @@ export class MenuScene extends Phaser.Scene {
     // TAP TO START — anchored from bottom
     const tapY = layout.gameHeight - 60;
     const tapText = this.add.text(centerX, tapY, 'TAP TO START', {
-      fontFamily: 'monospace',
-      fontSize: '24px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(26),
       color: gateColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
 
     // How to play — anchored above TAP TO START
-    this.add.text(centerX, tapY - 52, [
-      'COLLECT SALVAGE FOR CREDITS',
-      'DODGE ASTEROIDS & HAZARDS',
-      'EXTRACT AT THE GATE TO BANK',
-    ].join('\n'), {
-      fontFamily: 'monospace',
-      fontSize: '11px',
-      color: hudColor,
-      align: 'center',
-      lineSpacing: 6,
-    }).setOrigin(0.5).setDepth(uiDepth);
-
     this.createSettingsUi(uiDepth, backingTop, compactMenu, veryCompactMenu);
 
     this.tweens.add({
@@ -327,6 +333,7 @@ export class MenuScene extends Phaser.Scene {
     if (Math.random() < 0.45) {
       this.slickComm.show(getSlickLine('menuIntro'));
     }
+    this.positionMenuComm();
 
     // Start game on tap (ignore tab taps)
     this.input.on('pointerdown', (_pointer: Phaser.Input.Pointer, targets: Phaser.GameObjects.GameObject[]) => {
@@ -340,17 +347,9 @@ export class MenuScene extends Phaser.Scene {
       }
 
       // Snapshot background entity state for seamless handoff
-      const drifterState = this.bgDrifters
-        .filter(d => d.active)
-        .map(d => ({ x: d.x, y: d.y, vx: d.vx, vy: d.vy, radiusScale: d.radiusScale }));
-      const debrisState = this.bgDebris
-        .filter(d => d.active)
-        .map(d => ({ x: d.x, y: d.y, vx: d.driftVx, vy: d.driftVy }));
-      const npcState = this.bgNpcs
-        .filter(npc => npc.active)
-        .map(npc => ({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy }));
+      const backgroundHandoff = this.buildBackgroundHandoff();
       this.cleanupBackground();
-      this.scene.start(SCENE_KEYS.MISSION_SELECT, { drifterState, debrisState, npcState });
+      this.scene.start(SCENE_KEYS.MISSION_SELECT, backgroundHandoff);
     });
 
     // Load initial leaderboard
@@ -477,6 +476,72 @@ export class MenuScene extends Phaser.Scene {
     this.geoSphere.destroy();
   }
 
+  private restoreBackgroundEntities(handoff: BackgroundHandoffData): void {
+    if (handoff.debrisState) {
+      for (const debris of handoff.debrisState) {
+        this.bgDebris.push(SalvageDebris.createAt(this, debris.x, debris.y, debris.vx, debris.vy));
+      }
+    } else {
+      for (let i = 0; i < BG_MAX_DEBRIS; i++) {
+        this.bgDebris.push(new SalvageDebris(this));
+      }
+    }
+
+    if (handoff.drifterState) {
+      for (const drifter of handoff.drifterState) {
+        this.bgDrifters.push(
+          DrifterHazard.createFragment(this, drifter.x, drifter.y, drifter.vx, drifter.vy, drifter.radiusScale),
+        );
+      }
+    } else {
+      for (let i = 0; i < 3; i++) {
+        const sizeScale = pickAsteroidSize(1);
+        const speed = DRIFTER_SPEED_BASE * (1 / Math.sqrt(sizeScale));
+        this.bgDrifters.push(new DrifterHazard(this, speed, sizeScale));
+      }
+    }
+
+    if (handoff.npcState) {
+      for (const npc of handoff.npcState) {
+        this.bgNpcs.push(NPCShip.createAt(this, npc.x, npc.y, npc.vx, npc.vy));
+      }
+    } else {
+      for (let i = 0; i < BG_MAX_NPCS; i++) {
+        this.bgNpcs.push(new NPCShip(this));
+      }
+    }
+  }
+
+  private buildBackgroundHandoff(): BackgroundHandoffData {
+    return {
+      drifterState: this.bgDrifters
+        .filter((drifter) => drifter.active)
+        .map((drifter) => ({
+          x: drifter.x,
+          y: drifter.y,
+          vx: drifter.vx,
+          vy: drifter.vy,
+          radiusScale: drifter.radiusScale,
+        })),
+      debrisState: this.bgDebris
+        .filter((debris) => debris.active)
+        .map((debris) => ({
+          x: debris.x,
+          y: debris.y,
+          vx: debris.driftVx,
+          vy: debris.driftVy,
+        })),
+      npcState: this.bgNpcs
+        .filter((npc) => npc.active)
+        .map((npc) => ({
+          x: npc.x,
+          y: npc.y,
+          vx: npc.vx,
+          vy: npc.vy,
+        })),
+    };
+  }
+
   private cleanup(): void {
     this.input.removeAllListeners();
     this.cleanupBackground();
@@ -487,33 +552,33 @@ export class MenuScene extends Phaser.Scene {
   private createSettingsUi(uiDepth: number, backingTop: number, compactMenu: boolean, veryCompactMenu: boolean): void {
     const layout = getLayout();
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
-    const buttonWidth = compactMenu ? 84 : 90;
-    const buttonCenterX = layout.gameWidth - (compactMenu ? 68 : 72);
-    const buttonCenterY = backingTop + (veryCompactMenu ? 14 : 16);
-    const panelWidth = compactMenu ? 186 : 194;
-    const panelHeight = 212;
+    const buttonWidth = compactMenu ? 98 : 108;
+    const buttonCenterX = layout.gameWidth - (compactMenu ? 76 : 82);
+    const buttonCenterY = backingTop + (veryCompactMenu ? 16 : 18);
+    const panelWidth = compactMenu ? 214 : 226;
+    const panelHeight = 236;
     const panelLeft = layout.gameWidth - panelWidth - 24;
-    const panelTop = buttonCenterY + 18;
-    const rowOneY = panelTop + 26;
-    const rowTwoY = panelTop + 58;
-    const rowThreeY = panelTop + 90;
-    const musicVolumeLabelY = panelTop + 122;
-    const musicVolumeY = panelTop + 138;
-    const fxVolumeLabelY = panelTop + 164;
-    const fxVolumeY = panelTop + 180;
-    const offX = panelLeft + panelWidth - 26;
-    const onX = offX - 44;
-    const sliderLeft = panelLeft + 66;
-    const sliderWidth = panelWidth - 100;
+    const panelTop = buttonCenterY + 22;
+    const rowOneY = panelTop + 30;
+    const rowTwoY = panelTop + 66;
+    const rowThreeY = panelTop + 102;
+    const musicVolumeLabelY = panelTop + 142;
+    const musicVolumeY = panelTop + 160;
+    const fxVolumeLabelY = panelTop + 188;
+    const fxVolumeY = panelTop + 206;
+    const offX = panelLeft + panelWidth - 30;
+    const onX = offX - 52;
+    const sliderLeft = panelLeft + 80;
+    const sliderWidth = panelWidth - 122;
 
     this.settingsButton = this.createMenuButton(
       buttonCenterX,
       buttonCenterY,
       buttonWidth,
-      26,
+      32,
       'SETTINGS',
       uiDepth + 1,
-      '10px',
+      readableFontSize(10),
       () => this.setSettingsOpen(!this.settingsOpen),
     );
 
@@ -534,53 +599,53 @@ export class MenuScene extends Phaser.Scene {
     });
 
     const shakeLabel = this.add.text(panelLeft + 14, rowOneY, 'SHAKE', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(uiDepth + 3);
 
     const scanLabel = this.add.text(panelLeft + 14, rowTwoY, 'SCAN', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(uiDepth + 3);
 
     const musicLabel = this.add.text(panelLeft + 14, rowThreeY, 'MUSIC', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(uiDepth + 3);
 
     const musicBetaLabel = this.add.text(panelLeft + 48, rowThreeY, '*BETA*', {
-      fontFamily: 'monospace',
-      fontSize: '9px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(9),
       color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(uiDepth + 3).setAlpha(0.9);
 
     const musicVolumeLabel = this.add.text(panelLeft + 14, musicVolumeLabelY, 'MUSIC VOL', {
-      fontFamily: 'monospace',
-      fontSize: '9px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(9),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(uiDepth + 3).setAlpha(0.72);
 
     const fxVolumeLabel = this.add.text(panelLeft + 14, fxVolumeLabelY, 'FX VOL', {
-      fontFamily: 'monospace',
-      fontSize: '9px',
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(9),
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(uiDepth + 3).setAlpha(0.72);
 
-    this.shakeOnButton = this.createMenuButton(onX, rowOneY, 34, 20, 'ON', uiDepth + 3, '10px', () => this.applyMenuSettings({ screenShake: true }));
-    this.shakeOffButton = this.createMenuButton(offX, rowOneY, 38, 20, 'OFF', uiDepth + 3, '10px', () => this.applyMenuSettings({ screenShake: false }));
-    this.scanOnButton = this.createMenuButton(onX, rowTwoY, 34, 20, 'ON', uiDepth + 3, '10px', () => this.applyMenuSettings({ scanlines: true }));
-    this.scanOffButton = this.createMenuButton(offX, rowTwoY, 38, 20, 'OFF', uiDepth + 3, '10px', () => this.applyMenuSettings({ scanlines: false }));
-    this.musicOnButton = this.createMenuButton(onX, rowThreeY, 34, 20, 'ON', uiDepth + 3, '10px', () => this.applyMenuSettings({ musicEnabled: true }));
-    this.musicOffButton = this.createMenuButton(offX, rowThreeY, 38, 20, 'OFF', uiDepth + 3, '10px', () => this.applyMenuSettings({ musicEnabled: false }));
+    this.shakeOnButton = this.createMenuButton(onX, rowOneY, 42, 24, 'ON', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ screenShake: true }));
+    this.shakeOffButton = this.createMenuButton(offX, rowOneY, 46, 24, 'OFF', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ screenShake: false }));
+    this.scanOnButton = this.createMenuButton(onX, rowTwoY, 42, 24, 'ON', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ scanlines: true }));
+    this.scanOffButton = this.createMenuButton(offX, rowTwoY, 46, 24, 'OFF', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ scanlines: false }));
+    this.musicOnButton = this.createMenuButton(onX, rowThreeY, 42, 24, 'ON', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ musicEnabled: true }));
+    this.musicOffButton = this.createMenuButton(offX, rowThreeY, 46, 24, 'OFF', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ musicEnabled: false }));
     this.musicVolumeSlider = new SettingsSlider({
       scene: this,
       left: sliderLeft,
@@ -649,7 +714,7 @@ export class MenuScene extends Phaser.Scene {
   ): MenuButton {
     const bg = this.add.graphics().setDepth(depth);
     const text = this.add.text(centerX, centerY, label, {
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT,
       fontSize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
@@ -748,6 +813,7 @@ export class MenuScene extends Phaser.Scene {
     for (const t of this.leaderboardTexts) t.destroy();
     this.leaderboardTexts = [];
     this.statusText.setText('LOADING...').setVisible(true);
+    this.positionMenuComm();
 
     fetchLeaderboard(this.activePeriod, 10).then((entries) => {
       // Scene may have been left while loading
@@ -758,6 +824,7 @@ export class MenuScene extends Phaser.Scene {
     }).catch(() => {
       if (!this.scene.isActive()) return;
       this.statusText.setText('OFFLINE').setVisible(true);
+      this.positionMenuComm();
     });
   }
 
@@ -772,11 +839,13 @@ export class MenuScene extends Phaser.Scene {
 
     if (entries.length === 0) {
       this.statusText.setText('NO SCORES YET').setVisible(true);
+      this.positionMenuComm();
       return;
     }
 
-    // Cap visible rows so they don't overlap the bottom UI (how-to-play + tap to start)
-    const bottomUiTop = layout.gameHeight - 120;
+    // Cap visible rows so the leaderboard leaves clean space for Slick below it.
+    const tapY = layout.gameHeight - 60;
+    const bottomUiTop = tapY - this.slickComm.getPanelHeight() - 44;
     const maxRows = Math.max(3, Math.floor((bottomUiTop - startY) / rowHeight));
     const visibleEntries = entries.slice(0, maxRows);
 
@@ -789,7 +858,7 @@ export class MenuScene extends Phaser.Scene {
       const line = `${rank}${name}${score}`;
 
       const text = this.add.text(centerX, y, line, {
-        fontFamily: 'monospace',
+        fontFamily: UI_FONT,
         fontSize: this.leaderboardFontSize,
         color: i < 3 ? salvageColor : hudColor,
         align: 'center',
@@ -797,5 +866,36 @@ export class MenuScene extends Phaser.Scene {
 
       this.leaderboardTexts.push(text);
     }
+
+    this.positionMenuComm();
+  }
+
+  private positionMenuComm(): void {
+    if (!this.slickComm) return;
+
+    const layout = getLayout();
+    const tapY = layout.gameHeight - 60;
+    const commHeight = this.slickComm.getPanelHeight();
+    const topGap = 18;
+    const bottomGap = 18;
+
+    let leaderboardBottom = this.statusText?.visible
+      ? this.statusText.y + this.statusText.height / 2
+      : this.leaderboardStartY;
+
+    if (this.leaderboardTexts.length > 0) {
+      const lastEntry = this.leaderboardTexts[this.leaderboardTexts.length - 1];
+      leaderboardBottom = lastEntry.y + lastEntry.height / 2;
+    }
+
+    const availableTop = leaderboardBottom + topGap;
+    const availableBottom = tapY - bottomGap;
+    const commY = Phaser.Math.Clamp(
+      availableTop + Math.max(0, availableBottom - availableTop - commHeight) * 0.5,
+      availableTop,
+      Math.max(availableTop, availableBottom - commHeight),
+    );
+
+    this.slickComm.setPinnedLayout(commY, 11);
   }
 }
