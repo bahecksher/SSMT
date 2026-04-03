@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { UI_FONT, readableFontSize } from '../constants';
 import { getLayout } from '../layout';
+import { createPortraitBackdrop, fillPolygon, strokePolygon } from './portraitPrimitives';
 
 const REGENT_COLOR = 0xff3366;
 const REGENT_ACCENT = 0xff0044;
@@ -283,58 +284,132 @@ export class RegentComm {
   }
 
   private createPortrait(scene: Phaser.Scene): Phaser.GameObjects.Container {
-    const glow = scene.add.graphics();
-    glow.fillStyle(REGENT_COLOR, 0.08);
-    glow.fillCircle(0, 0, 28);
+    const backdrop = createPortraitBackdrop(scene, REGENT_COLOR, REGENT_ACCENT, {
+      radius: 29,
+      bandWidth: 18,
+    });
 
-    const head = scene.add.graphics();
-    head.lineStyle(1.5, REGENT_COLOR, 0.75);
-    head.beginPath();
-    head.moveTo(0, -22);
-    head.lineTo(18, -10);
-    head.lineTo(18, 8);
-    head.lineTo(10, 22);
-    head.lineTo(-10, 22);
-    head.lineTo(-18, 8);
-    head.lineTo(-18, -10);
-    head.closePath();
-    head.strokePath();
+    const pauldrons = scene.add.graphics();
+    fillPolygon(pauldrons, [
+      { x: -19, y: 20 },
+      { x: -9, y: 8 },
+      { x: 9, y: 8 },
+      { x: 19, y: 20 },
+      { x: 11, y: 23 },
+      { x: -11, y: 23 },
+    ], REGENT_COLOR, 0.08);
+    strokePolygon(pauldrons, [
+      { x: -16, y: 18 },
+      { x: -7, y: 10 },
+      { x: 7, y: 10 },
+      { x: 16, y: 18 },
+    ], REGENT_ACCENT, 0.22, 1);
 
-    const circuits = scene.add.graphics();
-    circuits.lineStyle(1, REGENT_COLOR, 0.2);
-    circuits.lineBetween(-18, -10, -10, -4);
-    circuits.lineBetween(18, -10, 10, -4);
-    circuits.lineBetween(-18, 8, -10, 6);
-    circuits.lineBetween(18, 8, 10, 6);
-    circuits.lineBetween(0, -22, 0, -14);
-    circuits.lineBetween(0, 16, 0, 22);
-    circuits.lineStyle(1, REGENT_ACCENT, 0.12);
-    circuits.lineBetween(-10, -4, 10, -4);
+    const helmet = scene.add.graphics();
+    fillPolygon(helmet, [
+      { x: 0, y: -23 },
+      { x: 11, y: -19 },
+      { x: 17, y: -7 },
+      { x: 15, y: 10 },
+      { x: 7, y: 20 },
+      { x: -7, y: 20 },
+      { x: -15, y: 10 },
+      { x: -17, y: -7 },
+      { x: -11, y: -19 },
+    ], REGENT_COLOR, 0.14);
+    strokePolygon(helmet, [
+      { x: 0, y: -23 },
+      { x: 11, y: -19 },
+      { x: 17, y: -7 },
+      { x: 15, y: 10 },
+      { x: 7, y: 20 },
+      { x: -7, y: 20 },
+      { x: -15, y: 10 },
+      { x: -17, y: -7 },
+      { x: -11, y: -19 },
+    ], REGENT_COLOR, 0.64, 1.4);
+    strokePolygon(helmet, [
+      { x: -5, y: -23 },
+      { x: 0, y: -28 },
+      { x: 5, y: -23 },
+    ], REGENT_ACCENT, 0.72, 1.1);
+    helmet.lineStyle(1, REGENT_ACCENT, 0.22);
+    helmet.lineBetween(-12, -15, -4, -20);
+    helmet.lineBetween(12, -15, 4, -20);
+
+    const facePlate = scene.add.graphics();
+    fillPolygon(facePlate, [
+      { x: -10, y: -13 },
+      { x: 10, y: -13 },
+      { x: 12, y: -2 },
+      { x: 8, y: 13 },
+      { x: 0, y: 18 },
+      { x: -8, y: 13 },
+      { x: -12, y: -2 },
+    ], REGENT_COLOR, 0.1);
+    strokePolygon(facePlate, [
+      { x: -10, y: -13 },
+      { x: 10, y: -13 },
+      { x: 12, y: -2 },
+      { x: 8, y: 13 },
+      { x: 0, y: 18 },
+      { x: -8, y: 13 },
+      { x: -12, y: -2 },
+    ], REGENT_ACCENT, 0.44, 1.2);
+
+    const jawGuards = scene.add.graphics();
+    fillPolygon(jawGuards, [
+      { x: -11, y: 1 },
+      { x: -5, y: 0 },
+      { x: -4, y: 11 },
+      { x: -9, y: 13 },
+    ], REGENT_ACCENT, 0.12);
+    fillPolygon(jawGuards, [
+      { x: 5, y: 0 },
+      { x: 11, y: 1 },
+      { x: 9, y: 13 },
+      { x: 4, y: 11 },
+    ], REGENT_ACCENT, 0.12);
+
+    const visor = scene.add.graphics();
+    fillPolygon(visor, [
+      { x: -12, y: -7 },
+      { x: -2, y: -9 },
+      { x: 12, y: -7 },
+      { x: 5, y: -2 },
+      { x: -5, y: -2 },
+    ], REGENT_COLOR, 0.18);
+    strokePolygon(visor, [
+      { x: -12, y: -7 },
+      { x: -2, y: -9 },
+      { x: 12, y: -7 },
+      { x: 5, y: -2 },
+      { x: -5, y: -2 },
+    ], REGENT_ACCENT, 0.8, 1.2);
 
     const eyes = scene.add.graphics();
-    eyes.fillStyle(REGENT_COLOR, 0.95);
-    eyes.fillRect(-11, -8, 8, 2);
-    eyes.fillRect(3, -8, 8, 2);
-    eyes.fillStyle(REGENT_ACCENT, 1);
-    eyes.fillRect(-6, -8, 3, 2);
-    eyes.fillRect(5, -8, 3, 2);
+    eyes.lineStyle(1.6, REGENT_ACCENT, 0.96);
+    eyes.lineBetween(-8, -6, -2, -6);
+    eyes.lineBetween(2, -6, 8, -6);
+    eyes.lineStyle(1, REGENT_COLOR, 0.34);
+    eyes.lineBetween(-1, -5, 1, -5);
 
-    const nose = scene.add.graphics();
-    nose.lineStyle(1, REGENT_COLOR, 0.35);
-    nose.lineBetween(-3, 0, 0, 4);
-    nose.lineBetween(0, 4, 3, 0);
+    const features = scene.add.graphics();
+    features.lineStyle(1.2, REGENT_COLOR, 0.34);
+    features.lineBetween(0, -1, 0, 6);
+    features.lineStyle(1, REGENT_ACCENT, 0.2);
+    features.lineBetween(-2, 8.5, 0, 7.6);
+    features.lineBetween(0, 7.6, 2, 8.5);
 
-    const mouth = scene.add.graphics();
-    mouth.lineStyle(1.5, REGENT_COLOR, 0.7);
-    mouth.lineBetween(-7, 10, 7, 10);
-    mouth.lineStyle(1, REGENT_COLOR, 0.5);
-    mouth.lineBetween(-7, 10, -9, 12);
-    mouth.lineBetween(7, 10, 9, 12);
-
-    const scanLine = scene.add.graphics();
-    scanLine.lineStyle(1, REGENT_ACCENT, 0.1);
-    scanLine.lineBetween(-18, 0, 18, 0);
-
-    return scene.add.container(0, 0, [glow, head, circuits, eyes, nose, mouth, scanLine]);
+    return scene.add.container(0, 0, [
+      ...backdrop,
+      pauldrons,
+      helmet,
+      facePlate,
+      jawGuards,
+      visor,
+      eyes,
+      features,
+    ]);
   }
 }

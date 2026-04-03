@@ -239,3 +239,12 @@ The `Player Death` clip now also marks NPC kills, including hazard kills and pla
 
 ### 2026-04-03 - Favors cost 2000 and cap at two armed per run
 All four liaison favors now cost a flat `2000c`. MissionSelect allows at most two favors to be armed at once, so the player can stack a pair of boosts without defaulting into all-company loadouts.
+
+### 2026-04-03 - Comm portraits use layered holo rendering
+Slick, Regent, and the four liaison portraits now use layered translucent hologram styling instead of simple outline-only vector shapes. Slick's portrait silhouette was also softened so the character reads more feminine while staying within the existing portrait framing.
+
+### 2026-04-03 - Slick portrait reads as a humanoid holo operator
+Slick's portrait should read as a recognizable humanoid face rather than a masked helmet silhouette. The holo portrait now emphasizes hair framing, brows, eyes, nose, lips, and a softer jawline so the feminine read survives even at comm-panel scale.
+
+### 2026-04-03 - Comm portraits omit mouth marks
+The cast portraits should not show explicit mouths or lower-face grin bars. Slick, Regent, and all liaison portraits now rely on eyes, brows, silhouette, and panel shapes for expression instead of mouth lines.
