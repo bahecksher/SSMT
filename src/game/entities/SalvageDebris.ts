@@ -8,12 +8,7 @@ import {
   HP_DEPLETED_WARN_TIME,
 } from '../data/tuning';
 import { getLayout } from '../layout';
-
-function rotatePoint(px: number, py: number, angle: number): [number, number] {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return [px * cos - py * sin, px * sin + py * cos];
-}
+import { rotatePoint } from '../utils/geometry';
 
 export interface SalvageDebrisConfig {
   isRare?: boolean;
@@ -257,9 +252,10 @@ export class SalvageDebris {
       ];
 
       // Rotate corners and offset
+      const [oRx, oRy] = rotatePoint(ox, oy, this.angle);
       const worldCorners = corners.map(([cx, cy]) => {
         const [rx, ry] = rotatePoint(cx, cy, rectAngle);
-        return [rx + rotatePoint(ox, oy, this.angle)[0], ry + rotatePoint(ox, oy, this.angle)[1]] as [number, number];
+        return [rx + oRx, ry + oRy] as [number, number];
       });
 
       // Subtle hologram fill (deeper layers dimmer)

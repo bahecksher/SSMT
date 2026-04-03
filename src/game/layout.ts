@@ -24,6 +24,9 @@ const MIN_GAME_WIDTH = 320;
 const MIN_GAME_HEIGHT = 480;
 const MIN_ARENA_INSET = 40;
 const MAX_ARENA_INSET = 72;
+const MIN_ARENA_SIDE_INSET = 24;
+const MAX_ARENA_SIDE_INSET = 40;
+const COMPACT_ARENA_SIDE_BREAKPOINT = 480;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -32,14 +35,17 @@ function clamp(value: number, min: number, max: number): number {
 function createLayout(width: number, height: number, options: LayoutOptions = {}): LayoutMetrics {
   const gameWidth = Math.max(MIN_GAME_WIDTH, Math.round(width));
   const gameHeight = Math.max(MIN_GAME_HEIGHT, Math.round(height));
-  const arenaInset = clamp(Math.round(Math.min(gameWidth, gameHeight) * 0.11), MIN_ARENA_INSET, MAX_ARENA_INSET);
+  const baseArenaInset = clamp(Math.round(Math.min(gameWidth, gameHeight) * 0.11), MIN_ARENA_INSET, MAX_ARENA_INSET);
+  const arenaInset = gameWidth <= COMPACT_ARENA_SIDE_BREAKPOINT
+    ? clamp(Math.round(gameWidth * 0.075), MIN_ARENA_SIDE_INSET, MAX_ARENA_SIDE_INSET)
+    : baseArenaInset;
   const arenaTopInset = clamp(
-    Math.round(options.topInsetOverride ?? arenaInset),
+    Math.round(options.topInsetOverride ?? baseArenaInset),
     MIN_ARENA_INSET,
     gameHeight - MIN_ARENA_INSET,
   );
   const arenaBottomInset = clamp(
-    Math.round(options.bottomInsetOverride ?? arenaInset),
+    Math.round(options.bottomInsetOverride ?? baseArenaInset),
     MIN_ARENA_INSET,
     gameHeight - arenaTopInset - MIN_ARENA_INSET,
   );

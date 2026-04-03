@@ -1,0 +1,16 @@
+# BIG Ideas
+
+## Multiplayer
+    Players play on the same board, attempting to salvage what they can with three stocks
+    Choose Credit Score to race to {500, 750, 1000}
+    Shields work to also bounce asteroids away (or potentially at another player)
+
+## Campaign
+    Banked "Credits" can be used to buy new ships - Lost if destroyed
+    - Higher Yield on Salvage
+    - Higher Yield on Asteroids
+    - Stacks +1 Shield
+    - Stacks +2 Shield
+    - Smart Bomb to Clear Board
+    - Smaller Hitbox Higher maneuverability
+    - Smallest Hitbox Highest maneuverability

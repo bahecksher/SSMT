@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { SCENE_KEYS } from '../constants';
 import { setLayoutSize } from '../layout';
 import { preloadMusic } from '../systems/MusicSystem';
+import { preloadSfx } from '../systems/SfxSystem';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -10,6 +11,7 @@ export class BootScene extends Phaser.Scene {
 
   preload(): void {
     preloadMusic(this);
+    preloadSfx(this);
   }
 
   create(): void {

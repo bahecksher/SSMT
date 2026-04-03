@@ -1,6 +1,6 @@
 import { SETTINGS_KEY } from '../constants';
 
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 
 export interface GameSettings {
   screenShake: boolean;
@@ -17,7 +17,7 @@ interface StoredSettings extends Partial<GameSettings> {
 const DEFAULT_SETTINGS: GameSettings = {
   screenShake: true,
   scanlines: true,
-  musicEnabled: false,
+  musicEnabled: true,
   musicVolume: 0.7,
   fxVolume: 1.0,
 };
@@ -49,7 +49,7 @@ function load(): GameSettings {
       const parsed = JSON.parse(raw) as StoredSettings;
       const settings = normalize({ ...DEFAULT_SETTINGS, ...parsed });
 
-      // Reset music to the new default once for older saves that predate the beta-off default.
+      // Reset music to the current default once for older saves that predate the latest music-default change.
       if ((parsed.version ?? 0) < SETTINGS_VERSION) {
         settings.musicEnabled = DEFAULT_SETTINGS.musicEnabled;
         save(settings);

@@ -218,3 +218,21 @@ The hologram reticle cursor now smoothly morphs into a rounded rectangle that hu
 
 ### 2026-04-02 - Favors are fixed liaison purchases; rep identifies leaderboard company
 MissionSelect favors no longer unlock or scale from reputation. Each liaison always sells one fixed favor, while accumulated rep is now used to determine the pilot's leaderboard company affiliation based on the highest saved company rep.
+
+### 2026-04-02 - Adaptive music uses provided state-specific loops
+The soundtrack now uses the user-provided `Menu Synth`, `Bass 1`, `Drums 3`, `Bass 3`, `Synth 3`, `Full Phase 1`, and `Full Phase 2` exports. Menu/pause/result states anchor to `Menu Synth`, MissionSelect layers `Bass 1` under it, gameplay adds the three phase stems by progression, and phase 6+ hands off to a single randomly chosen full-track loop for the rest of the run.
+
+### 2026-04-02 - Early gameplay keeps Bass 1; full-track handoff starts at phase 5
+After the first soundtrack integration pass, the early gameplay arrangement was tightened so `Bass 1` continues under `Drums 3` for phases 1-2, then phase 3 swaps to `Bass 3` and adds `Synth 3`. The single full-track takeover now starts at phase 5 instead of phase 6.
+
+### 2026-04-02 - Music now defaults on
+Music no longer defaults to off in saved settings. New installs start with music enabled, and the settings version was bumped so older local saves adopt the new default once.
+
+### 2026-04-02 - SFX use the shared FX volume and pickup doubles as UI click
+The provided gameplay sounds are now preloaded through a shared SFX helper that respects `FX VOL`. `Pick Up` is used both for gameplay pickup collection and for menu / MissionSelect / pause / result UI selections, while the other provided clips map to shield loss, asteroid impact, bomb detonation, player death, and first enemy entrance.
+
+### 2026-04-02 - Early phase music now ramps through Drums 2 before the late-game swap
+MissionSelect now plays `Bass 1` alone. Gameplay uses `Bass 1` for phase 1, adds `Drums 2` at phase 2, adds `Synth 3` at phase 3, swaps to `Bass 3` + `Drums 3` + `Synth 3` at phase 4, and hands off to a random full-track loop at phase 5+.
+
+### 2026-04-03 - NPC deaths use the death cue; enemy warning now leads phase 5
+The `Player Death` clip now also marks NPC kills, including hazard kills and player shield crashes into NPCs. The opening phase-1 board wipe now uses the bomb cue, and the first enemy warning SFX was moved from first visible spawn to the phase 5 transition so it lands before enemies appear.

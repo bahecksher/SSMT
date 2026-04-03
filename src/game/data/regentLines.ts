@@ -42,13 +42,6 @@ const REGENT_LINES: Record<RegentLineKey, string[]> = {
   ],
 };
 
-const lastLineByKey = new Map<RegentLineKey, string>();
+import { createLinePicker } from '../utils/linePicker';
 
-export function getRegentLine(key: RegentLineKey): string {
-  const lines = REGENT_LINES[key];
-  const previous = lastLineByKey.get(key);
-  const options = lines.length > 1 && previous ? lines.filter((line) => line !== previous) : lines;
-  const line = options[Math.floor(Math.random() * options.length)] ?? lines[0];
-  lastLineByKey.set(key, line);
-  return line;
-}
+export const getRegentLine = createLinePicker(REGENT_LINES);

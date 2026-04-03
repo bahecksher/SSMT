@@ -2,12 +2,7 @@ import Phaser from 'phaser';
 import { COLORS } from '../constants';
 import { DRIFTER_RADIUS, DRIFTER_MINING_RADIUS_MULT, DRIFTER_MAX_HP, DRIFTER_SPEED_MAX, HP_DEPLETED_WARN_TIME } from '../data/tuning';
 import { getLayout } from '../layout';
-
-function rotatePoint(px: number, py: number, angle: number): [number, number] {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return [px * cos - py * sin, px * sin + py * cos];
-}
+import { rotatePoint } from '../utils/geometry';
 
 export class DrifterHazard {
   graphic: Phaser.GameObjects.Graphics;
@@ -127,6 +122,10 @@ export class DrifterHazard {
     d.vx = vx;
     d.vy = vy;
     d.active = true;
+    d.inverted = false;
+    d.bounceCount = 0;
+    d.depletedTimer = 0;
+    d.miningPulse = 0;
     d.angle = 0;
     d.spinSpeed = Phaser.Math.FloatBetween(0.2, 0.6) * (Math.random() < 0.5 ? 1 : -1);
     d.vertices = DrifterHazard.generateVertices(d.radius);

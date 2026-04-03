@@ -1,14 +1,9 @@
 import Phaser from 'phaser';
 import { ENEMY_RADIUS, ENEMY_SPEED, ENEMY_TURN_RATE } from '../data/tuning';
 import { getLayout } from '../layout';
+import { rotatePoint } from '../utils/geometry';
 
 const ENEMY_COLOR = 0xff00ff; // magenta
-
-function rotatePoint(px: number, py: number, angle: number): [number, number] {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return [px * cos - py * sin, px * sin + py * cos];
-}
 
 export class EnemyShip {
   graphic: Phaser.GameObjects.Graphics;

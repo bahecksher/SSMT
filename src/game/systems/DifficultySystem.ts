@@ -19,6 +19,7 @@ import { SHIELD_PICKUP_RADIUS } from '../entities/ShieldPickup';
 import { ShipDebris } from '../entities/ShipDebris';
 import { Overlays } from '../ui/Overlays';
 import { getLayout, getArenaDensityScale } from '../layout';
+import { playSfx } from './SfxSystem';
 
 export class DifficultySystem {
   private scene: Phaser.Scene;
@@ -43,6 +44,7 @@ export class DifficultySystem {
   private npcTimer = 0;
   private npcBonusMult = 1.0;
   private bonusDropChanceAdd = 0.0;
+  private asteroidCollisionSfxCooldownMs = 0;
 
   constructor(scene: Phaser.Scene, phase: number) {
     this.scene = scene;
@@ -108,6 +110,7 @@ export class DifficultySystem {
   }
 
   update(delta: number, playerX = 0, playerY = 0): void {
+    this.asteroidCollisionSfxCooldownMs = Math.max(0, this.asteroidCollisionSfxCooldownMs - delta);
     this.drifterTimer += delta;
     if (this.drifterTimer >= this.config.hazardSpawnRate * this.scaledSpawnMult && this.drifters.length < this.scaledMaxDrifters) {
       const speed = DRIFTER_SPEED_BASE * this.config.hazardSpeedMultiplier;
@@ -387,6 +390,10 @@ export class DifficultySystem {
           const relDotN = relVx * nx + relVy * ny;
 
           if (relDotN > 0) {
+            if (this.asteroidCollisionSfxCooldownMs <= 0) {
+              playSfx(this.scene, 'asteroidCollision', { volumeScale: 0.9 });
+              this.asteroidCollisionSfxCooldownMs = 90;
+            }
             const impulse = (2 * relDotN) / (massA + massB);
             a.vx -= impulse * massB * nx;
             a.vy -= impulse * massB * ny;
@@ -559,6 +566,12 @@ export class DifficultySystem {
             vx: enemy.getVelocityX() * 0.45, vy: enemy.getVelocityY() * 0.45,
             points: Math.round(ENEMY_BONUS_POINTS * this.npcBonusMult),
           });
+          if (Math.random() < BOMB_DROP_CHANCE + this.bonusDropChanceAdd) {
+            this.bombDropPositions.push({
+              x: enemy.x, y: enemy.y,
+              vx: enemy.getVelocityX() * 0.3, vy: enemy.getVelocityY() * 0.3,
+            });
+          }
         }
       }
 
@@ -585,8 +598,6 @@ export class DifficultySystem {
       y <= layout.arenaBottom - SHIELD_PICKUP_RADIUS
     );
   }
-
-
 
   destroy(): void {
     for (const d of this.drifters) d.destroy();

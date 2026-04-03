@@ -52,35 +52,6 @@ export class Overlays {
     });
   }
 
-  /**
-   * Death static overlay: show a red-tinted overlay for 1 second, then fade out and transition.
-   * setInverted is kept for API compatibility but not used for flashing.
-   */
-  static deathInversionSequence(
-    scene: Phaser.Scene,
-    _setInverted: (inverted: boolean) => void,
-    onComplete: () => void,
-  ): void {
-    const layout = getLayout();
-    // Static red overlay — no flashing
-    const overlay = scene.add.graphics().setDepth(199);
-    overlay.fillStyle(COLORS.HAZARD, 0.45);
-    overlay.fillRect(0, 0, layout.gameWidth, layout.gameHeight);
-
-    // Hold for 1 second, then fade out and transition
-    scene.time.delayedCall(1000, () => {
-      scene.tweens.add({
-        targets: overlay,
-        alpha: 0,
-        duration: 300,
-        onComplete: () => {
-          overlay.destroy();
-          onComplete();
-        },
-      });
-    });
-  }
-
   /** Two quick red flashes to warn of incoming beam volley. */
   static beamWarningFlash(scene: Phaser.Scene): void {
     const layout = getLayout();

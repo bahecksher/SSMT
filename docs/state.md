@@ -1,55 +1,44 @@
 # State
-_Last updated: 2026-04-02 1821_
+_Last updated: 2026-04-03 0006_
 
 ## Current focus
-Session closed after pushing the mobile HUD/comms cleanup and leaderboard company affiliation update set to `origin/main`.
+Session wrapped after packaging the current gameplay, UI, mission, and audio pass for git commit and push.
 
 ## What's working
-- Runtime scene flow remains `Menu -> MissionSelect -> Game`, with layered music/settings work still intact
-- Menu and MissionSelect still share the drifting background layer and preserve background state handoffs across scenes
-- MissionSelect favor cards now show liaison/company identity plus a fixed favor offer and purchase state without rep standing/progress copy
-- Favors no longer depend on rep for unlocks or scaling; each company now sells one fixed offer
-- Rep still accrues from completed missions and now maps to a leaderboard company by highest saved company rep
-- Leaderboard fetch/submit now supports an optional `company_id` field and falls back cleanly if the server has not been migrated yet
-- Menu leaderboard rows now show a compact company tag and company-colored text when company affiliation is present
-- `GameScene` uses the original/default arena framing again instead of the temporary symmetric gameplay reserve
-- Gameplay comms anchor to the bottom of the screen and use a compact bottom-pinned layout with tighter spacing, smaller portraits, and improved readability opacity
-- Active mission pills slide upward and fade out when a gameplay comm appears, then slide back in when the comm clears
-- Result overlays still use full-width `DESTROYED` / `EXTRACT` bars, and result-state comm panels still keep the fuller pinned layout
-- `npm.cmd run build` passes
-- The session changes are committed as `a609778` and pushed to `origin/main`
+- Menu, MissionSelect, gameplay, pause, death, and extract all use the current layered music flow with the provided stems
+- Gameplay and UI SFX are wired through the shared `FX VOL` path, including the newer NPC death, board-wipe, and phase-5 warning triggers
+- MissionSelect, HUD, comm, cursor, layout, and gameplay polish changes from the current worktree are all staged as one integrated pass
+- `npm.cmd run build` passes on the current worktree
 
 ## In progress
-Nothing active.
+- The remaining follow-up work is mostly feel and backend cleanup rather than blocked implementation
 
 ## Known issues
-- Browser autoplay restrictions may delay the first audible music start until player interaction after opting in
-- Stem balance and fade timing still need a real feel pass with the current mix
-- The recent readability/menu/result/mobile-HUD/favor-card/comm-layout passes still need a real phone/desktop visual playcheck for clipping, density, and transition feel
+- Browser autoplay restrictions still require an initial player interaction before audio can become audible on some fresh browser sessions
+- The soundtrack and SFX still need a real feel pass for balance, overlap, and loudness
+- `Bomb - Copy.mp3` was provided but left unused because it appears to duplicate `Bomb.mp3`
 - Retry after extraction still bypasses MissionSelect, so changing favors or contracts requires returning to menu
 - Beam hazards still span full screen width/height, not clipped to arena
-- No SFX or voiced delivery for Slick, Regent, or liaisons yet
+- No voiced delivery for Slick, Regent, or liaisons yet
 - `node`/`npm` not on PowerShell PATH; use `npm.cmd` or set PATH explicitly
 - Windows Firewall may block port `5173` for LAN phone testing
 - Supabase `scores` still needs a nullable `company_id` column added server-side before new submissions can persist company affiliation
 
 ## Next actions
-1. Run the server-side `company_id` migration for the `scores` table
-2. Playcheck the bottom comm plus mission-tracker slide behavior on a phone-sized viewport
-3. Resume the adaptive music feel pass, especially stem balance and volume behavior
+1. Playcheck the current audio mix and trigger timing on device
+2. Run the server-side `company_id` migration for the `scores` table
+3. Continue the next gameplay polish pass from the current main branch state
 
 ## Active plan
-docs/plans/2026-03-29 1753 Plan - Layered Music System.md
+docs/plans/2026-04-02 2354 Plan revision - Layered Music System.md
 
 ## How to verify
 1. Run `npm.cmd run build`
-2. Start a run and trigger Slick, Regent, or liaison comms
-3. Confirm the arena is still using the original/default gameplay dimensions
-4. Confirm bottom gameplay comms are compact/readable and mission pills slide out while comms are active
-5. Confirm leaderboard rows show company affiliation when `company_id` is present in score data
+2. Confirm Menu to MissionSelect to gameplay still follows the current music progression
+3. Confirm NPC deaths, the opening board wipe, and the phase-5 warning all fire their intended SFX
+4. Confirm recent UI and mission-flow changes still behave correctly on desktop and mobile
 
 ## Recent logs
-- docs/log/2026-04-02 1821 Session Closeout and Push.md - recorded the clean end-of-session state after the final commit was pushed to main
-- docs/log/2026-04-02 1813 Mission Tracker Slide Hide for Gameplay Comms.md - changed mission pills from a hard visibility toggle to a slide-and-fade transition under gameplay comms
-- docs/log/2026-04-02 1812 Bottom Comm Readability Opacity Follow-up.md - increased compact bottom comm opacity after the first transparent pass was too light to read clearly
-- docs/log/2026-04-02 1810 Compact Transparent Bottom Gameplay Comms.md - made bottom gameplay comms thinner and more transparent without changing the restored arena framing
+- docs/log/2026-04-03 0006 Git Push Wrap-Up.md - closed the current worktree into a single ship-ready git pass
+- docs/log/2026-04-03 0001 Gameplay Audio Trigger Timing Pass.md - added NPC death cues, gave the opening board wipe the bomb sound, and moved the first enemy warning to the phase 5 transition
+- docs/log/2026-04-02 2357 Mission Select Unlock Music Fix.md - moved pending music unlock handling to Phaser's sound-manager unlock event so the first briefing visit keeps its bass handoff

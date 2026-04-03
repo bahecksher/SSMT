@@ -14,6 +14,7 @@ import {
 import { CompanyId } from '../types';
 import type { ActiveMission } from '../types';
 import { refreshMusicForSettings, setMissionMusic } from '../systems/MusicSystem';
+import { playUiSelectSfx } from '../systems/SfxSystem';
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { HologramOverlay } from '../ui/HologramOverlay';
@@ -64,7 +65,7 @@ type MissionButton = {
 const CARD_HEIGHT = 68;
 const CARD_GAP = 8;
 const CARD_MARGIN_X = 32;
-const FAVOR_CARD_HEIGHT = 122;
+const FAVOR_CARD_HEIGHT = 108;
 const FAVOR_CARD_GAP = 8;
 const FAVOR_SECTION_GAP = 10;
 const REROLL_BASE_COST = 200;
@@ -160,9 +161,9 @@ export class MissionSelectScene extends Phaser.Scene {
     this.hologramOverlay = new HologramOverlay(this);
     this.hologramOverlay.setEnabled(getSettings().scanlines);
 
-    this.add.text(layout.centerX, briefing.titleY, 'MISSION BRIEFING', {
+    this.add.text(layout.centerX, briefing.titleY, 'JOB BOARD', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(briefing.compact ? 22 : 24),
+      fontSize: readableFontSize(briefing.compact ? 17 : 19),
       color: colorStr(COLORS.HUD),
       align: 'center',
     }).setOrigin(0.5).setDepth(10);
@@ -191,8 +192,8 @@ export class MissionSelectScene extends Phaser.Scene {
     const tight = layout.gameHeight <= 640;
     const cardMarginX = Phaser.Math.Clamp(Math.round(layout.gameWidth * 0.05), 20, CARD_MARGIN_X);
     const cardWidth = layout.gameWidth - cardMarginX * 2;
-    const titleY = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.07), 42, 72);
-    const subtitleY = titleY + (compact ? 22 : 28);
+    const titleY = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.075), compact ? 46 : 50, 72);
+    const subtitleY = titleY + (compact ? 18 : 22);
     const cardHeight = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.075), 58, CARD_HEIGHT);
     const cardGap = compact ? 8 : CARD_GAP;
     const cardTop = subtitleY + (compact ? 14 : 18);
@@ -208,9 +209,9 @@ export class MissionSelectScene extends Phaser.Scene {
     const deployButtonHeight = compact ? 40 : 46;
     const deployY = layout.gameHeight - (compact ? 34 : 50);
     const favorCardWidth = cardWidth;
-    const baseFavorCardHeight = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.108), 92, FAVOR_CARD_HEIGHT);
-    const minFavorCardHeight = tight ? 56 : compact ? 64 : 76;
-    const favorToDeployGap = tight ? 4 : compact ? 8 : 10;
+    const baseFavorCardHeight = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.096), 82, FAVOR_CARD_HEIGHT);
+    const minFavorCardHeight = tight ? 52 : compact ? 58 : 68;
+    const favorToDeployGap = tight ? 10 : compact ? 14 : 16;
     const favorCardsAvailableHeight = Math.floor((deployY - deployButtonHeight / 2) - favorToDeployGap - favorGridTop);
     const stackedFavorCardHeight = Math.floor(
       (favorCardsAvailableHeight - favorCardGap * (COMPANY_IDS.length - 1)) / COMPANY_IDS.length,
@@ -282,6 +283,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     hitZone.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
+      playUiSelectSfx(this);
       const wasAccepted = this.missions[index].accepted;
       this.missions[index].accepted = !wasAccepted;
       this.saveMissions();
@@ -366,6 +368,7 @@ export class MissionSelectScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true });
       rerollHit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
         event.stopPropagation();
+        playUiSelectSfx(this);
         this.executeReroll();
       });
       this.rerollUi.push(rerollHit);
@@ -405,6 +408,7 @@ export class MissionSelectScene extends Phaser.Scene {
     ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(12).setInteractive({ useHandCursor: true });
     hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
+      playUiSelectSfx(this);
       this.returnToMenu();
     });
     this.navUi.push(hit);
@@ -598,6 +602,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
+      playUiSelectSfx(this);
       onPointerDown();
     });
 
@@ -747,7 +752,6 @@ export class MissionSelectScene extends Phaser.Scene {
       const cardLeft = briefing.cardMarginX;
       const cardTop = gridTop + i * (briefing.favorCardHeight + briefing.favorCardGap);
       const canAfford = selected || (selectedCost + offer.cost <= walletCredits);
-      const shortfall = !selected ? Math.max(0, selectedCost + offer.cost - walletCredits) : 0;
       const borderColor = COLORS.HUD;
       const statusLabel = selected ? 'SELECTED' : !canAfford ? 'SHORT' : null;
       const statusColor = selected ? COLORS.GATE : !canAfford ? COLORS.HAZARD : company.color;
@@ -772,10 +776,8 @@ export class MissionSelectScene extends Phaser.Scene {
       const textRight = cardLeft + cardWidth - badgeReserve;
       const textWidth = Math.max(132, textRight - textLeft);
       const contentTop = cardTop + (denseFavorLayout ? 5 : briefing.compact ? 7 : 9);
-      const headerGap = denseFavorLayout ? 0 : 2;
       const sectionGap = denseFavorLayout ? 2 : 4;
       const offerAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.48 : 0.54));
-      const detailAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.72 : 0.78));
 
       const bg = this.add.graphics().setDepth(10);
       bg.fillStyle(COLORS.BG, 0.92);
@@ -811,9 +813,10 @@ export class MissionSelectScene extends Phaser.Scene {
         this.drawFavorBadge(cardLeft + cardWidth - 8, badgeTop, statusLabel, statusColor, statusTextColor, briefing.compact);
       }
 
-      const companyText = this.add.text(textLeft, contentTop, company.name, {
+      const companyLine = `${company.name} // LIAISON: ${company.liaison}`;
+      const companyText = this.add.text(textLeft, contentTop, companyLine, {
         fontFamily: UI_FONT,
-        fontSize: readableFontSize(denseFavorLayout ? 10 : briefing.compact ? 12 : 13),
+        fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
         fontStyle: 'bold',
         color: colorStr(company.color),
         stroke: colorStr(COLORS.BG),
@@ -823,48 +826,18 @@ export class MissionSelectScene extends Phaser.Scene {
       companyText.setLineSpacing(-1);
       this.favorUi.push(companyText);
 
-      const liaisonText = this.add.text(
-        textLeft,
-        companyText.y + companyText.height + headerGap,
-        `LIAISON // ${company.liaison}`,
-        {
-          fontFamily: UI_FONT,
-          fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 9 : 10),
-          fontStyle: 'bold',
-          color: colorStr(company.color),
-          stroke: colorStr(COLORS.BG),
-          strokeThickness: 2,
-          wordWrap: { width: textWidth },
-        },
-      ).setDepth(11).setAlpha(0.88);
-      liaisonText.setLineSpacing(-1);
-      this.favorUi.push(liaisonText);
-
-      const offerText = this.add.text(textLeft, Math.max(liaisonText.y + liaisonText.height + sectionGap, offerAnchorY), `FAVOR // ${offer.label} ${offer.boostValue}`, {
+      const offerLine = `${offer.label} ${offer.boostValue} // ${offer.cost}c`;
+      const offerText = this.add.text(textLeft, Math.max(companyText.y + companyText.height + sectionGap, offerAnchorY), offerLine, {
         fontFamily: UI_FONT,
-        fontSize: readableFontSize(denseFavorLayout ? 9 : briefing.compact ? 11 : 12),
+        fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
         fontStyle: 'bold',
         color: colorStr(company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
         wordWrap: { width: textWidth },
       }).setDepth(11).setAlpha(0.94);
+      offerText.setLineSpacing(-1);
       this.favorUi.push(offerText);
-
-      const detailLine = selected
-        ? `ARMED // ${offer.cost}c`
-        : canAfford
-          ? `${offer.cost}c // BUY FROM ${company.liaison}`
-          : `${offer.cost}c // SHORT ${shortfall}c`;
-      const detailText = this.add.text(textLeft, Math.max(offerText.y + offerText.height + sectionGap, detailAnchorY), detailLine, {
-        fontFamily: UI_FONT,
-        fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
-        color: colorStr(company.color),
-        stroke: colorStr(COLORS.BG),
-        strokeThickness: 2,
-        wordWrap: { width: textWidth },
-      }).setDepth(11).setAlpha(0.76);
-      this.favorUi.push(detailText);
 
       const hit = this.add.zone(cardLeft, cardTop, cardWidth, briefing.favorCardHeight)
         .setData('cornerRadius', 8)
@@ -880,6 +853,7 @@ export class MissionSelectScene extends Phaser.Scene {
         } else {
           return;
         }
+        playUiSelectSfx(this);
         this.drawFavorSection();
         this.drawRerollButton();
       });
@@ -951,17 +925,11 @@ export class MissionSelectScene extends Phaser.Scene {
     ).setData('cornerRadius', 12).setOrigin(0, 0).setDepth(12).setInteractive({ useHandCursor: true });
     deployHit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
+      playUiSelectSfx(this);
       this.deploy();
     });
     this.deployUi.push(deployHit);
 
-    const hint = this.add.text(layout.centerX, deployY + btnHeight / 2 + (briefing.compact ? 8 : 10), 'DEPLOYS WITH ACCEPTED CONTRACTS + ARMED FAVORS', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(briefing.compact ? 9 : 10),
-      color: colorStr(COLORS.HUD),
-      align: 'center',
-    }).setOrigin(0.5).setDepth(10).setAlpha(0.5);
-    this.deployUi.push(hint);
   }
 
   private deploy(): void {

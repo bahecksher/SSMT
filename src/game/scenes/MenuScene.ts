@@ -15,6 +15,7 @@ import { getSlickLine } from '../data/slickLines';
 import { getLayout, setLayoutSize } from '../layout';
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
 import { refreshMusicForSettings, setMenuMusic } from '../systems/MusicSystem';
+import { playUiSelectSfx } from '../systems/SfxSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { SettingsSlider } from '../ui/SettingsSlider';
 
@@ -205,6 +206,7 @@ export class MenuScene extends Phaser.Scene {
 
       const updatedName = save.setPlayerInitials(nextInitials);
       if (!updatedName) return;
+      playUiSelectSfx(this);
       this.pilotText.setText(`PILOT: ${updatedName}`);
     });
 
@@ -275,6 +277,7 @@ export class MenuScene extends Phaser.Scene {
     this.dailyTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
       if (this.activePeriod !== 'daily') {
+        playUiSelectSfx(this);
         this.activePeriod = 'daily';
         this.updateTabStyles();
         this.loadLeaderboard();
@@ -284,6 +287,7 @@ export class MenuScene extends Phaser.Scene {
     this.weeklyTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
       if (this.activePeriod !== 'weekly') {
+        playUiSelectSfx(this);
         this.activePeriod = 'weekly';
         this.updateTabStyles();
         this.loadLeaderboard();
@@ -348,6 +352,7 @@ export class MenuScene extends Phaser.Scene {
       }
 
       // Snapshot background entity state for seamless handoff
+      playUiSelectSfx(this);
       const backgroundHandoff = this.buildBackgroundHandoff();
       this.cleanupBackground();
       this.scene.start(SCENE_KEYS.MISSION_SELECT, backgroundHandoff);
@@ -728,6 +733,7 @@ export class MenuScene extends Phaser.Scene {
 
     hit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
+      playUiSelectSfx(this);
       onPointerDown();
     });
 

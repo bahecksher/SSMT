@@ -36,7 +36,13 @@ import { getSlickLine } from '../data/slickLines';
 import { getRegentLine } from '../data/regentLines';
 import { getLayout, setLayoutSize } from '../layout';
 import { getSettings, updateSettings } from '../systems/SettingsSystem';
-import { refreshMusicForSettings, setGameplayMusicForPhase } from '../systems/MusicSystem';
+import {
+  refreshMusicForSettings,
+  setGameplayMusicForPhase,
+  setPauseMusic,
+  setResultMusic,
+} from '../systems/MusicSystem';
+import { playSfx, playUiSelectSfx } from '../systems/SfxSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { SettingsSlider } from '../ui/SettingsSlider';
 
@@ -120,6 +126,7 @@ export class GameScene extends Phaser.Scene {
   private regentEnemyAnnounced = false;
   private regentBeamAnnounced = false;
   private regentLastPhase = 0;
+  private enemyEntranceSfxPlayed = false;
   private liaisonComm: LiaisonComm | null = null;
   private liaisonCompanyId: CompanyId | null = null;
   private liaisonRepLevel = 0;
@@ -169,6 +176,7 @@ export class GameScene extends Phaser.Scene {
     this.regentEnemyAnnounced = false;
     this.regentBeamAnnounced = false;
     this.regentLastPhase = 0;
+    this.enemyEntranceSfxPlayed = false;
     this.invulnerableTimer = 2000;
     this.bombPickups = [];
 
@@ -326,7 +334,6 @@ export class GameScene extends Phaser.Scene {
 
     this.refreshPauseUi();
 
-    this.input.on('pointerdown', this.handlePointerDown, this);
   }
 
   update(_time: number, delta: number): void {
@@ -426,6 +433,7 @@ export class GameScene extends Phaser.Scene {
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, s.x, s.y);
         if (dist < PLAYER_RADIUS + s.radius) {
           this.player.hasShield = true;
+          playSfx(this, 'pickup');
           this.missionSystem.trackShieldCollected();
           this.tryShowSlick('shieldPickup', 0.22);
           s.active = false;
@@ -462,6 +470,7 @@ export class GameScene extends Phaser.Scene {
       if (gameplayActive) {
         const playerDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, pickup.x, pickup.y);
         if (pickup.isCollectable() && playerDist < PLAYER_RADIUS + pickup.radius) {
+          playSfx(this, 'pickup');
           this.scoreSystem.addUnbanked(pickup.points);
           this.salvageSystem.spawnRewardText(`+${pickup.points}`, pickup.x, pickup.y - 8);
           pickup.active = false;
@@ -502,7 +511,7 @@ export class GameScene extends Phaser.Scene {
           bomb.active = false;
           bomb.destroy();
           this.bombPickups.splice(i, 1);
-          this.boardWipe();
+          this.boardWipe(true);
           continue;
         }
 
@@ -515,7 +524,7 @@ export class GameScene extends Phaser.Scene {
             bomb.active = false;
             bomb.destroy();
             this.bombPickups.splice(i, 1);
-            this.boardWipe();
+            this.boardWipe(true);
             this.handleDeath('asteroid');
             claimedByNpc = true;
             break;
@@ -541,6 +550,10 @@ export class GameScene extends Phaser.Scene {
       this.missionSystem.trackPhaseReached(currentPhase);
       this.difficultySystem.setPhase(currentPhase);
       setGameplayMusicForPhase(this, currentPhase);
+      if (currentPhase >= 5 && !this.enemyEntranceSfxPlayed) {
+        this.enemyEntranceSfxPlayed = true;
+        playSfx(this, 'enemyEntrance');
+      }
       const slickPhaseLine = Math.random() < 0.16 ? getSlickLine('phaseAdvance') : null;
       let regentPhaseLine: string | null = null;
 
@@ -676,6 +689,8 @@ export class GameScene extends Phaser.Scene {
         if (this.player.hasShield) {
           // Player shield absorbs hit — NPC destroyed
           this.player.hasShield = false;
+          playSfx(this, 'shieldLoss');
+          playSfx(this, 'playerDeath');
           this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
           npc.active = false;
           npc.killedByHazard = false;
@@ -695,6 +710,9 @@ export class GameScene extends Phaser.Scene {
     // Spawn shields from dead NPCs — inherit NPC velocity so they drift
     if (!runFrozen) {
       const deadNPCs = this.difficultySystem.consumeDeadNPCs();
+      if (deadNPCs.length > 0) {
+        playSfx(this, 'playerDeath');
+      }
       for (const pos of deadNPCs) {
         if (this.shields.length < 3) {
           const shield = new ShieldPickup(this, pos.x, pos.y, pos.vx * 0.5, pos.vy * 0.5);
@@ -728,6 +746,10 @@ export class GameScene extends Phaser.Scene {
       this.missionSystem.trackDamageTaken();
       if (this.player.hasShield) {
         this.player.hasShield = false;
+        if (hitDrifter) {
+          playSfx(this, 'asteroidCollision');
+        }
+        playSfx(this, 'shieldLoss');
         this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
         // Shield destroys or splits the asteroid it hit
         if (hitDrifter) {
@@ -749,6 +771,9 @@ export class GameScene extends Phaser.Scene {
           deathCause = 'asteroid';
         } else {
           deathCause = 'enemy';
+        }
+        if (hitDrifter) {
+          playSfx(this, 'asteroidCollision');
         }
         this.handleDeath(deathCause);
         return;
@@ -879,6 +904,8 @@ export class GameScene extends Phaser.Scene {
     this.tweens.timeScale = 1;
     this.hidePauseMenu();
     this.refreshPauseUi();
+    playSfx(this, 'playerDeath');
+    setResultMusic(this);
     const currentPhase = this.extractionSystem.getPhaseCount();
     if (cause === 'enemy' || cause === 'laser' || currentPhase >= 5) {
       this.slickComm.hide();
@@ -911,6 +938,7 @@ export class GameScene extends Phaser.Scene {
     this.tweens.timeScale = 1;
     this.hidePauseMenu();
     this.refreshPauseUi();
+    setResultMusic(this);
     // Check mission completion on extraction
     this.missionSystem.trackCreditsExtracted(this.scoreSystem.getBanked());
     this.missionSystem.checkExtraction();
@@ -1069,7 +1097,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private cleanup(): void {
-    this.input.off('pointerdown', this.handlePointerDown, this);
     this.time.timeScale = 1;
     this.tweens.timeScale = 1;
     this.inputSystem.destroy();
@@ -1168,7 +1195,7 @@ export class GameScene extends Phaser.Scene {
       }
       this.refreshPauseUi();
       // Game entry — clear board, flash white, fresh start
-      this.boardWipe();
+      this.boardWipe(true);
     }
   }
 
@@ -1239,12 +1266,12 @@ export class GameScene extends Phaser.Scene {
     const retryButtonY = menuButtonY - buttonHeight - buttonGap;
     const retryButtonTop = retryButtonY - buttonHeight / 2;
     const titleColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
-    const titleText = isDeath ? 'DESTROYED' : 'EXTRACT';
+    const titleText = isDeath ? 'DESTROYED' : 'EXTRACTED';
     const titleBarHeight = Phaser.Math.Clamp(Math.round(panelHeight * (compactResults ? 0.05 : 0.058)), 34, 48);
     const titleBarTop = panelTop + Phaser.Math.Clamp(Math.round(panelHeight * 0.018), 8, 16);
     const titleBarBottom = titleBarTop + titleBarHeight;
     const titleSize = readableFontSize(Phaser.Math.Clamp(Math.round(titleBarHeight * 0.58), 20, 30));
-    const scoreSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.053), isDeath ? 24 : 28, 38));
+    const scoreSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.05), 24, 36));
     const metaSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.026), 12, 16));
     const detailSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.022), 11, 14));
     const missionHeaderSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.024), 12, 15));
@@ -1279,15 +1306,18 @@ export class GameScene extends Phaser.Scene {
     const scoreText = this.add.text(
       centerX,
       currentY,
-      isDeath ? `CREDITS LOST: ${Math.floor(data.score)}` : `SCORE: ${Math.floor(data.score)}`,
+      isDeath ? `CREDITS LOST: ${Math.floor(data.score)}` : `CREDITS BANKED: ${Math.floor(data.score)}`,
       {
         fontFamily: UI_FONT,
         fontSize: scoreSize,
         color: `#${(isDeath ? COLORS.HAZARD : COLORS.SALVAGE).toString(16).padStart(6, '0')}`,
         align: 'center',
-        wordWrap: { width: textWidth },
+        ...(isDeath ? { wordWrap: { width: textWidth } } : {}),
       },
     ).setOrigin(0.5, 0).setDepth(210);
+    if (!isDeath) {
+      this.fitTextToWidth(scoreText, panelWidth - Math.round(panelPaddingX * 1.1), 16);
+    }
     this.resultUi.push(scoreText);
     currentY += scoreText.height;
     let resultContentBottomY = currentY;
@@ -1296,33 +1326,34 @@ export class GameScene extends Phaser.Scene {
       currentY += lineGap;
       const walletText = this.add.text(centerX, currentY, `WALLET +${Math.floor(data.walletPayout ?? 0)}c  //  TOTAL ${Math.floor(data.walletBalance ?? 0)}c`, {
         fontFamily: UI_FONT,
-        fontSize: metaSize,
+        fontSize: compactResults ? detailSize : metaSize,
         color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
         align: 'center',
         wordWrap: { width: textWidth },
-      }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.86);
+      }).setOrigin(0.5, 0).setDepth(210).setAlpha(compactResults ? 0.92 : 0.86);
       this.resultUi.push(walletText);
-      currentY += walletText.height + lineGap;
+      currentY += walletText.height;
       resultContentBottomY = currentY;
 
-      const slickCutText = this.add.text(centerX, currentY, `YOU KEEP ${getWalletSharePercent()}%  //  SLICK TAKES ${getSlickCutPercent()}%  //  SLICK GOT ${Math.floor(data.slickCut ?? 0)}c`, {
-        fontFamily: UI_FONT,
-        fontSize: detailSize,
-        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-        align: 'center',
-        wordWrap: { width: textWidth },
-      }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.62);
-      this.resultUi.push(slickCutText);
-      currentY += slickCutText.height;
-      resultContentBottomY = currentY;
+      if (!compactResults) {
+        currentY += lineGap;
+        const slickCutText = this.add.text(centerX, currentY, `YOU KEEP ${getWalletSharePercent()}%  //  SLICK TAKES ${getSlickCutPercent()}%  //  SLICK GOT ${Math.floor(data.slickCut ?? 0)}c`, {
+          fontFamily: UI_FONT,
+          fontSize: detailSize,
+          color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+          align: 'center',
+          wordWrap: { width: textWidth },
+        }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.62);
+        this.resultUi.push(slickCutText);
+        currentY += slickCutText.height;
+        resultContentBottomY = currentY;
+      }
     }
 
     // Mission results section
     const missions = data.missionProgress ?? [];
     if (missions.length > 0) {
-      const missionStartRatio = isDeath
-        ? (compactResults ? 0.2 : 0.24)
-        : (compactResults ? 0.24 : 0.28);
+      const missionStartRatio = compactResults ? 0.2 : (isDeath ? 0.24 : 0.28);
       currentY = Math.max(currentY + sectionGap, panelTop + panelHeight * missionStartRatio);
       const headerLabel = isDeath ? 'MISSIONS: INCOMPLETE' : 'MISSIONS:';
       const headerColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
@@ -1384,7 +1415,11 @@ export class GameScene extends Phaser.Scene {
       Math.max(gapTop, gapBottom - commPanelHeight),
     );
 
-    this.slickComm.setPinnedLayout(resultCommY, 212);
+    if (isDeath) {
+      this.slickComm.setPinnedLayout(resultCommY, 212);
+    } else {
+      this.slickComm.setPinnedCompactLayout(resultCommY, 212);
+    }
     if (isDeath) {
       this.regentComm.setPinnedLayout(resultCommY, 212);
     } else {
@@ -1431,6 +1466,17 @@ export class GameScene extends Phaser.Scene {
       obj.destroy();
     }
     this.resultUi = [];
+  }
+
+  private fitTextToWidth(text: Phaser.GameObjects.Text, maxWidth: number, minFontSize: number): void {
+    let fontSize = Number.parseInt(String(text.style.fontSize), 10);
+    if (!Number.isFinite(fontSize)) {
+      return;
+    }
+    while (text.width > maxWidth && fontSize > minFontSize) {
+      fontSize -= 1;
+      text.setFontSize(fontSize);
+    }
   }
 
   private createResultButton(
@@ -1482,6 +1528,7 @@ export class GameScene extends Phaser.Scene {
       event.stopPropagation();
       if (this.resultInputLocked) return;
       draw(true, true);
+      playUiSelectSfx(this);
       onClick();
     });
 
@@ -1513,12 +1560,12 @@ export class GameScene extends Phaser.Scene {
       'pointerdown',
       (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
         event.stopPropagation();
+        playUiSelectSfx(this);
         this.togglePause();
       },
     );
   }
 
-  /** Clear all hazards, enemies, salvage, and pickups from the board. */
   /** Clear all hazards, enemies, salvage, and pickups — each shatters into debris. */
   private clearBoard(): void {
     const drifters = this.difficultySystem.getDrifters();
@@ -1575,7 +1622,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Flash the board white, clear all entities, then respawn salvage after a delay. */
-  private boardWipe(): void {
+  private boardWipe(playBombSfx = false): void {
+    if (playBombSfx) {
+      playSfx(this, 'bomb');
+    }
     this.clearBoard();
     Overlays.bombFlash(this);
     this.time.delayedCall(800, () => {
@@ -1584,8 +1634,6 @@ export class GameScene extends Phaser.Scene {
       }
     });
   }
-
-  // --- Debug spawn helpers ---
 
   private togglePause(): void {
     if (this.state === GameState.PAUSED) {
@@ -1606,6 +1654,7 @@ export class GameScene extends Phaser.Scene {
     this.state = GameState.PAUSED;
     this.time.timeScale = GameScene.PAUSE_SLOW_SCALE;
     this.tweens.timeScale = GameScene.PAUSE_SLOW_SCALE;
+    setPauseMusic(this);
     this.showPauseMenu();
     this.refreshPauseUi();
   }
@@ -1618,6 +1667,7 @@ export class GameScene extends Phaser.Scene {
     this.hidePauseMenu();
     this.inputSystem.clear();
     this.state = this.pausedFromState;
+    setGameplayMusicForPhase(this, this.extractionSystem.getPhaseCount());
     this.refreshPauseUi();
   }
 
@@ -1679,6 +1729,7 @@ export class GameScene extends Phaser.Scene {
       'pointerdown',
       (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
         event.stopPropagation();
+        playUiSelectSfx(this);
         this.abandonRun();
       },
     );
@@ -1727,6 +1778,7 @@ export class GameScene extends Phaser.Scene {
       'pointerdown',
       (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
         event.stopPropagation();
+        playUiSelectSfx(this);
         const s = getSettings();
         updateSettings({ screenShake: !s.screenShake });
         const updated = getSettings();
@@ -1747,6 +1799,7 @@ export class GameScene extends Phaser.Scene {
       'pointerdown',
       (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
         event.stopPropagation();
+        playUiSelectSfx(this);
         const s = getSettings();
         updateSettings({ scanlines: !s.scanlines });
         const updated = getSettings();
@@ -1767,6 +1820,7 @@ export class GameScene extends Phaser.Scene {
       'pointerdown',
       (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
         event.stopPropagation();
+        playUiSelectSfx(this);
         const s = getSettings();
         updateSettings({ musicEnabled: !s.musicEnabled });
         const updated = getSettings();
@@ -1956,11 +2010,4 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private handlePointerDown(
-    _pointer: Phaser.Input.Pointer,
-    targets: Phaser.GameObjects.GameObject[],
-  ): void {
-    if (this.state !== GameState.RESULTS || this.resultInputLocked) return;
-    if (targets.length > 0) return;
-  }
 }

@@ -17,7 +17,6 @@ export class ExitGate {
   private previewTime: number;
   private extractDuration: number;
   private totalDuration: number;
-  private ringPulse = 0;
 
   constructor(
     scene: Phaser.Scene,
@@ -63,7 +62,6 @@ export class ExitGate {
     if (!this.active) return;
 
     this.elapsed += delta;
-    this.ringPulse += delta * 0.005;
     this.justBecameExtractable = false;
 
     if (this.elapsed >= this.totalDuration) {
@@ -79,9 +77,8 @@ export class ExitGate {
     this.draw();
   }
 
-  updateVisual(delta: number): void {
+  updateVisual(_delta: number): void {
     if (!this.active) return;
-    this.ringPulse += delta * 0.005;
     this.draw();
   }
 

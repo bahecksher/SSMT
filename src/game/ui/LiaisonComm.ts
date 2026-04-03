@@ -45,6 +45,7 @@ export class LiaisonComm {
   private scanTween: Phaser.Tweens.Tween;
   private autoHideMs: number;
   private readonly defaultY: number;
+  private readonly defaultDepth: number;
   private readonly panelColor: number;
   private readonly accentColor: number;
   private readonly defaultPanelWidth: number;
@@ -66,6 +67,7 @@ export class LiaisonComm {
     const y = 2;
     const depth = options.depth ?? 148;
     this.defaultY = y;
+    this.defaultDepth = depth;
     this.currentY = y;
     this.panelColor = company.color;
     this.accentColor = company.accent;
@@ -187,6 +189,7 @@ export class LiaisonComm {
     this.bottomInset = null;
     this.setCompactLayout(false);
     this.currentY = this.defaultY;
+    this.root.setDepth(this.defaultDepth);
     this.scene.tweens.killTweensOf(this.root);
     if (this.root.visible) this.root.setY(this.currentY);
   }

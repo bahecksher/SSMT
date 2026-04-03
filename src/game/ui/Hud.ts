@@ -6,7 +6,6 @@ import type { ActiveMission } from '../types';
 
 const HUD_COLOR = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
 const GATE_COLOR = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
-const SALVAGE_COLOR = `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`;
 
 const PILL_HEIGHT = 44;
 const PILL_GAP = 8;
@@ -107,8 +106,7 @@ export class Hud {
 
     const layout = getLayout();
     const compactHud = layout.gameWidth <= 430;
-    const missionLabelFontSize = compactHud ? 11 : 13;
-    const missionStatusFontSize = compactHud ? 10 : 12;
+    const missionLabelFontSize = compactHud ? 8 : 10;
     const missionStrokeThickness = compactHud ? 1 : 2;
     const count = missions.length;
     const availableWidth = layout.gameWidth - PILL_MARGIN_X * 2;
@@ -161,28 +159,18 @@ export class Hud {
       // Mission label (condensed to keep intent readable in the bottom gutter)
       const label = getHudMissionLabel(m);
       const labelColor = done ? GATE_COLOR : HUD_COLOR;
-      const labelText = this.scene.add.text(x + pillWidth / 2, pillY + 4, label, {
+      const labelText = this.scene.add.text(x + pillWidth / 2, pillY + PILL_HEIGHT / 2, label, {
         fontFamily: UI_FONT,
         fontSize: readableFontSize(missionLabelFontSize),
         color: labelColor,
+        align: 'center',
         stroke: '#020806',
         strokeThickness: missionStrokeThickness,
-      }).setOrigin(0.5, 0).setAlpha(done ? 0.94 : 0.82);
+        wordWrap: { width: Math.max(44, pillWidth - 8), useAdvancedWrap: true },
+      }).setOrigin(0.5).setAlpha(done ? 0.94 : 0.82);
+      labelText.setLineSpacing(compactHud ? -2 : -1);
       this.missionPillRoot.add(labelText);
       this.missionPills.push(labelText);
-
-      // Progress or done indicator
-      const statusStr = done ? '\u2713 DONE' : `${prog}/${m.def.target}`;
-      const statusColor = done ? GATE_COLOR : SALVAGE_COLOR;
-      const statusText = this.scene.add.text(x + pillWidth / 2, pillY + 24, statusStr, {
-        fontFamily: UI_FONT,
-        fontSize: readableFontSize(missionStatusFontSize),
-        color: statusColor,
-        stroke: '#020806',
-        strokeThickness: missionStrokeThickness,
-      }).setOrigin(0.5, 0).setAlpha(done ? 0.9 : 0.74);
-      this.missionPillRoot.add(statusText);
-      this.missionPills.push(statusText);
     }
 
     this.applyMissionPillVisibility(false);
@@ -263,19 +251,19 @@ function getHudMissionLabel(mission: ActiveMission): string {
   const target = mission.def.target;
   switch (mission.def.type) {
     case MissionType.REACH_CREDITS:
-      return `HOLD ${target} CR`;
+      return `HOLD ${target}`;
     case MissionType.EXTRACT_CREDITS:
-      return `EXTRACT ${target} CR`;
+      return `BANK ${target}`;
     case MissionType.DESTROY_NPCS:
       return `RIVALS x${target}`;
     case MissionType.DESTROY_ENEMIES:
       return `ENEMIES x${target}`;
     case MissionType.MINING_CREDITS:
-      return `MINE ${target} CR`;
+      return `MINE ${target}`;
     case MissionType.SALVAGE_CREDITS:
-      return `SALVAGE ${target} CR`;
+      return `SALVAGE ${target}`;
     case MissionType.SURVIVE_EXTRACT:
-      return `SURVIVE ${target} + EXIT`;
+      return `EXIT ${target} PHASES`;
     case MissionType.NO_DAMAGE_PHASE:
       return `FLAWLESS x${target}`;
     case MissionType.COLLECT_SHIELDS:

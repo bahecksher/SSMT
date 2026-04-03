@@ -1,14 +1,9 @@
 import Phaser from 'phaser';
 import { NPC_RADIUS, NPC_SALVAGE_RANGE, NPC_SPEED, NPC_TURN_RATE } from '../data/tuning';
 import { getLayout } from '../layout';
+import { rotatePoint } from '../utils/geometry';
 
 const NPC_COLOR = 0xffcc44; // amber/yellow — friendly but distinct
-
-function rotatePoint(px: number, py: number, angle: number): [number, number] {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return [px * cos - py * sin, px * sin + py * cos];
-}
 
 export class NPCShip {
   graphic: Phaser.GameObjects.Graphics;

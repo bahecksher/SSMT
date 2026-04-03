@@ -1,8 +1,5 @@
 import type Phaser from 'phaser';
 
-/** Threshold in pixels before the swipe registers movement. */
-const SWIPE_DEAD_ZONE = 0;
-
 /**
  * Maximum drag distance (px) that maps to full speed.
  * Dragging further than this still gives max speed but doesn't accelerate more.
@@ -69,11 +66,6 @@ export class InputSystem {
       const recenter = 0.03;
       this.anchorX += rawDx * recenter;
       this.anchorY += rawDy * recenter;
-    }
-
-    if (dist < SWIPE_DEAD_ZONE) {
-      this.swipe = { dx: 0, dy: 0, magnitude: 0 };
-      return;
     }
 
     const magnitude = Math.min(dist / SWIPE_MAX_DISTANCE, 1);

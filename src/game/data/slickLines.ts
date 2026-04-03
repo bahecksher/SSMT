@@ -66,13 +66,6 @@ const SLICK_LINES: Record<SlickLineKey, string[]> = {
   ],
 };
 
-const lastLineByKey = new Map<SlickLineKey, string>();
+import { createLinePicker } from '../utils/linePicker';
 
-export function getSlickLine(key: SlickLineKey): string {
-  const lines = SLICK_LINES[key];
-  const previous = lastLineByKey.get(key);
-  const options = lines.length > 1 && previous ? lines.filter((line) => line !== previous) : lines;
-  const line = options[Math.floor(Math.random() * options.length)] ?? lines[0];
-  lastLineByKey.set(key, line);
-  return line;
-}
+export const getSlickLine = createLinePicker(SLICK_LINES);

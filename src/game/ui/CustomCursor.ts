@@ -1,8 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS } from '../constants';
 
-export const SHOW_CIRCLE = true;
-
 const COLOR_IDLE = 0xffffff;
 const CURSOR_ALPHA = 0.4;
 
@@ -179,15 +177,13 @@ export class CustomCursor {
 
       g.lineStyle(1, color, reticleAlpha);
 
-      if (SHOW_CIRCLE) {
-        // Broken circle: 4 arcs with gaps at each tick position
-        for (let i = 0; i < 4; i++) {
-          const startAngle = i * (Math.PI / 2) + ARC_GAP;
-          const endAngle = (i + 1) * (Math.PI / 2) - ARC_GAP;
-          g.beginPath();
-          g.arc(0, 0, CIRCLE_RADIUS, startAngle, endAngle, false);
-          g.strokePath();
-        }
+      // Broken circle: 4 arcs with gaps at each tick position
+      for (let i = 0; i < 4; i++) {
+        const startAngle = i * (Math.PI / 2) + ARC_GAP;
+        const endAngle = (i + 1) * (Math.PI / 2) - ARC_GAP;
+        g.beginPath();
+        g.arc(0, 0, CIRCLE_RADIUS, startAngle, endAngle, false);
+        g.strokePath();
       }
 
       // Tick marks — always shown, cross through the circle boundary
