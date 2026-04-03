@@ -236,3 +236,6 @@ MissionSelect now plays `Bass 1` alone. Gameplay uses `Bass 1` for phase 1, adds
 
 ### 2026-04-03 - NPC deaths use the death cue; enemy warning now leads phase 5
 The `Player Death` clip now also marks NPC kills, including hazard kills and player shield crashes into NPCs. The opening phase-1 board wipe now uses the bomb cue, and the first enemy warning SFX was moved from first visible spawn to the phase 5 transition so it lands before enemies appear.
+
+### 2026-04-03 - Favors cost 2000 and cap at two armed per run
+All four liaison favors now cost a flat `2000c`. MissionSelect allows at most two favors to be armed at once, so the player can stack a pair of boosts without defaulting into all-company loadouts.

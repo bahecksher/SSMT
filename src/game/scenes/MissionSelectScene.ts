@@ -68,6 +68,7 @@ const CARD_MARGIN_X = 32;
 const FAVOR_CARD_HEIGHT = 108;
 const FAVOR_CARD_GAP = 8;
 const FAVOR_SECTION_GAP = 10;
+const MAX_SELECTED_FAVORS = 2;
 const REROLL_BASE_COST = 200;
 const BG_MAX_DEBRIS = 2;
 const BG_MAX_DRIFTERS = 5;
@@ -727,6 +728,7 @@ export class MissionSelectScene extends Phaser.Scene {
     const briefing = this.getBriefingLayoutConfig();
     const walletCredits = this.saveSystem.getWalletCredits();
     const selectedCost = this.getSelectedFavorCost();
+    const selectedCount = this.selectedFavorIds.size;
     const headerY = this.getFavorSectionTop();
 
     const walletText = this.add.text(layout.centerX, headerY, `WALLET: ${walletCredits}c`, {
@@ -749,13 +751,14 @@ export class MissionSelectScene extends Phaser.Scene {
       const company = COMPANIES[companyId];
       const offer = getFavorOffer(companyId);
       const selected = this.selectedFavorIds.has(companyId);
+      const atFavorLimit = !selected && selectedCount >= MAX_SELECTED_FAVORS;
       const cardLeft = briefing.cardMarginX;
       const cardTop = gridTop + i * (briefing.favorCardHeight + briefing.favorCardGap);
-      const canAfford = selected || (selectedCost + offer.cost <= walletCredits);
+      const canSelect = selected || (!atFavorLimit && selectedCost + offer.cost <= walletCredits);
       const borderColor = COLORS.HUD;
-      const statusLabel = selected ? 'SELECTED' : !canAfford ? 'SHORT' : null;
-      const statusColor = selected ? COLORS.GATE : !canAfford ? COLORS.HAZARD : company.color;
-      const statusTextColor = !canAfford ? COLORS.HAZARD : company.color;
+      const statusLabel = selected ? 'SELECTED' : atFavorLimit ? 'MAX 2' : !canSelect ? 'SHORT' : null;
+      const statusColor = selected ? COLORS.GATE : atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
+      const statusTextColor = atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
       const portraitLeftInset = denseFavorLayout ? 10 : 12;
       const portraitTopClearance = denseFavorLayout ? 8 : 10;
       const portraitBottomPadding = denseFavorLayout ? 6 : 8;
@@ -848,7 +851,7 @@ export class MissionSelectScene extends Phaser.Scene {
         event.stopPropagation();
         if (selected) {
           this.selectedFavorIds.delete(companyId);
-        } else if (selectedCost + offer.cost <= walletCredits) {
+        } else if (!atFavorLimit && selectedCost + offer.cost <= walletCredits) {
           this.selectedFavorIds.add(companyId);
         } else {
           return;

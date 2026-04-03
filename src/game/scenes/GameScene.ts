@@ -512,7 +512,7 @@ export class GameScene extends Phaser.Scene {
           bomb.destroy();
           this.bombPickups.splice(i, 1);
           this.boardWipe(true);
-          continue;
+          return;
         }
 
         // NPCs can trigger bombs — wipes field and kills the player

@@ -74,6 +74,7 @@ const PLAYER_WALLET_SHARE = 0.60;
 const PLAYER_WALLET_SHARE_PERCENT = Math.round(PLAYER_WALLET_SHARE * 100);
 const SLICK_CUT_PERCENT = 100 - PLAYER_WALLET_SHARE_PERCENT;
 const FIXED_FAVOR_LEVEL = 1;
+const FIXED_FAVOR_COST = 2000;
 
 // --- Reputation thresholds ---
 
@@ -93,10 +94,6 @@ const DEEPCORE_MINING_MULT = [1.0, 1.15, 1.30, 1.50];
 const RECLAIM_SALVAGE_MULT = [1.0, 1.15, 1.30, 1.50];
 const IRONVEIL_NPC_MULT    = [1.0, 1.50, 2.00, 3.00];
 const FREEPORT_DROP_ADD    = [0.0, 0.10, 0.20, 0.30];
-const DEEPCORE_FAVOR_COST  = [0, 8000, 18000, 32000];
-const RECLAIM_FAVOR_COST   = [0, 8000, 18000, 32000];
-const IRONVEIL_FAVOR_COST  = [0, 9000, 20000, 36000];
-const FREEPORT_FAVOR_COST  = [0, 7500, 16500, 29000];
 
 // --- Helpers ---
 
@@ -222,13 +219,8 @@ function formatBoost(companyId: CompanyId, level: number): string {
   }
 }
 
-function getFavorCost(companyId: CompanyId, level: number): number {
-  switch (companyId) {
-    case CompanyId.DEEPCORE: return DEEPCORE_FAVOR_COST[level];
-    case CompanyId.RECLAIM: return RECLAIM_FAVOR_COST[level];
-    case CompanyId.IRONVEIL: return IRONVEIL_FAVOR_COST[level];
-    case CompanyId.FREEPORT: return FREEPORT_FAVOR_COST[level];
-  }
+function getFavorCost(_companyId: CompanyId, _level: number): number {
+  return FIXED_FAVOR_COST;
 }
 
 function applyCompanyBoost(boosts: RunBoosts, companyId: CompanyId, level: number): void {
