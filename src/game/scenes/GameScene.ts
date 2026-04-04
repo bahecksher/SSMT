@@ -29,7 +29,8 @@ import { GeoSphere } from '../entities/GeoSphere';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { SlickComm } from '../ui/SlickComm';
 import { LiaisonComm } from '../ui/LiaisonComm';
-import { COMPANIES, loadCompanyRep, getRepLevel, getSlickCutPercent, getWalletSharePercent } from '../data/companyData';
+import { COMPANIES, loadCompanyRep, getRepLevel, getSlickCutPercent, getWalletSharePercent, getLeaderboardCompanyId } from '../data/companyData';
+import { submitLoss } from '../services/LeaderboardService';
 import { getLiaisonLine } from '../data/liaisonLines';
 import { RegentComm } from '../ui/RegentComm';
 import { getSlickLine } from '../data/slickLines';
@@ -898,6 +899,9 @@ export class GameScene extends Phaser.Scene {
       reward: m.def.reward,
     }));
     this.missionSystem.save();
+    const playerName = this.saveSystem.getPlayerName();
+    const companyId = getLeaderboardCompanyId(loadCompanyRep());
+    submitLoss(playerName, lostScore, companyId);
     this.resultData = { score: lostScore, cause: 'death', missionProgress };
     this.state = GameState.DEAD;
     this.time.timeScale = 1;

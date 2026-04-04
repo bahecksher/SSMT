@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { SCENE_KEYS, COLORS, UI_FONT, readableFontSize } from '../constants';
 import { COMPANIES } from '../data/companyData';
 import { SaveSystem } from '../systems/SaveSystem';
-import { fetchLeaderboard, type LeaderboardEntry } from '../services/LeaderboardService';
+import { fetchLeaderboard, fetchBiggestLoss, type LeaderboardEntry } from '../services/LeaderboardService';
 import { SalvageDebris } from '../entities/SalvageDebris';
 import { DrifterHazard } from '../entities/DrifterHazard';
 import { NPCShip } from '../entities/NPCShip';
@@ -69,6 +69,7 @@ export class MenuScene extends Phaser.Scene {
   private leaderboardTabWidth = 104;
   private leaderboardTabHeight = 30;
   private leaderboardFontSize = '14px';
+  private biggestLossText: Phaser.GameObjects.Text | null = null;
   private statusText!: Phaser.GameObjects.Text;
   private pilotText!: Phaser.GameObjects.Text;
 
@@ -819,15 +820,20 @@ export class MenuScene extends Phaser.Scene {
     // Clear existing entries
     for (const t of this.leaderboardTexts) t.destroy();
     this.leaderboardTexts = [];
+    if (this.biggestLossText) { this.biggestLossText.destroy(); this.biggestLossText = null; }
     this.statusText.setText('LOADING...').setVisible(true);
     this.positionMenuComm();
 
-    fetchLeaderboard(this.activePeriod, 10).then((entries) => {
+    Promise.all([
+      fetchLeaderboard(this.activePeriod, 10),
+      fetchBiggestLoss(this.activePeriod),
+    ]).then(([entries, biggestLoss]) => {
       // Scene may have been left while loading
       if (!this.scene.isActive()) return;
 
       this.statusText.setVisible(false);
       this.renderLeaderboard(entries);
+      this.renderBiggestLoss(biggestLoss);
     }).catch(() => {
       if (!this.scene.isActive()) return;
       this.statusText.setText('OFFLINE').setVisible(true);
@@ -882,6 +888,39 @@ export class MenuScene extends Phaser.Scene {
     this.positionMenuComm();
   }
 
+  private renderBiggestLoss(entry: LeaderboardEntry | null): void {
+    if (!entry) return;
+
+    const layout = getLayout();
+    const centerX = layout.centerX;
+    const rowHeight = this.leaderboardRowHeight;
+    const uiDepth = 10;
+    const deathColor = '#ff3366';
+
+    // Place below the last leaderboard entry (or status text)
+    let topY = this.leaderboardStartY;
+    if (this.leaderboardTexts.length > 0) {
+      const last = this.leaderboardTexts[this.leaderboardTexts.length - 1];
+      topY = last.y + rowHeight;
+    } else if (this.statusText?.visible) {
+      topY = this.statusText.y + rowHeight;
+    }
+
+    const y = topY + rowHeight * 0.4;
+    const company = entry.company_id ? COMPANIES[entry.company_id] : null;
+    const companyTag = company ? `${company.leaderboardTag} ` : '';
+    const line = `BIGGEST LOSS  ${companyTag}${entry.player_name}  ${Math.floor(entry.score)}`;
+
+    this.biggestLossText = this.add.text(centerX, y, line, {
+      fontFamily: UI_FONT,
+      fontSize: this.leaderboardFontSize,
+      color: deathColor,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(uiDepth);
+
+    this.positionMenuComm();
+  }
+
   private positionMenuComm(): void {
     if (!this.slickComm) return;
 
@@ -895,7 +934,9 @@ export class MenuScene extends Phaser.Scene {
       ? this.statusText.y + this.statusText.height / 2
       : this.leaderboardStartY;
 
-    if (this.leaderboardTexts.length > 0) {
+    if (this.biggestLossText) {
+      leaderboardBottom = this.biggestLossText.y + this.biggestLossText.height / 2;
+    } else if (this.leaderboardTexts.length > 0) {
       const lastEntry = this.leaderboardTexts[this.leaderboardTexts.length - 1];
       leaderboardBottom = lastEntry.y + lastEntry.height / 2;
     }
