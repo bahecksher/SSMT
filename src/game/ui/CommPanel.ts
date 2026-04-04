@@ -226,6 +226,16 @@ export class CommPanel {
     if (this.root.visible) this.root.setY(y);
   }
 
+  setPinnedCompactLayout(y: number, depth?: number): void {
+    this.bottomInset = null;
+    this.setCompactLayout(true);
+    this.currentY = y;
+    if (this.style.wipeDirection !== 'none') this.wipeIn = true;
+    this.root.setDepth(depth ?? this.root.depth);
+    this.scene.tweens.killTweensOf(this.root);
+    if (this.root.visible) this.root.setY(y);
+  }
+
   setBottomPinnedLayout(bottomInset: number, depth?: number): void {
     this.bottomInset = bottomInset;
     this.setCompactLayout(true);

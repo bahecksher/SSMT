@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { SCENE_KEYS, COLORS, UI_FONT, readableFontSize } from '../constants';
+import { colorStr } from '../utils/geometry';
 import { getLayout, setLayoutSize } from '../layout';
 import { loadOrGenerateMissions, loadMissionSave, MAX_REROLLS, saveMissionSelection } from '../systems/MissionSystem';
 import { SaveSystem } from '../systems/SaveSystem';
@@ -1165,8 +1166,4 @@ export class MissionSelectScene extends Phaser.Scene {
     this.bgNpcs = [];
     this.geoSphere?.destroy();
   }
-}
-
-function colorStr(hex: number): string {
-  return `#${hex.toString(16).padStart(6, '0')}`;
 }
