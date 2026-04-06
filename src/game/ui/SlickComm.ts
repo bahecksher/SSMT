@@ -11,7 +11,7 @@ export class SlickComm extends CommPanel {
         nameLabel: 'SLICK // OPS',
         nameColor: COLORS.SALVAGE,
         textColor: COLORS.HUD,
-        fillColor: 0x03110e,
+        fillColor: COLORS.BG,
         borderColor: COLORS.HUD,
         innerBorderColor: COLORS.PLAYER,
         wipeDirection: 'left',

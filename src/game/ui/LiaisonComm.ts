@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { TITLE_FONT } from '../constants';
 import type { CompanyDef } from '../data/companyData';
 import { CommPanel } from './CommPanel';
 import { darkenColor } from '../utils/geometry';
@@ -11,6 +12,7 @@ export class LiaisonComm extends CommPanel {
       {
         nameLabel: company.liaisonTitle,
         nameColor: company.color,
+        nameFontFamily: TITLE_FONT,
         textColor: company.color,
         fillColor: darkenColor(company.color, 0.15),
         borderColor: company.color,

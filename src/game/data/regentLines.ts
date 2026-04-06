@@ -8,25 +8,25 @@ export type RegentLineKey =
 
 const REGENT_LINES: Record<RegentLineKey, string[]> = {
   threatDetected: [
-    'Threat detected. Investigating.',
-    'Anomalous activity in sector. Dispatching patrol.',
+    'Off-world interference detected over Tortuga. Investigating.',
+    'Ring-lane intrusion detected. Dispatching patrol.',
   ],
   enemyEnter: [
-    'This is a restricted zone. Leave now or be removed.',
-    "Unregistered vessel detected. You have zero seconds to comply.",
-    'Regent Patrol to trespasser: Die rat.',
-    "You're in MY sector? That's a death sentence, pilot.",
-    'Attention, scavenger. Die.',
+    'Tortuga is closed. Leave now or be erased.',
+    'Regent project territory. You have zero seconds to comply.',
+    'Scrap diver, you trespass above a sovereign world.',
+    'This sky belongs to Regent. Die in it.',
+    'Attention, scavenger. You are not welcome here.',
   ],
   beamUnlock: [
-    "It's time to end this.",
+    'Protect the assembly sites. Burn them out.',
+    'Keep the ring lanes clear. Fire the lances.',
     "Should've left when you had the chance.",
-    'Burn them out.',
   ],
   gateClose: [
     'No where to go.',
-    'No exit for you.',
-    "Now here's the fun part",
+    'Nothing leaves Tortuga.',
+    'The project stays hidden.',
   ],
   killTaunt: [
     'All that and nothing to show for it.',
@@ -36,9 +36,9 @@ const REGENT_LINES: Record<RegentLineKey, string[]> = {
   ],
   whyWontYouDie: [
     "Why won't you DIE?!",
-    'Still here Pilot?!',
-    'You are the most annoying scavenger I have EVER encountered.',
-    'Fire Everything - EVERYTHING',
+    'Still here, pilot?!',
+    'You are delaying the Regent project.',
+    'Fire everything. The assembly must continue.',
   ],
 };
 

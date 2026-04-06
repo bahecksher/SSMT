@@ -1,13 +1,11 @@
 import Phaser from 'phaser';
-import { COLORS, UI_FONT, readableFontSize } from '../constants';
+import { COLORS, TITLE_FONT, UI_FONT, readableFontSize } from '../constants';
 import { getLayout } from '../layout';
 import { MissionType } from '../types';
 import type { ActiveMission } from '../types';
+import { colorStr } from '../utils/geometry';
 
-const HUD_COLOR = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
-const GATE_COLOR = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
-
-const PILL_HEIGHT = 44;
+const PILL_HEIGHT = 50;
 const PILL_GAP = 8;
 const PILL_MARGIN_X = 14;
 const PILL_MIN_GUTTER_GAP = 4;
@@ -18,17 +16,16 @@ export class Hud {
   private scene: Phaser.Scene;
   private scoreText: Phaser.GameObjects.Text;
   private bestText: Phaser.GameObjects.Text;
-  private phaseText: Phaser.GameObjects.Text;
   private shieldText: Phaser.GameObjects.Text;
   private missionPillRoot: Phaser.GameObjects.Container;
   private missionPills: Phaser.GameObjects.GameObject[] = [];
   private lastScore = -1;
   private lastBest = -1;
-  private lastPhase = -1;
   private lastShield = false;
   private lastMissionHash = '';
   private missionPillsHidden = false;
   private missionPillTween: Phaser.Tweens.Tween | null = null;
+  private currentMissions: ActiveMission[] = [];
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -38,37 +35,35 @@ export class Hud {
     const scoreFontSize = compactHud ? 13 : 16;
     const minorFontSize = compactHud ? 11 : 14;
     const shieldY = topMargin + (compactHud ? 16 : 24);
-    const textStyle: Phaser.Types.GameObjects.Text.TextStyle = {
-      fontFamily: UI_FONT,
+    const titleTextStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: TITLE_FONT,
       fontSize: readableFontSize(scoreFontSize),
-      color: HUD_COLOR,
+      color: colorStr(COLORS.HUD),
+    };
+    const minorTextStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      ...titleTextStyle,
+      fontFamily: UI_FONT,
     };
 
     this.scoreText = scene.add.text(16, topMargin, 'CREDITS: 0', {
-      ...textStyle,
-      color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
+      ...titleTextStyle,
+      color: colorStr(COLORS.SALVAGE),
     }).setDepth(100);
 
     this.bestText = scene.add.text(layout.gameWidth - 16, topMargin, 'BEST: 0', {
-      ...textStyle,
+      ...titleTextStyle,
     }).setOrigin(1, 0).setDepth(100);
 
-    this.phaseText = scene.add.text(layout.centerX, topMargin, 'PHASE 1', {
-      ...textStyle,
-      fontSize: readableFontSize(minorFontSize),
-      color: HUD_COLOR,
-    }).setOrigin(0.5, 0).setAlpha(0.5).setDepth(100);
-
     this.shieldText = scene.add.text(16, shieldY, '', {
-      ...textStyle,
+      ...minorTextStyle,
       fontSize: readableFontSize(minorFontSize),
-      color: '#44aaff',
+      color: colorStr(COLORS.SHIELD),
     }).setDepth(100);
 
     this.missionPillRoot = scene.add.container(0, 0).setDepth(100);
   }
 
-  update(score: number, best: number, phase: number = 1, hasShield = false): void {
+  update(score: number, best: number, _phase: number = 1, hasShield = false): void {
     const roundedScore = Math.floor(score);
     if (roundedScore !== this.lastScore) {
       this.scoreText.setText(`CREDITS: ${roundedScore}`);
@@ -81,11 +76,6 @@ export class Hud {
       this.lastBest = roundedBest;
     }
 
-    if (phase !== this.lastPhase) {
-      this.phaseText.setText(`PHASE ${phase}`);
-      this.lastPhase = phase;
-    }
-
     if (hasShield !== this.lastShield) {
       this.shieldText.setText(hasShield ? 'SHIELD' : '');
       this.lastShield = hasShield;
@@ -93,6 +83,8 @@ export class Hud {
   }
 
   updateMissions(missions: ActiveMission[]): void {
+    this.currentMissions = missions;
+
     // Build a hash to avoid re-rendering every frame
     const hash = missions.map((m) => `${m.def.type}:${Math.floor(m.progress)}:${m.completed}`).join('|');
     if (hash === this.lastMissionHash) return;
@@ -106,8 +98,8 @@ export class Hud {
 
     const layout = getLayout();
     const compactHud = layout.gameWidth <= 430;
-    const missionLabelFontSize = compactHud ? 8 : 10;
-    const missionStrokeThickness = compactHud ? 1 : 2;
+    const missionLabelFontSize = compactHud ? 9 : 11;
+    const missionStrokeThickness = compactHud ? 2 : 3;
     const count = missions.length;
     const availableWidth = layout.gameWidth - PILL_MARGIN_X * 2;
     const pillWidth = Math.min(
@@ -158,17 +150,17 @@ export class Hud {
 
       // Mission label (condensed to keep intent readable in the bottom gutter)
       const label = getHudMissionLabel(m);
-      const labelColor = done ? GATE_COLOR : HUD_COLOR;
+      const labelColor = colorStr(done ? COLORS.GATE : COLORS.HUD);
       const labelText = this.scene.add.text(x + pillWidth / 2, pillY + PILL_HEIGHT / 2, label, {
         fontFamily: UI_FONT,
         fontSize: readableFontSize(missionLabelFontSize),
         color: labelColor,
         align: 'center',
-        stroke: '#020806',
+        stroke: colorStr(COLORS.BG),
         strokeThickness: missionStrokeThickness,
-        wordWrap: { width: Math.max(44, pillWidth - 8), useAdvancedWrap: true },
+        wordWrap: { width: Math.max(52, pillWidth - 10), useAdvancedWrap: true },
       }).setOrigin(0.5).setAlpha(done ? 0.94 : 0.82);
-      labelText.setLineSpacing(compactHud ? -2 : -1);
+      labelText.setLineSpacing(compactHud ? -1 : 0);
       this.missionPillRoot.add(labelText);
       this.missionPills.push(labelText);
     }
@@ -189,10 +181,17 @@ export class Hud {
     }
     this.scoreText.destroy();
     this.bestText.destroy();
-    this.phaseText.destroy();
     this.shieldText.destroy();
     this.missionPillRoot.destroy(true);
     this.missionPills = [];
+  }
+
+  refreshPalette(): void {
+    this.scoreText.setColor(colorStr(COLORS.SALVAGE));
+    this.bestText.setColor(colorStr(COLORS.HUD));
+    this.shieldText.setColor(colorStr(COLORS.SHIELD));
+    this.lastMissionHash = '';
+    this.updateMissions(this.currentMissions);
   }
 
   private applyMissionPillVisibility(animate: boolean): void {

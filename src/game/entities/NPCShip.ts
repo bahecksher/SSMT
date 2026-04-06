@@ -1,9 +1,8 @@
 import Phaser from 'phaser';
+import { COLORS } from '../constants';
 import { NPC_RADIUS, NPC_SALVAGE_RANGE, NPC_SPEED, NPC_TURN_RATE } from '../data/tuning';
 import { getLayout } from '../layout';
 import { rotatePoint } from '../utils/geometry';
-
-const NPC_COLOR = 0xffcc44; // amber/yellow — friendly but distinct
 
 export class NPCShip {
   graphic: Phaser.GameObjects.Graphics;
@@ -103,6 +102,10 @@ export class NPCShip {
     return this.salvageTimer;
   }
 
+  getHullColor(): number {
+    return COLORS.NPC;
+  }
+
   /** Apply an impulse (used for player bump). */
   applyImpulse(ix: number, iy: number): void {
     this.vx += ix;
@@ -189,14 +192,14 @@ export class NPCShip {
     g.setAlpha(1);
 
     const r = this.radius;
-    const color = this.inverted ? 0x000000 : NPC_COLOR;
+    const color = this.inverted ? 0x000000 : COLORS.NPC;
 
     // Glow ring
     g.lineStyle(1, color, 0.06);
     g.strokeCircle(0, 0, r * 2.2);
 
     if (this.hasShield) {
-      g.lineStyle(1.25, 0x44aaff, 0.75);
+      g.lineStyle(1.25, COLORS.SHIELD, 0.75);
       g.strokeCircle(0, 0, r * 1.9 + Math.sin(this.salvageTimer * 0.004) * 1.5);
     }
 
@@ -210,7 +213,7 @@ export class NPCShip {
     const x3 = Math.cos(h - Math.PI * 0.75) * triR;
     const y3 = Math.sin(h - Math.PI * 0.75) * triR;
 
-    g.lineStyle(1.5, color, 0.8);
+    g.lineStyle(1.6, color, 0.92);
     g.beginPath();
     g.moveTo(x1, y1);
     g.lineTo(x2, y2);
@@ -218,12 +221,21 @@ export class NPCShip {
     g.closePath();
     g.strokePath();
 
-    // Subtle fill
-    g.fillStyle(color, 0.05);
+    // Give NPCs a much stronger hull read so they don't disappear into the board.
+    g.fillStyle(color, 0.36);
     g.beginPath();
     g.moveTo(x1, y1);
     g.lineTo(x2, y2);
     g.lineTo(x3, y3);
+    g.closePath();
+    g.fillPath();
+
+    const inset = 0.68;
+    g.fillStyle(color, 0.68);
+    g.beginPath();
+    g.moveTo(x1 * inset, y1 * inset);
+    g.lineTo(x2 * inset, y2 * inset);
+    g.lineTo(x3 * inset, y3 * inset);
     g.closePath();
     g.fillPath();
 

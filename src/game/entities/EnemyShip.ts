@@ -1,9 +1,8 @@
 import Phaser from 'phaser';
+import { COLORS } from '../constants';
 import { ENEMY_RADIUS, ENEMY_SPEED, ENEMY_TURN_RATE } from '../data/tuning';
 import { getLayout } from '../layout';
 import { rotatePoint } from '../utils/geometry';
-
-const ENEMY_COLOR = 0xff00ff; // magenta
 
 export class EnemyShip {
   graphic: Phaser.GameObjects.Graphics;
@@ -108,7 +107,7 @@ export class EnemyShip {
     g.setAlpha(1);
 
     const r = this.radius;
-    const color = this.inverted ? 0x000000 : ENEMY_COLOR;
+    const color = this.inverted ? 0x000000 : COLORS.ENEMY;
 
     // Glow ring
     g.lineStyle(1, color, 0.08);

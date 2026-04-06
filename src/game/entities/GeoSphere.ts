@@ -6,6 +6,13 @@ import { getLayout } from '../layout';
 const SUBDIVISIONS = 2;
 const SPIN_SPEED = 0.006; // radians per second around Y axis
 const TILT_SPEED = 0.002; // very slow wobble around X axis
+const RING_INNER_RADIUS = 1.25;
+const RING_OUTER_RADIUS = 1.95;
+const RING_TILT = 0.28;
+const RING_SEGMENTS = 160;
+const RING_DEBRIS_STEP = 1;
+const RING_COLOR = 0xc7d2de;
+const RING_SCREEN_OFFSET_Y = -0.09;
 
 interface Vec3 {
   x: number;
@@ -148,6 +155,161 @@ export class GeoSphere {
       });
     }
 
+    const projectRing = (radiusScale: number): { x: number; y: number; z: number }[] => {
+      const points: { x: number; y: number; z: number }[] = [];
+      for (let i = 0; i <= RING_SEGMENTS; i++) {
+        const angle = (i / RING_SEGMENTS) * Math.PI * 2;
+        const radiusJitter = 1 + Math.sin(angle * 5 + 0.8) * 0.008;
+        const base: Vec3 = {
+          x: Math.cos(angle) * radiusScale * radiusJitter,
+          y: 0,
+          z: Math.sin(angle) * radiusScale * radiusJitter,
+        };
+        const tilted = rotateX(base, RING_TILT);
+        const spun = rotateY(tilted, this.angleY * 0.52 + 0.42);
+        const wobbled = rotateX(spun, this.angleX);
+        points.push({
+          x: cx + wobbled.x * r,
+          y: cy + (wobbled.y + RING_SCREEN_OFFSET_Y) * r,
+          z: wobbled.z,
+        });
+      }
+      return points;
+    };
+
+    const ringInner = projectRing(RING_INNER_RADIUS);
+    const ringOuter = projectRing(RING_OUTER_RADIUS);
+    const ringMid = projectRing((RING_INNER_RADIUS + RING_OUTER_RADIUS) * 0.5);
+
+    const drawRingBand = (front: boolean): void => {
+      for (let i = 0; i < ringInner.length - 1; i++) {
+        const innerA = ringInner[i];
+        const innerB = ringInner[i + 1];
+        const outerA = ringOuter[i];
+        const outerB = ringOuter[i + 1];
+        const avgZ = (innerA.z + innerB.z + outerA.z + outerB.z) / 4;
+        if ((avgZ >= 0) !== front) continue;
+
+        const alpha = front
+          ? 0.014 + Math.max(0, avgZ) * 0.02
+          : 0.004 + Math.max(0, avgZ + 1) * 0.008;
+        g.fillStyle(RING_COLOR, alpha);
+        g.beginPath();
+        g.moveTo(innerA.x, innerA.y);
+        g.lineTo(outerA.x, outerA.y);
+        g.lineTo(outerB.x, outerB.y);
+        g.lineTo(innerB.x, innerB.y);
+        g.closePath();
+        g.fillPath();
+      }
+    };
+
+    const drawRingSegments = (points: { x: number; y: number; z: number }[], front: boolean, color: number): void => {
+      for (let i = 0; i < points.length - 1; i++) {
+        const pa = points[i];
+        const pb = points[i + 1];
+        const avgZ = (pa.z + pb.z) / 2;
+        if ((avgZ >= 0) !== front) continue;
+        const alpha = front
+          ? 0.075 + Math.max(0, avgZ) * 0.08
+          : 0.022 + Math.max(0, avgZ + 1) * 0.03;
+        g.lineStyle(front ? 1.15 : 1, color, alpha);
+        g.lineBetween(pa.x, pa.y, pb.x, pb.y);
+      }
+    };
+
+    const drawRingDebris = (front: boolean): void => {
+      for (let i = 0; i < ringMid.length - 1; i += RING_DEBRIS_STEP) {
+        const point = ringMid[i];
+        const next = ringMid[i + 1];
+        if ((point.z >= 0) !== front) continue;
+
+        const inner = ringInner[i];
+        const outer = ringOuter[i];
+        const laneT = 0.2 + ((Math.sin(i * 0.61 + 1.3) + 1) * 0.5) * 0.6;
+        const baseX = inner.x + (outer.x - inner.x) * laneT;
+        const baseY = inner.y + (outer.y - inner.y) * laneT;
+
+        const tangentX = next.x - point.x;
+        const tangentY = next.y - point.y;
+        const tangentLen = Math.max(0.001, Math.sqrt(tangentX * tangentX + tangentY * tangentY));
+        const tx = tangentX / tangentLen;
+        const ty = tangentY / tangentLen;
+
+        const bandX = outer.x - inner.x;
+        const bandY = outer.y - inner.y;
+        const bandLen = Math.max(0.001, Math.sqrt(bandX * bandX + bandY * bandY));
+        const nx = bandX / bandLen;
+        const ny = bandY / bandLen;
+
+        const alpha = front
+          ? 0.18 + Math.max(0, point.z) * 0.15
+          : 0.07 + Math.max(0, point.z + 1) * 0.05;
+        const size = (front ? 2.5 : 1.7) * (0.8 + ((Math.sin(i * 0.73) + 1) * 0.5) * 0.95);
+        g.fillStyle(RING_COLOR, alpha);
+        g.fillCircle(baseX, baseY, size);
+
+        const companionOffset = (((Math.sin(i * 1.11 + 0.4) + 1) * 0.5) - 0.5) * bandLen * 0.18;
+        g.fillCircle(baseX + nx * companionOffset, baseY + ny * companionOffset, size * 0.58);
+
+        if (i % (RING_DEBRIS_STEP * 2) === 0) {
+          const shardLen = size * (1.6 + ((Math.sin(i * 0.37 + 0.2) + 1) * 0.5));
+          const shardHalf = size * 0.42;
+          const skew = (((Math.sin(i * 0.51 + 2.1) + 1) * 0.5) - 0.5) * size * 0.6;
+          g.fillStyle(RING_COLOR, alpha * 0.9);
+          g.beginPath();
+          g.moveTo(baseX - tx * shardLen * 0.6 - nx * shardHalf, baseY - ty * shardLen * 0.6 - ny * shardHalf);
+          g.lineTo(baseX - tx * shardLen * 0.12 + nx * (shardHalf + skew), baseY - ty * shardLen * 0.12 + ny * (shardHalf + skew));
+          g.lineTo(baseX + tx * shardLen * 0.85 + nx * shardHalf * 0.3, baseY + ty * shardLen * 0.85 + ny * shardHalf * 0.3);
+          g.lineTo(baseX + tx * shardLen * 0.08 - nx * (shardHalf - skew), baseY + ty * shardLen * 0.08 - ny * (shardHalf - skew));
+          g.closePath();
+          g.fillPath();
+        }
+
+        if (i % (RING_DEBRIS_STEP * 2) === 0) {
+          g.lineStyle(front ? 1.15 : 0.9, RING_COLOR, alpha * 0.98);
+          g.lineBetween(
+            baseX - tx * size * 1.35,
+            baseY - ty * size * 1.35,
+            baseX + tx * size * 1.9,
+            baseY + ty * size * 1.9,
+          );
+        }
+
+        if (i % (RING_DEBRIS_STEP * 3) === 0) {
+          const chunkBaseX = baseX + nx * (((Math.sin(i * 0.23 + 0.8) + 1) * 0.5) - 0.5) * bandLen * 0.35;
+          const chunkBaseY = baseY + ny * (((Math.sin(i * 0.23 + 0.8) + 1) * 0.5) - 0.5) * bandLen * 0.35;
+          const chunkLen = size * (1.1 + ((Math.sin(i * 0.31 + 1.4) + 1) * 0.5) * 1.2);
+          const chunkWidth = size * 0.7;
+          const jag = size * 0.35;
+          g.fillStyle(RING_COLOR, alpha * 0.95);
+          g.beginPath();
+          g.moveTo(chunkBaseX - tx * chunkLen - nx * chunkWidth, chunkBaseY - ty * chunkLen - ny * chunkWidth);
+          g.lineTo(chunkBaseX - tx * chunkLen * 0.15 + nx * (chunkWidth + jag), chunkBaseY - ty * chunkLen * 0.15 + ny * (chunkWidth + jag));
+          g.lineTo(chunkBaseX + tx * chunkLen + nx * chunkWidth * 0.25, chunkBaseY + ty * chunkLen + ny * chunkWidth * 0.25);
+          g.lineTo(chunkBaseX + tx * chunkLen * 0.1 - nx * (chunkWidth + jag * 0.5), chunkBaseY + ty * chunkLen * 0.1 - ny * (chunkWidth + jag * 0.5));
+          g.closePath();
+          g.fillPath();
+        }
+
+        if (i % (RING_DEBRIS_STEP * 4) === 0) {
+          const edgeOffset = (((Math.sin(i * 0.29 + 1.7) + 1) * 0.5) - 0.5) * bandLen * 0.55;
+          const edgeX = baseX + nx * edgeOffset;
+          const edgeY = baseY + ny * edgeOffset;
+          g.fillStyle(RING_COLOR, alpha * 0.82);
+          g.fillCircle(edgeX, edgeY, size * 0.48);
+        }
+      }
+    };
+
+    drawRingBand(false);
+    drawRingSegments(ringOuter, false, RING_COLOR);
+    drawRingSegments(ringInner, false, RING_COLOR);
+    drawRingDebris(false);
+
+    g.fillStyle(COLORS.NPC, 0.16);
+    g.fillCircle(cx, cy, r);
+
     // Draw edges with depth-based alpha
     for (const [a, b] of this.edges) {
       const pa = projected[a];
@@ -155,9 +317,14 @@ export class GeoSphere {
       const avgZ = (pa.z + pb.z) / 2;
       // Map z from [-1,1] to alpha range — back edges dimmer
       const alpha = 0.08 + (avgZ + 1) * 0.10;
-      g.lineStyle(1, COLORS.ENEMY, alpha);
+      g.lineStyle(1, COLORS.NPC, alpha);
       g.lineBetween(pa.x, pa.y, pb.x, pb.y);
     }
+
+    drawRingBand(true);
+    drawRingSegments(ringOuter, true, RING_COLOR);
+    drawRingSegments(ringInner, true, RING_COLOR);
+    drawRingDebris(true);
   }
 
   destroy(): void {

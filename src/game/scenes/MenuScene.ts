@@ -1,5 +1,15 @@
 import Phaser from 'phaser';
-import { SCENE_KEYS, COLORS, UI_FONT, readableFontSize } from '../constants';
+import {
+  applyColorPalette,
+  COLORS,
+  getNextPaletteId,
+  PALETTE_LABELS,
+  SCENE_KEYS,
+  TITLE_FONT,
+  UI_FONT,
+  readableFontSize,
+  type PaletteId,
+} from '../constants';
 import { COMPANIES } from '../data/companyData';
 import { SaveSystem } from '../systems/SaveSystem';
 import { fetchLeaderboard, fetchBiggestLoss, type LeaderboardEntry } from '../services/LeaderboardService';
@@ -8,7 +18,8 @@ import { DrifterHazard } from '../entities/DrifterHazard';
 import { NPCShip } from '../entities/NPCShip';
 import { GeoSphere } from '../entities/GeoSphere';
 import { HologramOverlay } from '../ui/HologramOverlay';
-import { SlickComm, createSlickPortrait } from '../ui/SlickComm';
+import { SlickComm } from '../ui/SlickComm';
+import { TitlePilotDisplay } from '../ui/TitlePilotDisplay';
 import { DRIFTER_SPEED_BASE } from '../data/tuning';
 import { pickAsteroidSize } from '../data/phaseConfig';
 import { getSlickLine } from '../data/slickLines';
@@ -24,6 +35,7 @@ interface BackgroundHandoffData {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
   debrisState?: { x: number; y: number; vx: number; vy: number }[];
   npcState?: { x: number; y: number; vx: number; vy: number }[];
+  reopenSettings?: boolean;
 }
 
 type MenuButton = {
@@ -54,6 +66,7 @@ export class MenuScene extends Phaser.Scene {
   private weeklyTabHit!: Phaser.GameObjects.Zone;
   private settingsButton!: MenuButton;
   private settingsPanelUi: Phaser.GameObjects.GameObject[] = [];
+  private paletteButton!: MenuButton;
   private shakeOnButton!: MenuButton;
   private shakeOffButton!: MenuButton;
   private scanOnButton!: MenuButton;
@@ -79,6 +92,7 @@ export class MenuScene extends Phaser.Scene {
   private bgNpcs: NPCShip[] = [];
   private geoSphere!: GeoSphere;
   private hologramOverlay!: HologramOverlay;
+  private titlePilot!: TitlePilotDisplay;
   private slickComm!: SlickComm;
   private drifterTimer = 0;
   private debrisTimer = 0;
@@ -92,6 +106,7 @@ export class MenuScene extends Phaser.Scene {
   create(data?: BackgroundHandoffData): void {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
+    applyColorPalette(getSettings().paletteId);
     setMenuMusic(this);
     const layout = getLayout();
     const centerX = layout.centerX;
@@ -102,6 +117,7 @@ export class MenuScene extends Phaser.Scene {
     this.bgDebris = [];
     this.bgDrifters = [];
     this.bgNpcs = [];
+    this.settingsOpen = false;
     this.drifterTimer = 0;
     this.debrisTimer = 0;
     this.npcTimer = 0;
@@ -110,7 +126,7 @@ export class MenuScene extends Phaser.Scene {
 
     // Starfield
     const starfield = this.add.graphics().setDepth(-1);
-    starfield.fillStyle(0x020806, 1);
+    starfield.fillStyle(COLORS.STARFIELD_BG, 1);
     starfield.fillRect(
       -MENU_STARFIELD_OVERSCAN,
       -MENU_STARFIELD_OVERSCAN,
@@ -154,7 +170,7 @@ export class MenuScene extends Phaser.Scene {
     backing.fillRoundedRect(20, backingTop, layout.gameWidth - 40, layout.gameHeight - backingTop - 20, 12);
 
     // Title block
-    const portraitRadius = veryCompactMenu ? 28 : compactMenu ? 34 : 40;
+    const portraitRadius = veryCompactMenu ? 34 : compactMenu ? 42 : 50;
     const portraitCenterY = backingTop + portraitRadius + (veryCompactMenu ? 8 : compactMenu ? 10 : 14);
     const portraitFrame = this.add.graphics().setDepth(uiDepth);
     portraitFrame.fillStyle(COLORS.BG, 0.88);
@@ -164,28 +180,31 @@ export class MenuScene extends Phaser.Scene {
     portraitFrame.lineStyle(1, COLORS.PLAYER, 0.18);
     portraitFrame.strokeCircle(centerX, portraitCenterY, portraitRadius + 2);
 
-    createSlickPortrait(this)
-      .setPosition(centerX, portraitCenterY)
-      .setScale(veryCompactMenu ? 0.92 : compactMenu ? 1.06 : 1.18)
+    this.titlePilot = new TitlePilotDisplay(
+      this,
+      centerX,
+      portraitCenterY,
+      portraitRadius * (veryCompactMenu ? 0.56 : compactMenu ? 0.58 : 0.6),
+    )
       .setDepth(uiDepth + 1)
       .setAlpha(0.96);
 
     const titlePrimary = this.add.text(centerX, portraitCenterY + portraitRadius + (veryCompactMenu ? 8 : compactMenu ? 10 : 14), "SLICK'S", {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: titlePrimarySize,
       color: `#${COLORS.PLAYER.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth);
 
     const titleSecondary = this.add.text(centerX, titlePrimary.y + titlePrimary.height + (veryCompactMenu ? 0 : 2), 'SALVAGE & MINING', {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: titleSecondarySize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth);
 
     const titleTertiary = this.add.text(centerX, titleSecondary.y + titleSecondary.height + (veryCompactMenu ? 2 : 4), 'REMOTE PILOT INTERFACE', {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: titleTertiarySize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
@@ -323,6 +342,9 @@ export class MenuScene extends Phaser.Scene {
 
     // How to play — anchored above TAP TO START
     this.createSettingsUi(uiDepth, backingTop, compactMenu, veryCompactMenu);
+    if (handoff.reopenSettings) {
+      this.setSettingsOpen(true);
+    }
 
     this.tweens.add({
       targets: tapText,
@@ -470,6 +492,7 @@ export class MenuScene extends Phaser.Scene {
     this.hologramOverlay.update(delta);
     this.cursor.update(this);
     this.geoSphere.update(delta);
+    this.titlePilot.update(delta);
   }
 
   private cleanupBackground(): void {
@@ -553,6 +576,7 @@ export class MenuScene extends Phaser.Scene {
     this.input.removeAllListeners();
     this.cleanupBackground();
     this.cursor.destroy(this);
+    this.titlePilot.destroy();
     this.slickComm.destroy();
   }
 
@@ -563,18 +587,20 @@ export class MenuScene extends Phaser.Scene {
     const buttonCenterX = layout.gameWidth - (compactMenu ? 76 : 82);
     const buttonCenterY = backingTop + (veryCompactMenu ? 16 : 18);
     const panelWidth = compactMenu ? 214 : 226;
-    const panelHeight = 236;
+    const panelHeight = 264;
     const panelLeft = layout.gameWidth - panelWidth - 24;
     const panelTop = buttonCenterY + 22;
-    const rowOneY = panelTop + 30;
-    const rowTwoY = panelTop + 66;
-    const rowThreeY = panelTop + 102;
-    const musicVolumeLabelY = panelTop + 142;
-    const musicVolumeY = panelTop + 160;
-    const fxVolumeLabelY = panelTop + 188;
-    const fxVolumeY = panelTop + 206;
+    const rowPaletteY = panelTop + 30;
+    const rowOneY = panelTop + 64;
+    const rowTwoY = panelTop + 98;
+    const rowThreeY = panelTop + 132;
+    const musicVolumeLabelY = panelTop + 170;
+    const musicVolumeY = panelTop + 188;
+    const fxVolumeLabelY = panelTop + 216;
+    const fxVolumeY = panelTop + 234;
     const offX = panelLeft + panelWidth - 30;
     const onX = offX - 52;
+    const paletteButtonX = panelLeft + panelWidth - 63;
     const sliderLeft = panelLeft + 80;
     const sliderWidth = panelWidth - 122;
 
@@ -604,6 +630,13 @@ export class MenuScene extends Phaser.Scene {
     panelHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
     });
+
+    const paletteLabel = this.add.text(panelLeft + 14, rowPaletteY, 'PALETTE', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(uiDepth + 3);
 
     const shakeLabel = this.add.text(panelLeft + 14, rowOneY, 'SHAKE', {
       fontFamily: UI_FONT,
@@ -647,6 +680,16 @@ export class MenuScene extends Phaser.Scene {
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(uiDepth + 3).setAlpha(0.72);
 
+    this.paletteButton = this.createMenuButton(
+      paletteButtonX,
+      rowPaletteY,
+      94,
+      24,
+      PALETTE_LABELS[getSettings().paletteId],
+      uiDepth + 3,
+      readableFontSize(10),
+      () => this.applyMenuSettings({ paletteId: getNextPaletteId(getSettings().paletteId) }),
+    );
     this.shakeOnButton = this.createMenuButton(onX, rowOneY, 42, 24, 'ON', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ screenShake: true }));
     this.shakeOffButton = this.createMenuButton(offX, rowOneY, 46, 24, 'OFF', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ screenShake: false }));
     this.scanOnButton = this.createMenuButton(onX, rowTwoY, 42, 24, 'ON', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ scanlines: true }));
@@ -677,6 +720,10 @@ export class MenuScene extends Phaser.Scene {
     this.settingsPanelUi = [
       panelBg,
       panelHit,
+      paletteLabel,
+      this.paletteButton.bg,
+      this.paletteButton.label,
+      this.paletteButton.hit,
       shakeLabel,
       scanLabel,
       musicLabel,
@@ -744,15 +791,32 @@ export class MenuScene extends Phaser.Scene {
   private drawMenuButton(button: MenuButton, centerX: number, centerY: number, active: boolean): void {
     const left = centerX - button.width / 2;
     const top = centerY - button.height / 2;
+    const buttonAccent = COLORS.HUD;
     button.bg.clear();
     button.bg.fillStyle(COLORS.BG, active ? 0.94 : 0.84);
-    button.bg.lineStyle(1.1, active ? COLORS.GATE : COLORS.HUD, active ? 0.9 : 0.34);
+    button.bg.lineStyle(1.1, buttonAccent, active ? 0.9 : 0.34);
     button.bg.fillRoundedRect(left, top, button.width, button.height, 8);
     button.bg.strokeRoundedRect(left, top, button.width, button.height, 8);
-    button.bg.fillStyle(active ? COLORS.GATE : COLORS.HUD, active ? 0.14 : 0.04);
+    button.bg.fillStyle(buttonAccent, active ? 0.14 : 0.04);
     button.bg.fillRoundedRect(left + 4, top + 4, button.width - 8, button.height - 8, 6);
-    button.label.setColor(`#${(active ? COLORS.GATE : COLORS.HUD).toString(16).padStart(6, '0')}`);
+    button.label.setColor(`#${buttonAccent.toString(16).padStart(6, '0')}`);
     button.label.setAlpha(active ? 1 : 0.78);
+  }
+
+  private drawPaletteMenuButton(button: MenuButton, paletteId: PaletteId): void {
+    const left = button.label.x - button.width / 2;
+    const top = button.label.y - button.height / 2;
+    const buttonAccent = COLORS.HUD;
+    button.bg.clear();
+    button.bg.fillStyle(COLORS.BG, 0.92);
+    button.bg.lineStyle(1.1, buttonAccent, 0.5);
+    button.bg.fillRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.strokeRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.fillStyle(buttonAccent, 0.08);
+    button.bg.fillRoundedRect(left + 4, top + 4, button.width - 8, button.height - 8, 6);
+    button.label.setText(PALETTE_LABELS[paletteId]);
+    button.label.setColor(`#${buttonAccent.toString(16).padStart(6, '0')}`);
+    button.label.setAlpha(0.9);
   }
 
   private setSettingsPanelVisible(visible: boolean): void {
@@ -772,6 +836,14 @@ export class MenuScene extends Phaser.Scene {
 
   private applyMenuSettings(partial: Partial<GameSettings>): void {
     const updated = updateSettings(partial);
+    if (partial.paletteId) {
+      applyColorPalette(updated.paletteId);
+      this.scene.restart({
+        ...this.buildBackgroundHandoff(),
+        reopenSettings: this.settingsOpen,
+      } satisfies BackgroundHandoffData);
+      return;
+    }
     this.hologramOverlay.setEnabled(updated.scanlines);
     refreshMusicForSettings(this);
     this.updateSettingsUi();
@@ -781,6 +853,7 @@ export class MenuScene extends Phaser.Scene {
     this.drawMenuButton(this.settingsButton, this.settingsButton.label.x, this.settingsButton.label.y, this.settingsOpen);
 
     const settings = getSettings();
+    this.drawPaletteMenuButton(this.paletteButton, settings.paletteId);
     this.drawMenuButton(this.shakeOnButton, this.shakeOnButton.label.x, this.shakeOnButton.label.y, settings.screenShake);
     this.drawMenuButton(this.shakeOffButton, this.shakeOffButton.label.x, this.shakeOffButton.label.y, !settings.screenShake);
     this.drawMenuButton(this.scanOnButton, this.scanOnButton.label.x, this.scanOnButton.label.y, settings.scanlines);
@@ -792,7 +865,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private updateTabStyles(): void {
-    const active = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
+    const active = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const inactive = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     this.drawTabButton(this.dailyTabBg, this.dailyTab.x, this.dailyTab.y, this.activePeriod === 'daily');
     this.drawTabButton(this.weeklyTabBg, this.weeklyTab.x, this.weeklyTab.y, this.activePeriod === 'weekly');
@@ -807,12 +880,13 @@ export class MenuScene extends Phaser.Scene {
     const height = this.leaderboardTabHeight;
     const left = centerX - width / 2;
     const top = centerY - height / 2;
+    const buttonAccent = COLORS.HUD;
     bg.clear();
     bg.fillStyle(COLORS.BG, active ? 0.92 : 0.8);
-    bg.lineStyle(1.3, active ? COLORS.GATE : COLORS.HUD, active ? 0.9 : 0.32);
+    bg.lineStyle(1.3, buttonAccent, active ? 0.9 : 0.32);
     bg.fillRoundedRect(left, top, width, height, 8);
     bg.strokeRoundedRect(left, top, width, height, 8);
-    bg.fillStyle(active ? COLORS.GATE : COLORS.HUD, active ? 0.14 : 0.04);
+    bg.fillStyle(buttonAccent, active ? 0.14 : 0.04);
     bg.fillRoundedRect(left + 4, top + 4, width - 8, height - 8, 6);
   }
 

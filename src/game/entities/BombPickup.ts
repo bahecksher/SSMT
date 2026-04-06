@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
+import { COLORS } from '../constants';
 import { BOMB_PICKUP_RADIUS, BOMB_PICKUP_LIFETIME, BOMB_COLLECTION_DELAY } from '../data/tuning';
-
-const BOMB_COLOR = 0xff8800;
 
 export class BombPickup {
   graphic: Phaser.GameObjects.Graphics;
@@ -68,19 +67,19 @@ export class BombPickup {
     const ringRadius = this.radius + 5 + Math.sin(this.pulse * 1.3) * 3;
 
     // Outer glow ring
-    g.lineStyle(1, BOMB_COLOR, glow * 0.6);
+    g.lineStyle(1, COLORS.BOMB, glow * 0.6);
     g.strokeCircle(0, 0, this.radius * 2.5);
 
     // Filled circle body
-    g.fillStyle(BOMB_COLOR, 0.15);
+    g.fillStyle(COLORS.BOMB, 0.15);
     g.fillCircle(0, 0, this.radius);
 
     // Bomb outline — circle with a fuse nub
-    g.lineStyle(1.5, BOMB_COLOR, 0.9);
+    g.lineStyle(1.5, COLORS.BOMB, 0.9);
     g.strokeCircle(0, 0, this.radius * 0.8);
 
     // Fuse line on top
-    g.lineStyle(1.5, 0xffcc44, 0.9);
+    g.lineStyle(1.5, COLORS.GATE, 0.9);
     g.lineBetween(0, -this.radius * 0.8, 2, -this.radius * 1.3);
 
     // Spark at fuse tip (pulsing)
@@ -94,7 +93,7 @@ export class BombPickup {
     g.lineBetween(0, -4, 0, 4);
 
     // Pulsing ring
-    g.lineStyle(1, BOMB_COLOR, glow + 0.2);
+    g.lineStyle(1, COLORS.BOMB, glow + 0.2);
     g.strokeCircle(0, 0, ringRadius);
   }
 

@@ -15,7 +15,19 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    setLayoutSize(this.scale.width, this.scale.height);
-    this.scene.start(SCENE_KEYS.MENU);
+    const startMenu = () => {
+      setLayoutSize(this.scale.width, this.scale.height);
+      this.scene.start(SCENE_KEYS.MENU);
+    };
+
+    if (typeof document === 'undefined' || !('fonts' in document)) {
+      startMenu();
+      return;
+    }
+
+    void Promise.allSettled([
+      document.fonts.load('16px "FreePixel"'),
+      document.fonts.load('16px "pixel_lcd"'),
+    ]).finally(() => startMenu());
   }
 }

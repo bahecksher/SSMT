@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { COLORS } from '../constants';
 import type { PhaseConfig } from '../types';
 import {
   ASTEROID_DESTROY_BONUS,
@@ -195,7 +196,7 @@ export class DifficultySystem {
           enemy.x >= layout.arenaLeft - 50 && enemy.x <= layout.arenaRight + 50 &&
           enemy.y >= layout.arenaTop - 50 && enemy.y <= layout.arenaBottom + 50
         ) {
-          this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), 0xff00ff, enemy.radius));
+          this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), COLORS.ENEMY, enemy.radius));
           this.bonusDropPositions.push({
             x: enemy.x,
             y: enemy.y,
@@ -221,7 +222,7 @@ export class DifficultySystem {
       const npc = this.npcs[i];
       if (!npc.active) {
         if (npc.killedByHazard) {
-          this.shipDebris.push(new ShipDebris(this.scene, npc.x, npc.y, npc.vx, npc.vy, 0xffcc44, npc.radius));
+          this.shipDebris.push(new ShipDebris(this.scene, npc.x, npc.y, npc.vx, npc.vy, npc.getHullColor(), npc.radius));
           if (this.canDropShieldAt(npc.x, npc.y)) {
             this.deadNPCPositions.push({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy });
           }
@@ -443,7 +444,7 @@ export class DifficultySystem {
                 ));
               } else {
                 ast.active = false;
-                this.shipDebris.push(new ShipDebris(this.scene, ast.x, ast.y, ast.vx, ast.vy, 0xff3366, ast.radius));
+                this.shipDebris.push(new ShipDebris(this.scene, ast.x, ast.y, ast.vx, ast.vy, COLORS.ASTEROID, ast.radius));
                 // Too small to split — chance to drop a small mining bonus
                 if (Math.random() < ASTEROID_DESTROY_DROP_CHANCE) {
                   this.bonusDropPositions.push({
@@ -548,7 +549,7 @@ export class DifficultySystem {
           : Math.abs(drifter.x - beam.x1);
         if (dist < halfBeam + drifter.radius) {
           drifter.active = false;
-          this.shipDebris.push(new ShipDebris(this.scene, drifter.x, drifter.y, drifter.vx, drifter.vy, 0xff3366, drifter.radius));
+          this.shipDebris.push(new ShipDebris(this.scene, drifter.x, drifter.y, drifter.vx, drifter.vy, COLORS.ASTEROID, drifter.radius));
         }
       }
 
@@ -560,7 +561,7 @@ export class DifficultySystem {
           : Math.abs(enemy.x - beam.x1);
         if (dist < halfBeam + enemy.radius) {
           enemy.active = false;
-          this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), 0xff00ff, enemy.radius));
+          this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), COLORS.ENEMY, enemy.radius));
           this.bonusDropPositions.push({
             x: enemy.x, y: enemy.y,
             vx: enemy.getVelocityX() * 0.45, vy: enemy.getVelocityY() * 0.45,

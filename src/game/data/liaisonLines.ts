@@ -7,41 +7,41 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
   [CompanyId.DEEPCORE]: {
     1: {
       intro: [
-        "Holt here. DEEPCORE's watching your run.",
-        "DEEPCORE ops, checking in. Don't waste our time.",
+        "Holt here. Tortuga's ring is full of moon slag and easy ore.",
+        "DEEPCORE ops. The battle broke a moon for us. Go cash it in.",
       ],
       runStart: [
-        'Mine close, extract clean.',
-        'Rock pays better than scrap. Remember that.',
+        'Ignore the wrecks. The ring is low-hanging profit.',
+        'They can keep the planet. We want the stone around it.',
       ],
       boost: [
-        'DEEPCORE yield protocol active. Mining output boosted.',
+        'DEEPCORE drill sync active. Moon-slag yield boosted.',
       ],
     },
     2: {
       intro: [
-        "Holt again. DEEPCORE's invested in you now.",
-        'You keep delivering, we keep upgrading your scan.',
+        "Holt again. The ring is paying, and DEEPCORE wants a bigger bite.",
+        'You keep hauling ore off Tortuga, we keep opening the taps.',
       ],
       runStart: [
-        'Work the asteroids hard. We tuned your drill frequency.',
-        "DEEPCORE's best run this quadrant. Don't ruin the streak.",
+        'Work the broken moon hard. We tuned your drill for slag seams.',
+        "Every rock you crack is profit Regent can't use.",
       ],
       boost: [
-        'Enhanced yield protocol online. Mining output increased.',
+        'Enhanced yield protocol online. Strip the ring faster.',
       ],
     },
     3: {
       intro: [
-        "Holt. DEEPCORE elite clearance. You've earned it.",
-        "Top tier, pilot. DEEPCORE doesn't hand these out.",
+        "Holt. Elite clearance. DEEPCORE intends to own Tortuga's sky.",
+        "Top tier, pilot. That ring is ours if you can keep it bleeding.",
       ],
       runStart: [
-        'Full bore mining. Extract everything that glows.',
-        "DEEPCORE's flagship operator. Make it count.",
+        'Full bore mining. Grind the shattered moon to dust.',
+        "Strip every bright seam before Regent can turn it into armor.",
       ],
       boost: [
-        'Maximum yield protocol engaged. Peak mining output.',
+        'Maximum yield protocol engaged. Peak ring harvest online.',
       ],
     },
   },
@@ -49,41 +49,41 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
   [CompanyId.RECLAIM]: {
     1: {
       intro: [
-        "Voss, RECLAIM operations. We've got eyes on your salvage.",
-        'RECLAIM CO checking in. Waste not, want not.',
+        "Voss, RECLAIM operations. Tortuga's dead fleets are still worth plenty.",
+        'RECLAIM CO checking in. Allied and Regent both left valuables drifting.',
       ],
       runStart: [
-        'Every scrap has value. Prove you know that.',
-        'Salvage smart, not fast.',
+        'Every busted hull in that ring still has a buyer.',
+        'Salvage smart. The dead over Tortuga still pay.',
       ],
       boost: [
-        'RECLAIM salvage protocols active. Yield boosted.',
+        'RECLAIM salvage protocols active. Wreck yield boosted.',
       ],
     },
     2: {
       intro: [
-        "Voss here. RECLAIM's upgraded your collection rig.",
-        'Good hauls, pilot. We noticed.',
+        "Voss here. Your rig's tuned for battle salvage now.",
+        'Good hauls, pilot. Keep pulling history out of that sky.',
       ],
       runStart: [
-        'Enhanced collectors online. Grab everything.',
-        "RECLAIM's counting on you. Don't leave credits floating.",
+        'Enhanced collectors online. Sweep the old battle lanes.',
+        "The ring keeps spitting up wreckage. Don't leave it for Regent.",
       ],
       boost: [
-        'Enhanced salvage array online. Improved yield.',
+        'Enhanced salvage array online. Combat wreck yield improved.',
       ],
     },
     3: {
       intro: [
-        "Voss. RECLAIM elite. You're our best scavenger.",
-        'Top shelf clearance, pilot. RECLAIM salutes you.',
+        "Voss. Elite clearance. You're one of the few who can read Tortuga's graveyard.",
+        'Top shelf, pilot. Go pull the best pieces before they vanish below the storms.',
       ],
       runStart: [
-        'Maximum collection efficiency. Nothing escapes your net.',
-        "RECLAIM's finest. Clean the field.",
+        'Maximum collection efficiency. Nothing in that war ring escapes you.',
+        "Clean the field. Every lost hull is a clue to what Regent is rebuilding.",
       ],
       boost: [
-        'Peak salvage protocol engaged. Maximum yield.',
+        'Peak salvage protocol engaged. Maximum wreck recovery.',
       ],
     },
   },
@@ -91,41 +91,41 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
   [CompanyId.IRONVEIL]: {
     1: {
       intro: [
-        'Kade. IRONVEIL SEC. We pay for confirmed kills.',
-        "IRONVEIL's on the line. Show us what you've got.",
+        'Kade. IRONVEIL SEC. Anything not flying Regent colors is just clutter.',
+        "IRONVEIL's on the line. Tortuga is a live contract zone now.",
       ],
       runStart: [
-        "Hostiles are credits. Don't let them fly free.",
-        'Every wreck is a payday. Get to work.',
+        "Regent's screening something on the surface. Start thinning them out.",
+        'Every hostile you erase buys us a clearer look below.',
       ],
       boost: [
-        'IRONVEIL bounty multiplier active. Kill bonuses boosted.',
+        'IRONVEIL bounty multiplier active. Anti-Regent contract rates boosted.',
       ],
     },
     2: {
       intro: [
-        "Kade again. IRONVEIL's raised your bounty ceiling.",
-        "You're making a name for yourself. IRONVEIL approves.",
+        "Kade again. We're seeing traffic patterns around hidden build sites.",
+        "You're making a name for yourself. Keep Regent nervous.",
       ],
       runStart: [
-        'Enhanced bounty rates active. Make every shot count.',
-        "IRONVEIL's watching. Put on a show.",
+        'Enhanced bounty rates active. Break their escorts and their workers.',
+        "IRONVEIL's watching. Shut down anything feeding the project.",
       ],
       boost: [
-        'Elevated bounty protocol online. Enhanced kill bonuses.',
+        'Elevated bounty protocol online. Enhanced anti-Regent bounties.',
       ],
     },
     3: {
       intro: [
-        "Kade. IRONVEIL elite. You're our top enforcer.",
-        'Elite clearance, pilot. IRONVEIL owes you several.',
+        "Kade. Elite clearance. Regent is building something under that ring.",
+        'Top enforcer, pilot. We do not let hidden war machines hatch.',
       ],
       runStart: [
-        'Maximum bounty rates. Turn this sector into a graveyard.',
-        "IRONVEIL's deadliest. Earn the title.",
+        'Maximum bounty rates. Turn their whole screen into wreckage.',
+        "Everything protecting the build dies today. Earn your title.",
       ],
       boost: [
-        'Peak bounty protocol engaged. Maximum kill bonuses.',
+        'Peak bounty protocol engaged. Maximum contract lethality.',
       ],
     },
   },
@@ -133,41 +133,41 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
   [CompanyId.FREEPORT]: {
     1: {
       intro: [
-        "Nyla, FREEPORT UNION. We've seeded some extras for you.",
-        'FREEPORT checking in. Luck favors our friends.',
+        "Nyla, FREEPORT UNION. Tortuga sits on routes people used to kill for.",
+        'FREEPORT checking in. Reopen this world and half the sector gets richer.',
       ],
       runStart: [
-        'Keep your eyes open. Extra supplies in the field.',
-        "We've scattered some gifts. Find them.",
+        'Keep your eyes open. We seeded supplies along the old lanes.',
+        "If Tortuga opens again, trade starts moving tomorrow.",
       ],
       boost: [
-        'FREEPORT supply drop active. Extra pickups in the field.',
+        'FREEPORT supply drop active. Trade-lane support seeded in the field.',
       ],
     },
     2: {
       intro: [
-        "Nyla again. FREEPORT's increased your supply allocation.",
-        'Good runs earn better drops. Simple math.',
+        "Nyla again. The route maps all converge on Tortuga's orbit.",
+        'Good runs make believers. We are investing in a reopening.',
       ],
       runStart: [
-        'More supplies seeded. FREEPORT takes care of its own.',
-        "Upgraded drop rates. You'll find more out there.",
+        'More supplies seeded. Every clean run makes the case for opening the port.',
+        "Upgraded drop rates. We want proof Tortuga can be crossed again.",
       ],
       boost: [
-        'Enhanced supply protocol online. Improved drop rates.',
+        'Enhanced supply protocol online. Trade-route support increased.',
       ],
     },
     3: {
       intro: [
-        "Nyla. FREEPORT elite. You're family now.",
-        'Top tier, pilot. FREEPORT rolls out the red carpet.',
+        "Nyla. Elite tier. Open Tortuga and the whole sector reroutes through us.",
+        'Top tier, pilot. One broken blockade can redraw a star chart.',
       ],
       runStart: [
-        "Maximum supply drops. We've loaded the field for you.",
-        "FREEPORT's best friend. Enjoy the bounty.",
+        "Maximum supply drops. Keep the corridor alive and the future opens.",
+        "FREEPORT's betting on you to make Tortuga profitable again.",
       ],
       boost: [
-        'Peak supply protocol engaged. Maximum drop rates.',
+        'Peak supply protocol engaged. Maximum trade-lane support.',
       ],
     },
   },

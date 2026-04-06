@@ -109,7 +109,7 @@ export class Player {
     // Shield visual
     if (this.hasShield) {
       const shieldAlpha = 0.25 + Math.sin(this.shieldPulse) * 0.1;
-      g.lineStyle(1.5, 0x44aaff, shieldAlpha + 0.2);
+      g.lineStyle(1.5, COLORS.SHIELD, shieldAlpha + 0.2);
       g.strokeCircle(0, 0, VISUAL_SIZE * 2.2);
     }
 

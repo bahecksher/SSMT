@@ -1,6 +1,14 @@
 import Phaser from 'phaser';
 import {
-  SCENE_KEYS, COLORS, UI_FONT, readableFontSize,
+  applyColorPalette,
+  COLORS,
+  getNextPaletteId,
+  PALETTE_LABELS,
+  SCENE_KEYS,
+  TITLE_FONT,
+  UI_FONT,
+  readableFontSize,
+  type PaletteId,
 } from '../constants';
 import { GameState, CompanyId } from '../types';
 import type { ActiveMission, RunBoosts } from '../types';
@@ -157,6 +165,7 @@ export class GameScene extends Phaser.Scene {
   create(data?: MenuHandoff): void {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
+    applyColorPalette(getSettings().paletteId);
     const handoff = data ?? {};
     const layout = getLayout();
     this.state = GameState.COUNTDOWN;
@@ -206,27 +215,7 @@ export class GameScene extends Phaser.Scene {
 
     // Draw arena boundary (hologram style)
     this.arenaBorder = this.add.graphics().setDepth(0);
-
-    // Subtle grid inside arena
-    this.arenaBorder.lineStyle(1, COLORS.GRID, 0.04);
-    for (let x = layout.arenaLeft + 40; x < layout.arenaRight; x += 40) {
-      this.arenaBorder.lineBetween(x, layout.arenaTop, x, layout.arenaBottom);
-    }
-    for (let y = layout.arenaTop + 40; y < layout.arenaBottom; y += 40) {
-      this.arenaBorder.lineBetween(layout.arenaLeft, y, layout.arenaRight, y);
-    }
-
-    // Arena border
-    this.arenaBorder.lineStyle(1, COLORS.HUD, 0.12);
-    this.arenaBorder.strokeRect(layout.arenaLeft, layout.arenaTop, layout.arenaWidth, layout.arenaHeight);
-    const cm = 12;
-    this.arenaBorder.lineStyle(1.5, COLORS.HUD, 0.3);
-    for (const [cx, cy] of [[layout.arenaLeft, layout.arenaTop], [layout.arenaRight, layout.arenaTop], [layout.arenaLeft, layout.arenaBottom], [layout.arenaRight, layout.arenaBottom]]) {
-      const sx = cx === layout.arenaLeft ? 1 : -1;
-      const sy = cy === layout.arenaTop ? 1 : -1;
-      this.arenaBorder.lineBetween(cx, cy, cx + cm * sx, cy);
-      this.arenaBorder.lineBetween(cx, cy, cx, cy + cm * sy);
-    }
+    this.redrawArenaBorder();
 
     // Hologram scanline overlay
     this.hologramOverlay = new HologramOverlay(this);
@@ -696,7 +685,7 @@ export class GameScene extends Phaser.Scene {
           npc.active = false;
           npc.killedByHazard = false;
           this.missionSystem.trackNpcKill();
-          this.playerDebris.push(new ShipDebris(this, npc.x, npc.y, npc.vx, npc.vy, 0xffcc44, npc.radius));
+          this.playerDebris.push(new ShipDebris(this, npc.x, npc.y, npc.vx, npc.vy, npc.getHullColor(), npc.radius));
           this.bonusPickups.push(new BonusPickup(this, npc.x, npc.y, NPC_BONUS_POINTS, npc.vx * 0.5, npc.vy * 0.5));
           Overlays.shieldBreakFlash(this);
           continue;
@@ -1206,7 +1195,7 @@ export class GameScene extends Phaser.Scene {
   private drawStarfield(): void {
     const layout = getLayout();
     this.starfield.clear();
-    this.starfield.fillStyle(0x020806, 1);
+    this.starfield.fillStyle(COLORS.STARFIELD_BG, 1);
     this.starfield.fillRect(
       -GameScene.STARFIELD_OVERSCAN,
       -GameScene.STARFIELD_OVERSCAN,
@@ -1216,6 +1205,61 @@ export class GameScene extends Phaser.Scene {
     for (const star of this.starfieldStars) {
       this.starfield.fillStyle(star.color, star.alpha);
       this.starfield.fillCircle(star.x, star.y, star.size);
+    }
+  }
+
+  private redrawArenaBorder(): void {
+    const layout = getLayout();
+    this.arenaBorder.clear();
+    this.arenaBorder.lineStyle(1, COLORS.GRID, 0.06);
+    for (let x = layout.arenaLeft + 40; x < layout.arenaRight; x += 40) {
+      this.arenaBorder.lineBetween(x, layout.arenaTop, x, layout.arenaBottom);
+    }
+    for (let y = layout.arenaTop + 40; y < layout.arenaBottom; y += 40) {
+      this.arenaBorder.lineBetween(layout.arenaLeft, y, layout.arenaRight, y);
+    }
+
+    this.arenaBorder.lineStyle(1.25, COLORS.ARENA_BORDER, 0.32);
+    this.arenaBorder.strokeRect(layout.arenaLeft, layout.arenaTop, layout.arenaWidth, layout.arenaHeight);
+    this.arenaBorder.lineStyle(1, COLORS.HUD, 0.12);
+    this.arenaBorder.strokeRect(layout.arenaLeft + 3, layout.arenaTop + 3, layout.arenaWidth - 6, layout.arenaHeight - 6);
+    const cornerMeasure = 12;
+    this.arenaBorder.lineStyle(2, COLORS.ARENA_BORDER, 0.72);
+    for (const [cx, cy] of [[layout.arenaLeft, layout.arenaTop], [layout.arenaRight, layout.arenaTop], [layout.arenaLeft, layout.arenaBottom], [layout.arenaRight, layout.arenaBottom]]) {
+      const sx = cx === layout.arenaLeft ? 1 : -1;
+      const sy = cy === layout.arenaTop ? 1 : -1;
+      this.arenaBorder.lineBetween(cx, cy, cx + cornerMeasure * sx, cy);
+      this.arenaBorder.lineBetween(cx, cy, cx, cy + cornerMeasure * sy);
+    }
+  }
+
+  private refreshCountdownPalette(): void {
+    if (!this.countdownText) {
+      return;
+    }
+
+    this.countdownText.setColor(`#${COLORS.HUD.toString(16).padStart(6, '0')}`);
+    this.countdownText.setStroke(`#${COLORS.GRID.toString(16).padStart(6, '0')}`, 4);
+    this.countdownText.setShadow(0, 0, `#${COLORS.HUD.toString(16).padStart(6, '0')}`, 14, true, true);
+  }
+
+  private applyActivePalette(paletteId: PaletteId): void {
+    applyColorPalette(paletteId);
+
+    for (const star of this.starfieldStars) {
+      if (star.color !== 0xffffff) {
+        star.color = COLORS.PLAYER;
+      }
+    }
+
+    this.drawStarfield();
+    this.redrawArenaBorder();
+    this.hud.refreshPalette();
+    this.refreshCountdownPalette();
+    this.refreshPauseUi();
+
+    if (this.state === GameState.PAUSED) {
+      this.showPauseMenu();
     }
   }
 
@@ -1300,7 +1344,7 @@ export class GameScene extends Phaser.Scene {
     let currentY = Math.max(panelTop + panelPaddingTop, titleBarBottom + titleGap);
 
     const title = this.add.text(centerX, titleBarTop + titleBarHeight / 2, titleText, {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: titleSize,
       color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
       align: 'center',
@@ -1436,7 +1480,7 @@ export class GameScene extends Phaser.Scene {
       retryButtonY,
       buttonWidth,
       buttonHeight,
-      COLORS.GATE,
+      COLORS.HUD,
       () => {
         this.scene.start(SCENE_KEYS.GAME, {
           retryFromDeath: this.resultData?.cause === 'death',
@@ -1541,10 +1585,12 @@ export class GameScene extends Phaser.Scene {
 
   private createPauseButton(): void {
     const layout = getLayout();
-    const buttonWidth = 52;
-    const buttonHeight = 34;
-    const buttonX = layout.gameWidth - 16 - buttonWidth / 2;
-    const buttonY = 44;
+    const compactHud = layout.gameWidth <= 430;
+    const topMargin = compactHud ? 12 : 16;
+    const buttonWidth = compactHud ? 58 : 64;
+    const buttonHeight = compactHud ? 30 : 34;
+    const buttonX = layout.centerX;
+    const buttonY = topMargin + buttonHeight / 2;
 
     this.pauseButtonBg = this.add.graphics().setDepth(230);
     this.pauseButtonText = this.add.text(buttonX, buttonY, '||', {
@@ -1574,7 +1620,7 @@ export class GameScene extends Phaser.Scene {
   private clearBoard(): void {
     const drifters = this.difficultySystem.getDrifters();
     for (const d of drifters) {
-      this.playerDebris.push(new ShipDebris(this, d.x, d.y, d.vx, d.vy, COLORS.HAZARD, d.radius));
+      this.playerDebris.push(new ShipDebris(this, d.x, d.y, d.vx, d.vy, COLORS.ASTEROID, d.radius));
       d.destroy();
     }
     drifters.length = 0;
@@ -1585,7 +1631,7 @@ export class GameScene extends Phaser.Scene {
 
     const enemies = this.difficultySystem.getEnemies();
     for (const e of enemies) {
-      this.playerDebris.push(new ShipDebris(this, e.x, e.y, e.getVelocityX(), e.getVelocityY(), 0xff00ff, e.radius));
+      this.playerDebris.push(new ShipDebris(this, e.x, e.y, e.getVelocityX(), e.getVelocityY(), COLORS.ENEMY, e.radius));
       this.missionSystem.trackEnemyKill();
       e.destroy();
     }
@@ -1593,13 +1639,13 @@ export class GameScene extends Phaser.Scene {
 
     const npcs = this.difficultySystem.getNPCs();
     for (const n of npcs) {
-      this.playerDebris.push(new ShipDebris(this, n.x, n.y, n.vx, n.vy, 0xffcc44, n.radius));
+      this.playerDebris.push(new ShipDebris(this, n.x, n.y, n.vx, n.vy, n.getHullColor(), n.radius));
       n.destroy();
     }
     npcs.length = 0;
 
     for (const s of this.shields) {
-      this.playerDebris.push(new ShipDebris(this, s.x, s.y, s.vx, s.vy, 0x44aaff, s.radius));
+      this.playerDebris.push(new ShipDebris(this, s.x, s.y, s.vx, s.vy, COLORS.SHIELD, s.radius));
       s.destroy();
     }
     this.shields = [];
@@ -1611,7 +1657,7 @@ export class GameScene extends Phaser.Scene {
     this.bonusPickups = [];
 
     for (const b of this.bombPickups) {
-      this.playerDebris.push(new ShipDebris(this, b.x, b.y, b.vx, b.vy, 0xff8800, b.radius));
+      this.playerDebris.push(new ShipDebris(this, b.x, b.y, b.vx, b.vy, COLORS.BOMB, b.radius));
       b.destroy();
     }
     this.bombPickups = [];
@@ -1679,9 +1725,12 @@ export class GameScene extends Phaser.Scene {
     this.hidePauseMenu();
     const layout = getLayout();
     const centerX = layout.centerX;
-    const panelMargin = 16;
-    const panelTop = panelMargin;
-    const panelHeight = layout.gameHeight - panelMargin * 2;
+    const compactHud = layout.gameWidth <= 430;
+    const topMargin = compactHud ? 12 : 16;
+    const pauseButtonHeight = compactHud ? 30 : 34;
+    const panelBottomMargin = 16;
+    const panelTop = topMargin + pauseButtonHeight + (compactHud ? 10 : 12);
+    const panelHeight = layout.gameHeight - panelTop - panelBottomMargin;
 
     const blocker = this.add.zone(0, 0, layout.gameWidth, layout.gameHeight)
       .setOrigin(0, 0)
@@ -1707,23 +1756,20 @@ export class GameScene extends Phaser.Scene {
     panel.strokeRoundedRect(28, panelTop, layout.gameWidth - 56, panelHeight, 16);
     this.pauseUi.push(panel);
 
-    const title = this.add.text(centerX, panelTop + 36, 'PAUSED', {
-      fontFamily: UI_FONT,
+    const titleY = panelTop + 30;
+    const abandonY = titleY + 44;
+    const abandonHintY = abandonY + 24;
+    const settingsY = abandonHintY + 38;
+
+    const title = this.add.text(centerX, titleY, 'PAUSED', {
+      fontFamily: TITLE_FONT,
       fontSize: readableFontSize(34),
       color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221);
     this.pauseUi.push(title);
 
-    const subtitle = this.add.text(centerX, panelTop + 72, 'RUN AT CRAWL // DANGER LIVE', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(13),
-      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(221).setAlpha(0.8);
-    this.pauseUi.push(subtitle);
-
-    const abandonText = this.add.text(centerX, panelTop + 116, 'ABANDON RUN', {
+    const abandonText = this.add.text(centerX, abandonY, 'ABANDON RUN', {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(18),
       color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
@@ -1739,7 +1785,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.pauseUi.push(abandonText);
 
-    const abandonHint = this.add.text(centerX, panelTop + 142, 'RETURN TO MENU WITHOUT BANKING', {
+    const abandonHint = this.add.text(centerX, abandonHintY, 'RETURN TO MENU WITHOUT BANKING', {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(10),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -1748,7 +1794,6 @@ export class GameScene extends Phaser.Scene {
     this.pauseUi.push(abandonHint);
 
     // Settings section
-    const settingsY = panelTop + 188;
     const divider = this.add.graphics().setDepth(221);
     divider.lineStyle(1, COLORS.HUD, 0.2);
     divider.lineBetween(centerX - 100, settingsY - 16, centerX + 100, settingsY - 16);
@@ -1765,17 +1810,21 @@ export class GameScene extends Phaser.Scene {
     const settings = getSettings();
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
-    const musicY = settingsY + 90;
-    const musicVolumeLabelY = settingsY + 124;
-    const musicVolumeY = settingsY + 138;
-    const fxVolumeLabelY = settingsY + 156;
-    const fxVolumeY = settingsY + 170;
+    const buttonColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
+    const shakeY = settingsY + 30;
+    const scanY = settingsY + 56;
+    const paletteY = settingsY + 82;
+    const musicY = settingsY + 108;
+    const musicVolumeLabelY = settingsY + 140;
+    const musicVolumeY = settingsY + 154;
+    const fxVolumeLabelY = settingsY + 172;
+    const fxVolumeY = settingsY + 186;
 
     // Screen shake toggle
-    const shakeText = this.add.text(centerX, settingsY + 34, `SCREEN SHAKE: ${settings.screenShake ? 'ON' : 'OFF'}`, {
+    const shakeText = this.add.text(centerX, shakeY, `SCREEN SHAKE: ${settings.screenShake ? 'ON' : 'OFF'}`, {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(14),
-      color: settings.screenShake ? gateColor : hudColor,
+        color: settings.screenShake ? buttonColor : hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
     shakeText.on(
@@ -1787,16 +1836,16 @@ export class GameScene extends Phaser.Scene {
         updateSettings({ screenShake: !s.screenShake });
         const updated = getSettings();
         shakeText.setText(`SCREEN SHAKE: ${updated.screenShake ? 'ON' : 'OFF'}`);
-        shakeText.setColor(updated.screenShake ? gateColor : hudColor);
+        shakeText.setColor(updated.screenShake ? buttonColor : hudColor);
       },
     );
     this.pauseUi.push(shakeText);
 
     // Scanlines toggle
-    const scanText = this.add.text(centerX, settingsY + 62, `SCANLINES: ${settings.scanlines ? 'ON' : 'OFF'}`, {
+    const scanText = this.add.text(centerX, scanY, `SCANLINES: ${settings.scanlines ? 'ON' : 'OFF'}`, {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(14),
-      color: settings.scanlines ? gateColor : hudColor,
+        color: settings.scanlines ? buttonColor : hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
     scanText.on(
@@ -1808,16 +1857,53 @@ export class GameScene extends Phaser.Scene {
         updateSettings({ scanlines: !s.scanlines });
         const updated = getSettings();
         scanText.setText(`SCANLINES: ${updated.scanlines ? 'ON' : 'OFF'}`);
-        scanText.setColor(updated.scanlines ? gateColor : hudColor);
+        scanText.setColor(updated.scanlines ? buttonColor : hudColor);
         this.hologramOverlay.setEnabled(updated.scanlines);
       },
     );
     this.pauseUi.push(scanText);
 
+    const paletteButtonWidth = 112;
+    const paletteButtonHeight = 26;
+    const paletteButtonLeft = centerX - paletteButtonWidth / 2;
+    const paletteButtonTop = paletteY - paletteButtonHeight / 2;
+    const paletteButtonBg = this.add.graphics().setDepth(221);
+    paletteButtonBg.fillStyle(COLORS.BG, 0.92);
+    paletteButtonBg.lineStyle(1.1, COLORS.HUD, 0.5);
+    paletteButtonBg.fillRoundedRect(paletteButtonLeft, paletteButtonTop, paletteButtonWidth, paletteButtonHeight, 8);
+    paletteButtonBg.strokeRoundedRect(paletteButtonLeft, paletteButtonTop, paletteButtonWidth, paletteButtonHeight, 8);
+    paletteButtonBg.fillStyle(COLORS.HUD, 0.08);
+    paletteButtonBg.fillRoundedRect(paletteButtonLeft + 4, paletteButtonTop + 4, paletteButtonWidth - 8, paletteButtonHeight - 8, 6);
+    this.pauseUi.push(paletteButtonBg);
+
+    const paletteText = this.add.text(centerX, paletteY, PALETTE_LABELS[settings.paletteId], {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(12),
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(222).setAlpha(0.9);
+    this.pauseUi.push(paletteText);
+
+    const paletteHit = this.add.zone(paletteButtonLeft, paletteButtonTop, paletteButtonWidth, paletteButtonHeight)
+      .setData('cornerRadius', 8)
+      .setOrigin(0, 0)
+      .setDepth(223)
+      .setInteractive({ useHandCursor: true });
+    paletteHit.on(
+      'pointerdown',
+      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+        event.stopPropagation();
+        playUiSelectSfx(this);
+        const updated = updateSettings({ paletteId: getNextPaletteId(getSettings().paletteId) });
+        this.applyActivePalette(updated.paletteId);
+      },
+    );
+    this.pauseUi.push(paletteHit);
+
     const musicText = this.add.text(centerX, musicY, `MUSIC: ${settings.musicEnabled ? 'ON' : 'OFF'}`, {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(14),
-      color: settings.musicEnabled ? gateColor : hudColor,
+        color: settings.musicEnabled ? buttonColor : hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
     musicText.on(
@@ -1829,7 +1915,7 @@ export class GameScene extends Phaser.Scene {
         updateSettings({ musicEnabled: !s.musicEnabled });
         const updated = getSettings();
         musicText.setText(`MUSIC: ${updated.musicEnabled ? 'ON' : 'OFF'}`);
-        musicText.setColor(updated.musicEnabled ? gateColor : hudColor);
+        musicText.setColor(updated.musicEnabled ? buttonColor : hudColor);
         refreshMusicForSettings(this);
       },
     );
@@ -1891,7 +1977,7 @@ export class GameScene extends Phaser.Scene {
     // Active missions section
     const activeMissions = this.missionSystem.getActiveMissions();
     if (activeMissions.length > 0) {
-      const missionDividerY = settingsY + 196;
+      const missionDividerY = settingsY + 208;
       const mDivider = this.add.graphics().setDepth(221);
       mDivider.lineStyle(1, COLORS.HUD, 0.2);
       mDivider.lineBetween(centerX - 100, missionDividerY, centerX + 100, missionDividerY);
@@ -1964,18 +2050,20 @@ export class GameScene extends Phaser.Scene {
 
   private refreshPauseUi(): void {
     const layout = getLayout();
-    const buttonWidth = 52;
-    const buttonHeight = 34;
-    const buttonX = layout.gameWidth - 16 - buttonWidth / 2;
-    const buttonY = 44;
+    const compactHud = layout.gameWidth <= 430;
+    const topMargin = compactHud ? 12 : 16;
+    const buttonWidth = compactHud ? 58 : 64;
+    const buttonHeight = compactHud ? 30 : 34;
+    const buttonX = layout.centerX;
+    const buttonY = topMargin + buttonHeight / 2;
     const buttonVisible = (
       this.state === GameState.COUNTDOWN ||
       this.state === GameState.PLAYING ||
       this.state === GameState.PAUSED
     );
     const paused = this.state === GameState.PAUSED;
-    const fillColor = paused ? COLORS.GATE : COLORS.BG;
-    const lineColor = paused ? COLORS.GATE : COLORS.HUD;
+    const fillColor = paused ? COLORS.HUD : COLORS.BG;
+    const lineColor = COLORS.HUD;
     const textColor = paused ? `#${COLORS.BG.toString(16).padStart(6, '0')}` : `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
 
     this.pauseButtonBg.clear();

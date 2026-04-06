@@ -27,6 +27,7 @@ const COMPACT_COMM_BG_ALPHA = 0.8;
 export interface CommPanelStyle {
   nameLabel: string;
   nameColor: number;
+  nameFontFamily?: string;
   textColor: number;
   /** Panel background fill color. */
   fillColor: number;
@@ -110,7 +111,7 @@ export class CommPanel {
     this.portrait.setScale(DEFAULT_COMM_PORTRAIT_SCALE);
 
     this.nameText = scene.add.text(DEFAULT_COMM_HEADER_X, DEFAULT_COMM_HEADER_Y, style.nameLabel, {
-      fontFamily: UI_FONT,
+      fontFamily: style.nameFontFamily ?? UI_FONT,
       fontSize: readableFontSize(14),
       color: colorStr(style.nameColor),
     });

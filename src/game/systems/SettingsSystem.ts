@@ -1,6 +1,11 @@
-import { SETTINGS_KEY } from '../constants';
+import {
+  DEFAULT_PALETTE_ID,
+  SETTINGS_KEY,
+  isPaletteId,
+  type PaletteId,
+} from '../constants';
 
-const SETTINGS_VERSION = 3;
+const SETTINGS_VERSION = 4;
 
 export interface GameSettings {
   screenShake: boolean;
@@ -8,6 +13,7 @@ export interface GameSettings {
   musicEnabled: boolean;
   musicVolume: number;
   fxVolume: number;
+  paletteId: PaletteId;
 }
 
 interface StoredSettings extends Partial<GameSettings> {
@@ -20,6 +26,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   musicEnabled: true,
   musicVolume: 0.7,
   fxVolume: 1.0,
+  paletteId: DEFAULT_PALETTE_ID,
 };
 
 let cachedSettings: GameSettings | null = null;
@@ -39,6 +46,9 @@ function normalize(settings: Partial<GameSettings>): GameSettings {
     fxVolume: typeof settings.fxVolume === 'number'
       ? clamp01(settings.fxVolume)
       : DEFAULT_SETTINGS.fxVolume,
+    paletteId: isPaletteId(settings.paletteId)
+      ? settings.paletteId
+      : DEFAULT_SETTINGS.paletteId,
   };
 }
 
@@ -48,10 +58,19 @@ function load(): GameSettings {
     if (raw) {
       const parsed = JSON.parse(raw) as StoredSettings;
       const settings = normalize({ ...DEFAULT_SETTINGS, ...parsed });
+      let shouldResave = false;
 
       // Reset music to the current default once for older saves that predate the latest music-default change.
-      if ((parsed.version ?? 0) < SETTINGS_VERSION) {
+      if ((parsed.version ?? 0) < 3) {
         settings.musicEnabled = DEFAULT_SETTINGS.musicEnabled;
+        shouldResave = true;
+      }
+
+      if ((parsed.version ?? 0) < SETTINGS_VERSION) {
+        shouldResave = true;
+      }
+
+      if (shouldResave) {
         save(settings);
       }
 

@@ -69,19 +69,19 @@ export class BonusPickup {
 
     const glow = 0.25 + Math.sin(this.pulse) * 0.12;
     const ringRadius = this.radius + 4 + Math.sin(this.pulse * 1.3) * 2;
+    const bonusColor = COLORS.SALVAGE;
 
     if (this.miningBonus) {
-      // Mining bonus — orange asteroid-chunk icon
-      const miningColor = 0xffaa00;
-      g.lineStyle(1, miningColor, glow * 0.6);
+      // Mining bonus — asteroid-chunk icon in the shared credits color
+      g.lineStyle(1, bonusColor, glow * 0.6);
       g.strokeCircle(0, 0, this.radius * 2.2);
-      g.fillStyle(miningColor, 0.15);
+      g.fillStyle(bonusColor, 0.15);
       g.fillCircle(0, 0, this.radius);
 
       // Small asteroid shape (irregular pentagon)
       const r = this.radius * 0.8;
-      g.lineStyle(1.5, miningColor, 0.95);
-      g.fillStyle(miningColor, 0.4);
+      g.lineStyle(1.5, bonusColor, 0.95);
+      g.fillStyle(bonusColor, 0.4);
       g.beginPath();
       g.moveTo(r * 0.3, -r);
       g.lineTo(r, -r * 0.2);
@@ -96,16 +96,16 @@ export class BonusPickup {
       g.lineStyle(1.5, 0xffffff, 0.6);
       g.lineBetween(-3, 3, 3, -3);
 
-      g.lineStyle(1, miningColor, glow + 0.2);
+      g.lineStyle(1, bonusColor, glow + 0.2);
       g.strokeCircle(0, 0, ringRadius);
     } else {
-      // Standard credit bonus — yellow diamond
-      g.lineStyle(1, COLORS.SALVAGE, glow * 0.6);
+      // Standard credit bonus — same color thread as the HUD credits readout
+      g.lineStyle(1, bonusColor, glow * 0.6);
       g.strokeCircle(0, 0, this.radius * 2.2);
-      g.fillStyle(0xffdd55, 0.12);
+      g.fillStyle(bonusColor, 0.12);
       g.fillCircle(0, 0, this.radius);
 
-      g.lineStyle(1.5, 0xffdd55, 0.95);
+      g.lineStyle(1.5, bonusColor, 0.95);
       g.beginPath();
       g.moveTo(0, -this.radius);
       g.lineTo(this.radius * 0.7, 0);
@@ -118,7 +118,7 @@ export class BonusPickup {
       g.lineBetween(-4, 0, 4, 0);
       g.lineBetween(0, -4, 0, 4);
 
-      g.lineStyle(1, 0xffdd55, glow + 0.2);
+      g.lineStyle(1, bonusColor, glow + 0.2);
       g.strokeCircle(0, 0, ringRadius);
     }
   }

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENE_KEYS, COLORS, UI_FONT, readableFontSize } from '../constants';
+import { applyColorPalette, SCENE_KEYS, COLORS, TITLE_FONT, UI_FONT, readableFontSize } from '../constants';
 import { colorStr } from '../utils/geometry';
 import { getLayout, setLayoutSize } from '../layout';
 import { loadOrGenerateMissions, loadMissionSave, MAX_REROLLS, saveMissionSelection } from '../systems/MissionSystem';
@@ -8,18 +8,18 @@ import { generateMission } from '../data/missionCatalog';
 import {
   COMPANIES,
   COMPANY_IDS,
-  REP_PER_TIER,
   computeRunBoostsFromFavors,
   getFavorOffer,
 } from '../data/companyData';
 import { CompanyId } from '../types';
 import type { ActiveMission } from '../types';
+import { getMissionBrief } from '../data/missionBriefs';
 import { refreshMusicForSettings, setMissionMusic } from '../systems/MusicSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { HologramOverlay } from '../ui/HologramOverlay';
-import { createLiaisonPortrait } from '../ui/LiaisonComm';
+import { createCompanyLogo } from '../ui/CompanyLogo';
 import { SettingsSlider } from '../ui/SettingsSlider';
 import { SalvageDebris } from '../entities/SalvageDebris';
 import { DrifterHazard } from '../entities/DrifterHazard';
@@ -66,7 +66,6 @@ type MissionButton = {
 const CARD_HEIGHT = 68;
 const CARD_GAP = 8;
 const CARD_MARGIN_X = 32;
-const FAVOR_CARD_HEIGHT = 108;
 const FAVOR_CARD_GAP = 8;
 const FAVOR_SECTION_GAP = 10;
 const MAX_SELECTED_FAVORS = 2;
@@ -121,6 +120,7 @@ export class MissionSelectScene extends Phaser.Scene {
     this.events.once('shutdown', this.cleanup, this);
     this.cursor = new CustomCursor(this);
     setLayoutSize(this.scale.width, this.scale.height);
+    applyColorPalette(getSettings().paletteId);
     setMissionMusic(this);
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
@@ -133,6 +133,7 @@ export class MissionSelectScene extends Phaser.Scene {
     this.bgDebris = [];
     this.bgDrifters = [];
     this.bgNpcs = [];
+    this.settingsOpen = false;
     this.drifterTimer = 0;
     this.debrisTimer = 0;
     this.npcTimer = 0;
@@ -141,7 +142,7 @@ export class MissionSelectScene extends Phaser.Scene {
     this.rerollsRemaining = saved.rerollsRemaining ?? MAX_REROLLS;
 
     const starfield = this.add.graphics().setDepth(-1);
-    starfield.fillStyle(0x020806, 1);
+    starfield.fillStyle(COLORS.STARFIELD_BG, 1);
     starfield.fillRect(
       -BACKGROUND_STARFIELD_OVERSCAN,
       -BACKGROUND_STARFIELD_OVERSCAN,
@@ -164,7 +165,7 @@ export class MissionSelectScene extends Phaser.Scene {
     this.hologramOverlay.setEnabled(getSettings().scanlines);
 
     this.add.text(layout.centerX, briefing.titleY, 'JOB BOARD', {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: readableFontSize(briefing.compact ? 17 : 19),
       color: colorStr(COLORS.HUD),
       align: 'center',
@@ -204,25 +205,20 @@ export class MissionSelectScene extends Phaser.Scene {
     const rerollY = cardTop + cardHeight * 3 + cardGap * 2 + missionToRerollGap;
     const favorCardGap = tight ? 4 : compact ? 6 : FAVOR_CARD_GAP;
     const rerollToWalletGap = tight ? 9 : compact ? 12 : FAVOR_SECTION_GAP + 4;
-    const walletToFavorGap = tight ? 12 : compact ? 16 : 18;
+    const walletHeaderOffset = compact ? 8 : 10;
+    const walletToFavorGap = (tight ? 12 : compact ? 16 : 18) + walletHeaderOffset;
     const favorHeaderY = rerollY + rerollHeight + rerollToWalletGap;
     const favorGridTop = favorHeaderY + walletToFavorGap;
     const deployButtonWidth = compact ? 184 : 200;
     const deployButtonHeight = compact ? 40 : 46;
     const deployY = layout.gameHeight - (compact ? 34 : 50);
     const favorCardWidth = cardWidth;
-    const baseFavorCardHeight = Phaser.Math.Clamp(Math.round(layout.gameHeight * 0.096), 82, FAVOR_CARD_HEIGHT);
-    const minFavorCardHeight = tight ? 52 : compact ? 58 : 68;
     const favorToDeployGap = tight ? 10 : compact ? 14 : 16;
     const favorCardsAvailableHeight = Math.floor((deployY - deployButtonHeight / 2) - favorToDeployGap - favorGridTop);
     const stackedFavorCardHeight = Math.floor(
       (favorCardsAvailableHeight - favorCardGap * (COMPANY_IDS.length - 1)) / COMPANY_IDS.length,
     );
-    const favorCardHeight = Phaser.Math.Clamp(
-      Math.min(baseFavorCardHeight, stackedFavorCardHeight),
-      minFavorCardHeight,
-      FAVOR_CARD_HEIGHT,
-    );
+    const favorCardHeight = Math.min(cardHeight, stackedFavorCardHeight);
 
     return {
       compact,
@@ -304,7 +300,7 @@ export class MissionSelectScene extends Phaser.Scene {
     }
 
     const label = this.add.text(cardLeft + 14, cardTop + (briefing.compact ? 13 : 14), mission.def.label, {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: readableFontSize(briefing.compact ? 14 : 16),
       color: colorStr(companyColor),
       wordWrap: { width: cardWidth - 28 },
@@ -313,12 +309,14 @@ export class MissionSelectScene extends Phaser.Scene {
     this.cardUi[index].push(label);
 
     const footerY = cardTop + briefing.cardHeight - (briefing.compact ? 8 : 9);
-    const companyTag = this.add.text(cardLeft + 14, footerY, `${companyDef.name} +${REP_PER_TIER[mission.def.tier]} REP`, {
+    const missionBrief = this.add.text(cardLeft + 14, footerY, getMissionBrief(mission.def), {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(briefing.compact ? 9 : 10),
+      fontSize: readableFontSize(briefing.compact ? 8 : 9),
       color: colorStr(companyColor),
-    }).setOrigin(0, 1).setDepth(depth + 1).setAlpha(0.76);
-    this.cardUi[index].push(companyTag);
+      wordWrap: { width: cardWidth - 110, useAdvancedWrap: true },
+    }).setOrigin(0, 1).setDepth(depth + 1).setAlpha(0.82);
+    missionBrief.setLineSpacing(-2);
+    this.cardUi[index].push(missionBrief);
 
     const rewardText = this.add.text(cardLeft + cardWidth - 14, footerY, `+${mission.def.reward}c`, {
       fontFamily: UI_FONT,
@@ -614,14 +612,15 @@ export class MissionSelectScene extends Phaser.Scene {
   private drawUiButton(button: MissionButton, centerX: number, centerY: number, active: boolean): void {
     const left = centerX - button.width / 2;
     const top = centerY - button.height / 2;
+    const buttonAccent = COLORS.HUD;
     button.bg.clear();
     button.bg.fillStyle(COLORS.BG, active ? 0.94 : 0.84);
-    button.bg.lineStyle(1.1, active ? COLORS.GATE : COLORS.HUD, active ? 0.9 : 0.34);
+    button.bg.lineStyle(1.1, buttonAccent, active ? 0.9 : 0.34);
     button.bg.fillRoundedRect(left, top, button.width, button.height, 8);
     button.bg.strokeRoundedRect(left, top, button.width, button.height, 8);
-    button.bg.fillStyle(active ? COLORS.GATE : COLORS.HUD, active ? 0.14 : 0.04);
+    button.bg.fillStyle(buttonAccent, active ? 0.14 : 0.04);
     button.bg.fillRoundedRect(left + 4, top + 4, button.width - 8, button.height - 8, 6);
-    button.label.setColor(colorStr(active ? COLORS.GATE : COLORS.HUD));
+    button.label.setColor(colorStr(buttonAccent));
     button.label.setAlpha(active ? 1 : 0.78);
   }
 
@@ -702,7 +701,8 @@ export class MissionSelectScene extends Phaser.Scene {
   }
 
   private getFavorSectionTop(): number {
-    return this.getBriefingLayoutConfig().favorHeaderY;
+    const briefing = this.getBriefingLayoutConfig();
+    return briefing.favorHeaderY + (briefing.compact ? 8 : 10);
   }
 
   private getCurrentRerollCost(): number {
@@ -733,7 +733,7 @@ export class MissionSelectScene extends Phaser.Scene {
     const headerY = this.getFavorSectionTop();
 
     const walletText = this.add.text(layout.centerX, headerY, `WALLET: ${walletCredits}c`, {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: readableFontSize(briefing.compact ? 15 : 16),
       fontStyle: 'bold',
       color: colorStr(COLORS.SALVAGE),
@@ -758,7 +758,7 @@ export class MissionSelectScene extends Phaser.Scene {
       const canSelect = selected || (!atFavorLimit && selectedCost + offer.cost <= walletCredits);
       const borderColor = COLORS.HUD;
       const statusLabel = selected ? 'SELECTED' : atFavorLimit ? 'MAX 2' : !canSelect ? 'SHORT' : null;
-      const statusColor = selected ? COLORS.GATE : atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
+      const statusColor = selected ? COLORS.HUD : atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
       const statusTextColor = atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
       const portraitLeftInset = denseFavorLayout ? 10 : 12;
       const portraitTopClearance = denseFavorLayout ? 8 : 10;
@@ -805,12 +805,12 @@ export class MissionSelectScene extends Phaser.Scene {
       portraitFrame.strokeCircle(portraitCenterX, portraitCenterY, Math.max(8, portraitRadius - 4));
       this.favorUi.push(portraitFrame);
 
-      const portrait = createLiaisonPortrait(this, company)
+      const logo = createCompanyLogo(this, company, { includeBackdrop: false })
         .setPosition(portraitCenterX, portraitCenterY)
         .setScale(portraitScale)
         .setDepth(11)
         .setAlpha(0.96);
-      this.favorUi.push(portrait);
+      this.favorUi.push(logo);
 
       if (statusLabel) {
         const badgeTop = cardTop + (denseFavorLayout ? 5 : 7);
@@ -819,15 +819,15 @@ export class MissionSelectScene extends Phaser.Scene {
 
       const companyLine = `${company.name} // LIAISON: ${company.liaison}`;
       const companyText = this.add.text(textLeft, contentTop, companyLine, {
-        fontFamily: UI_FONT,
-        fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
+        fontFamily: TITLE_FONT,
+        fontSize: readableFontSize(briefing.compact ? 14 : 16),
         fontStyle: 'bold',
         color: colorStr(company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
         wordWrap: { width: textWidth },
       }).setDepth(11).setAlpha(0.96);
-      companyText.setLineSpacing(-1);
+      companyText.setLineSpacing(briefing.compact ? -2 : -1);
       this.favorUi.push(companyText);
 
       const offerLine = `${offer.label} ${offer.boostValue} // ${offer.cost}c`;
@@ -899,16 +899,16 @@ export class MissionSelectScene extends Phaser.Scene {
     const btnHeight = briefing.deployButtonHeight;
 
     const deployBg = this.add.graphics().setDepth(10);
-    deployBg.fillStyle(COLORS.GATE, 0.08);
+    deployBg.fillStyle(COLORS.HUD, 0.08);
     deployBg.fillRoundedRect(layout.centerX - btnWidth / 2, deployY - btnHeight / 2, btnWidth, btnHeight, 12);
-    deployBg.lineStyle(1.5, COLORS.GATE, 0.5);
+    deployBg.lineStyle(1.5, COLORS.HUD, 0.5);
     deployBg.strokeRoundedRect(layout.centerX - btnWidth / 2, deployY - btnHeight / 2, btnWidth, btnHeight, 12);
     this.deployUi.push(deployBg);
 
     const deployText = this.add.text(layout.centerX, deployY, 'DEPLOY', {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: readableFontSize(briefing.compact ? 26 : 30),
-      color: colorStr(COLORS.GATE),
+      color: colorStr(COLORS.HUD),
       align: 'center',
     }).setOrigin(0.5).setDepth(11);
     this.deployUi.push(deployText);

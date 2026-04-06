@@ -194,8 +194,8 @@ export class DrifterHazard {
     const r = this.radius;
     const mr = this.miningRadius;
 
-    const color = this.inverted ? 0x000000 : (this.isMineable ? COLORS.HAZARD : COLORS.HAZARD_INERT);
-    const miningColor = this.inverted ? 0x000000 : 0xffaa00;
+    const color = this.inverted ? 0x000000 : (this.isMineable ? COLORS.ASTEROID : COLORS.ASTEROID_INERT);
+    const miningColor = this.inverted ? 0x000000 : COLORS.ASTEROID;
 
     if (this.isMineable && this.radiusScale >= 1.5) {
       // Mining zone - pulsing filled area
@@ -254,7 +254,7 @@ export class DrifterHazard {
       g.fillStyle(0x000000, 0.5);
       g.fillRect(-barW / 2, barY, barW, barH);
 
-      const barColor = hpFrac > 0.5 ? 0xffaa00 : (hpFrac > 0.25 ? 0xff6600 : COLORS.HAZARD);
+      const barColor = hpFrac > 0.5 ? COLORS.ASTEROID : (hpFrac > 0.25 ? COLORS.ASTEROID_INERT : COLORS.ASTEROID);
       g.fillStyle(barColor, 0.8);
       g.fillRect(-barW / 2, barY, barW * hpFrac, barH);
 

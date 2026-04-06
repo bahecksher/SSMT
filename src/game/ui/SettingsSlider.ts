@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { UI_FONT, readableFontSize } from '../constants';
+import { COLORS, UI_FONT, readableFontSize } from '../constants';
 
 interface SettingsSliderOptions {
   scene: Phaser.Scene;
@@ -115,8 +115,8 @@ export class SettingsSlider {
     const knobX = this.left + fillWidth;
 
     this.graphics.clear();
-    this.graphics.fillStyle(0x020a08, 0.9);
-    this.graphics.lineStyle(1, 0x00ffcc, 0.26);
+    this.graphics.fillStyle(COLORS.BG, 0.9);
+    this.graphics.lineStyle(1, COLORS.HUD, 0.26);
     this.graphics.fillRoundedRect(this.left, trackTop, this.width, 6, 3);
     this.graphics.strokeRoundedRect(this.left, trackTop, this.width, 6, 3);
 
@@ -128,7 +128,7 @@ export class SettingsSlider {
       this.graphics.fillRoundedRect(this.left, trackTop, fillWidth, 6, 3);
     }
 
-    this.graphics.fillStyle(0x020a08, 1);
+    this.graphics.fillStyle(COLORS.BG, 1);
     this.graphics.lineStyle(1.2, this.accentColor, 0.92);
     this.graphics.fillCircle(knobX, this.y, 6);
     this.graphics.strokeCircle(knobX, this.y, 6);
