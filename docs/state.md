@@ -1,13 +1,14 @@
 # State
-_Last updated: 2026-04-07 0209_
+_Last updated: 2026-04-07 0219_
 
 ## Current focus
-Mobile readability and spacing cleanup for narrow / short phone screens (iPhone 13 mini class), with HUD abbreviations and settings panel spacing pass.
+Mobile readability and spacing cleanup for narrow / short phone screens (iPhone 13 mini class), with HUD abbreviations, settings panel spacing, and pause-button overlap fix.
 
 ## What's working
 - Menu, Mission Select, save data, and results support distinct `CAMPAIGN` and `ARCADE` modes with separate wallets and campaign life / favor carryover
 - Deepcore's secondary mission now uses `BREAK ASTEROIDS`, and campaign sessions track completed mission count across runs
 - HUD now abbreviates labels on narrow (<=390px) screens: `CR:` instead of `CREDITS:`, `LV` instead of `// LIVES`, `M` instead of `// MISS`, with smaller font (11px) and tighter element gaps (6px)
+- HUD lives/missions text flows to second row when score width would collide with centered pause button (`topRowMaxX` boundary check)
 - Menu and MissionSelect settings panels now use proportional row spacing that compresses on veryCompact screens instead of fixed pixel offsets
 - Mission Select compacts mission cards, wallet copy, favor badges, and favor-card text aggressively on cramped phone screens (ultraDense favor layout)
 - Compact comm panels reduce typography and padding, and the top HUD drops `BEST` to a second row when the first row gets crowded
@@ -34,7 +35,7 @@ Mobile readability and spacing cleanup for narrow / short phone screens (iPhone 
 
 ## Next actions
 1. Smoke test Menu, Mission Select, pause, and result screens on an iPhone 13 mini or equivalent `375x635` viewport and note any remaining collisions
-2. Run a gameplay session and confirm the abbreviated HUD labels (CR: / LV / M) stay readable once scores and mission counts grow
+2. Run a campaign session and confirm the lives/missions row flows correctly as score grows past the pause button boundary
 3. Resume gameplay tuning and campaign/favor validation after the mobile layout pass is confirmed on-device
 
 ## Active plan
@@ -46,10 +47,12 @@ docs/plans/2026-04-07 0148 Plan - Mobile Screen Cleanup.md
 3. On Menu, confirm leaderboard rows stop before the Slick comm panel and `TAP TO START`
 4. On Mission Select, confirm mission cards, wallet text, and all four favor cards stay readable without text collisions
 5. In a campaign run, confirm the top HUD shows `CR: {n} LV {n} M{n}` without overflow on narrow screens
-6. Pause and finish a run, then confirm the pause and result overlays remain readable without stacked sections overlapping
-7. Open Settings on MissionSelect and confirm all rows (palette, shake, scan, music, volume sliders) fit within the panel
+6. As score grows past ~4 digits, confirm lives/missions drop to the second row instead of overlapping the pause button
+7. Pause and finish a run, then confirm the pause and result overlays remain readable without stacked sections overlapping
+8. Open Settings on MissionSelect and confirm all rows (palette, shake, scan, music, volume sliders) fit within the panel
 
 ## Recent logs
-- docs/log/2026-04-07 0209 HUD and Settings Panel Mobile Pass.md - abbreviated HUD labels for narrow screens, tightened settings panel and pause menu spacing
-- docs/log/2026-04-07 0148 Mobile Screen Cleanup.md - tightened narrow/short phone layouts across menu, mission select, HUD, pause, and results
-- docs/log/2026-04-07 0132 Campaign Mission Completion Tracking.md - added persistent campaign mission completion tracking
+- docs/log/2026-04-07 0219 HUD Pause Button Overlap Fix.md — lives/missions flow to second row when score collides with pause button
+- docs/log/2026-04-07 0209 HUD and Settings Panel Mobile Pass.md — abbreviated HUD labels for narrow screens, tightened settings panel and pause menu spacing
+- docs/log/2026-04-07 0148 Mobile Screen Cleanup.md — tightened narrow/short phone layouts across menu, mission select, HUD, pause, and results
+- docs/log/2026-04-07 0132 Campaign Mission Completion Tracking.md — added persistent campaign mission completion tracking
