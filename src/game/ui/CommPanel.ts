@@ -13,16 +13,20 @@ const DEFAULT_COMM_RIGHT_PADDING = 16;
 const DEFAULT_COMM_BOTTOM_PADDING = 14;
 const DEFAULT_COMM_PORTRAIT_SCALE = 0.74;
 const DEFAULT_COMM_BG_ALPHA = 0.92;
+const DEFAULT_COMM_NAME_FONT_SIZE = 14;
+const DEFAULT_COMM_TEXT_FONT_SIZE = 15;
 
 const COMPACT_COMM_HEADER_X = 68;
 const COMPACT_COMM_HEADER_Y = 6;
 const COMPACT_COMM_PORTRAIT_X = 30;
-const COMPACT_COMM_MIN_HEIGHT = 60;
-const COMPACT_COMM_TEXT_GAP = 3;
-const COMPACT_COMM_RIGHT_PADDING = 12;
-const COMPACT_COMM_BOTTOM_PADDING = 8;
-const COMPACT_COMM_PORTRAIT_SCALE = 0.56;
+const COMPACT_COMM_MIN_HEIGHT = 56;
+const COMPACT_COMM_TEXT_GAP = 2;
+const COMPACT_COMM_RIGHT_PADDING = 10;
+const COMPACT_COMM_BOTTOM_PADDING = 6;
+const COMPACT_COMM_PORTRAIT_SCALE = 0.54;
 const COMPACT_COMM_BG_ALPHA = 0.8;
+const COMPACT_COMM_NAME_FONT_SIZE = 11;
+const COMPACT_COMM_TEXT_FONT_SIZE = 12;
 
 export interface CommPanelStyle {
   nameLabel: string;
@@ -112,13 +116,13 @@ export class CommPanel {
 
     this.nameText = scene.add.text(DEFAULT_COMM_HEADER_X, DEFAULT_COMM_HEADER_Y, style.nameLabel, {
       fontFamily: style.nameFontFamily ?? UI_FONT,
-      fontSize: readableFontSize(14),
+      fontSize: readableFontSize(DEFAULT_COMM_NAME_FONT_SIZE),
       color: colorStr(style.nameColor),
     });
 
     this.text = scene.add.text(DEFAULT_COMM_HEADER_X, 0, '', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(15),
+      fontSize: readableFontSize(DEFAULT_COMM_TEXT_FONT_SIZE),
       color: colorStr(style.textColor),
       wordWrap: { width: this.panelWidth - DEFAULT_COMM_HEADER_X - DEFAULT_COMM_RIGHT_PADDING },
       lineSpacing: 2,
@@ -302,10 +306,14 @@ export class CommPanel {
     const bottomPadding = this.compactLayout ? COMPACT_COMM_BOTTOM_PADDING : DEFAULT_COMM_BOTTOM_PADDING;
     const portraitScale = this.compactLayout ? COMPACT_COMM_PORTRAIT_SCALE : DEFAULT_COMM_PORTRAIT_SCALE;
     const panelAlpha = this.compactLayout ? COMPACT_COMM_BG_ALPHA : DEFAULT_COMM_BG_ALPHA;
+    const nameFontSize = this.compactLayout ? COMPACT_COMM_NAME_FONT_SIZE : DEFAULT_COMM_NAME_FONT_SIZE;
+    const bodyFontSize = this.compactLayout ? COMPACT_COMM_TEXT_FONT_SIZE : DEFAULT_COMM_TEXT_FONT_SIZE;
 
     this.nameText.setPosition(headerX, headerY);
+    this.nameText.setFontSize(readableFontSize(nameFontSize));
+    this.text.setFontSize(readableFontSize(bodyFontSize));
     this.text.setWordWrapWidth(this.panelWidth - headerX - rightPadding);
-    this.text.setLineSpacing(this.compactLayout ? 1 : 2);
+    this.text.setLineSpacing(this.compactLayout ? 0 : 2);
     const bodyY = this.nameText.y + this.nameText.height + textGap;
     this.text.setPosition(headerX, bodyY);
     this.panelHeight = Math.max(minHeight, Math.ceil(bodyY + this.text.height + bottomPadding));

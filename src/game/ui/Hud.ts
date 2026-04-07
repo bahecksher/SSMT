@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS, TITLE_FONT, UI_FONT, readableFontSize } from '../constants';
-import { getLayout } from '../layout';
+import { getLayout, isNarrowViewport } from '../layout';
 import { MissionType } from '../types';
 import type { ActiveMission } from '../types';
 import { colorStr } from '../utils/geometry';
@@ -30,15 +30,24 @@ export class Hud {
   private missionPillsHidden = false;
   private missionPillTween: Phaser.Tweens.Tween | null = null;
   private currentMissions: ActiveMission[] = [];
+  private readonly topMargin: number;
+  private readonly shieldRowY: number;
+  private readonly narrowHud: boolean;
+  private readonly elementGap: number;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     const layout = getLayout();
     const compactHud = layout.gameWidth <= 430;
+    const narrowHud = isNarrowViewport(layout);
+    this.narrowHud = narrowHud;
+    this.elementGap = narrowHud ? 6 : 10;
     const topMargin = compactHud ? 12 : 16;
-    const scoreFontSize = compactHud ? 13 : 16;
+    const scoreFontSize = narrowHud ? 11 : compactHud ? 13 : 16;
     const minorFontSize = compactHud ? 11 : 14;
     const shieldY = topMargin + (compactHud ? 16 : 24);
+    this.topMargin = topMargin;
+    this.shieldRowY = shieldY;
     const titleTextStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: TITLE_FONT,
       fontSize: readableFontSize(scoreFontSize),
@@ -49,12 +58,12 @@ export class Hud {
       fontFamily: UI_FONT,
     };
 
-    this.scoreText = scene.add.text(16, topMargin, 'CREDITS: 0', {
+    this.scoreText = scene.add.text(narrowHud ? 10 : 16, topMargin, narrowHud ? 'CR: 0' : 'CREDITS: 0', {
       ...titleTextStyle,
       color: colorStr(COLORS.SALVAGE),
     }).setDepth(100);
 
-    this.livesText = scene.add.text(this.scoreText.x + this.scoreText.width + 10, topMargin, '', {
+    this.livesText = scene.add.text(this.scoreText.x + this.scoreText.width + this.elementGap, topMargin, '', {
       ...titleTextStyle,
       color: colorStr(COLORS.SALVAGE),
     }).setDepth(100);
@@ -87,22 +96,26 @@ export class Hud {
   ): void {
     const roundedScore = Math.floor(score);
     if (roundedScore !== this.lastScore) {
-      this.scoreText.setText(`CREDITS: ${roundedScore}`);
+      this.scoreText.setText(this.narrowHud ? `CR: ${roundedScore}` : `CREDITS: ${roundedScore}`);
       this.lastScore = roundedScore;
     }
     if (campaignLivesRemaining !== this.lastLives) {
-      this.livesText.setText(campaignLivesRemaining !== null ? `// LIVES ${campaignLivesRemaining}` : '');
+      this.livesText.setText(campaignLivesRemaining !== null
+        ? (this.narrowHud ? `LV ${campaignLivesRemaining}` : `// LIVES ${campaignLivesRemaining}`)
+        : '');
       this.lastLives = campaignLivesRemaining;
     }
-    this.livesText.setPosition(this.scoreText.x + this.scoreText.width + 10, this.scoreText.y);
+    this.livesText.setPosition(this.scoreText.x + this.scoreText.width + this.elementGap, this.scoreText.y);
 
     if (campaignMissionsCompleted !== this.lastMissionsCompleted) {
-      this.missionsText.setText(campaignMissionsCompleted !== null ? `// MISS ${campaignMissionsCompleted}` : '');
+      this.missionsText.setText(campaignMissionsCompleted !== null
+        ? (this.narrowHud ? `M${campaignMissionsCompleted}` : `// MISS ${campaignMissionsCompleted}`)
+        : '');
       this.lastMissionsCompleted = campaignMissionsCompleted;
     }
     const missionAnchorX = this.livesText.text.length > 0
-      ? this.livesText.x + this.livesText.width + 10
-      : this.scoreText.x + this.scoreText.width + 10;
+      ? this.livesText.x + this.livesText.width + this.elementGap
+      : this.scoreText.x + this.scoreText.width + this.elementGap;
     this.missionsText.setPosition(missionAnchorX, this.scoreText.y);
 
     const roundedBest = Math.floor(best);
@@ -110,6 +123,15 @@ export class Hud {
       this.bestText.setText(`BEST: ${roundedBest}`);
       this.lastBest = roundedBest;
     }
+
+    const layout = getLayout();
+    const topRowRightEdge = this.missionsText.text.length > 0
+      ? this.missionsText.x + this.missionsText.width
+      : this.livesText.text.length > 0
+        ? this.livesText.x + this.livesText.width
+        : this.scoreText.x + this.scoreText.width;
+    const bestOnSecondRow = isNarrowViewport(layout) || topRowRightEdge + 14 > layout.gameWidth - 16 - this.bestText.width;
+    this.bestText.setPosition(layout.gameWidth - 16, bestOnSecondRow ? this.shieldRowY : this.topMargin);
 
     if (hasShield !== this.lastShield) {
       this.shieldText.setText(hasShield ? 'SHIELD' : '');

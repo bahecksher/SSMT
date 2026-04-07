@@ -91,6 +91,14 @@ export function getLayout(): LayoutMetrics {
   return layout;
 }
 
+export function isNarrowViewport(metrics: LayoutMetrics = layout): boolean {
+  return metrics.gameWidth <= 390;
+}
+
+export function isShortViewport(metrics: LayoutMetrics = layout): boolean {
+  return metrics.gameHeight <= 700;
+}
+
 // Reference arena area for density normalization (default 540×960 viewport)
 const REFERENCE_ARENA_AREA = 355_324;
 

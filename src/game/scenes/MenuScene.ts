@@ -23,7 +23,7 @@ import { TitlePilotDisplay } from '../ui/TitlePilotDisplay';
 import { DRIFTER_SPEED_BASE } from '../data/tuning';
 import { pickAsteroidSize } from '../data/phaseConfig';
 import { getSlickLine } from '../data/slickLines';
-import { getLayout, setLayoutSize } from '../layout';
+import { getLayout, isNarrowViewport, isShortViewport, setLayoutSize } from '../layout';
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
 import { refreshMusicForSettings, setMenuMusic } from '../systems/MusicSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
@@ -156,19 +156,21 @@ export class MenuScene extends Phaser.Scene {
 
     // === UI layer (depth 10+) ===
     const uiDepth = 10;
-    const backingTop = layout.gameHeight * 0.06;
+    const narrowMenu = isNarrowViewport(layout);
+    const shortMenu = isShortViewport(layout);
     const compactMenu = layout.gameHeight <= 720 || layout.gameWidth <= 400;
-    const veryCompactMenu = layout.gameHeight <= 560 || layout.gameWidth <= 360;
-    const titlePrimarySize = readableFontSize(veryCompactMenu ? 34 : compactMenu ? 38 : 42);
-    const titleSecondarySize = readableFontSize(veryCompactMenu ? 22 : compactMenu ? 24 : 26);
-    const titleTertiarySize = readableFontSize(veryCompactMenu ? 14 : 16);
-    const metaSize = readableFontSize(compactMenu ? 15 : 16);
-    const hintSize = readableFontSize(veryCompactMenu ? 11 : 12);
-    const bestSize = readableFontSize(compactMenu ? 16 : 18);
-    this.leaderboardTabWidth = veryCompactMenu ? 104 : compactMenu ? 112 : 122;
-    this.leaderboardTabHeight = compactMenu ? 34 : 38;
-    this.leaderboardRowHeight = veryCompactMenu ? 24 : 28;
-    this.leaderboardFontSize = readableFontSize(veryCompactMenu ? 15 : 16);
+    const veryCompactMenu = layout.gameHeight <= 560 || layout.gameWidth <= 360 || (narrowMenu && layout.gameHeight <= 700);
+    const backingTop = layout.gameHeight * (veryCompactMenu ? 0.045 : 0.06);
+    const titlePrimarySize = readableFontSize(veryCompactMenu ? 32 : compactMenu ? 38 : 42);
+    const titleSecondarySize = readableFontSize(veryCompactMenu ? 20 : compactMenu ? 24 : 26);
+    const titleTertiarySize = readableFontSize(veryCompactMenu ? 12 : 16);
+    const metaSize = readableFontSize(veryCompactMenu ? 13 : compactMenu ? 15 : 16);
+    const hintSize = readableFontSize(veryCompactMenu ? 10 : 12);
+    const bestSize = readableFontSize(veryCompactMenu ? 14 : compactMenu ? 16 : 18);
+    this.leaderboardTabWidth = veryCompactMenu ? 96 : compactMenu ? 112 : 122;
+    this.leaderboardTabHeight = veryCompactMenu ? 30 : compactMenu ? 34 : 38;
+    this.leaderboardRowHeight = veryCompactMenu ? 22 : 28;
+    this.leaderboardFontSize = readableFontSize(veryCompactMenu ? 14 : 16);
 
     // Semi-transparent backing so text is readable over the simulation
     const backing = this.add.graphics().setDepth(uiDepth);
@@ -176,7 +178,7 @@ export class MenuScene extends Phaser.Scene {
     backing.fillRoundedRect(20, backingTop, layout.gameWidth - 40, layout.gameHeight - backingTop - 20, 12);
 
     // Title block
-    const portraitRadius = veryCompactMenu ? 34 : compactMenu ? 42 : 50;
+    const portraitRadius = veryCompactMenu ? 30 : compactMenu ? 42 : 50;
     const portraitCenterY = backingTop + portraitRadius + (veryCompactMenu ? 8 : compactMenu ? 10 : 14);
     const portraitFrame = this.add.graphics().setDepth(uiDepth);
     portraitFrame.fillStyle(COLORS.BG, 0.88);
@@ -236,12 +238,17 @@ export class MenuScene extends Phaser.Scene {
       this.pilotText.setText(`PILOT: ${updatedName}`);
     });
 
-    const editHint = this.add.text(centerX, this.pilotText.y + this.pilotText.height + 4, 'TAP CALLSIGN TO EDIT 3 LETTERS', {
+    const editHint = this.add.text(
+      centerX,
+      this.pilotText.y + this.pilotText.height + 4,
+      veryCompactMenu ? 'TAP CALLSIGN TO EDIT' : 'TAP CALLSIGN TO EDIT 3 LETTERS',
+      {
       fontFamily: UI_FONT,
       fontSize: hintSize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
-    }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.7);
+      },
+    ).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.7);
 
     let leaderboardTitleTop = editHint.y + editHint.height + (veryCompactMenu ? 10 : 14);
     if (best > 0) {
@@ -256,9 +263,9 @@ export class MenuScene extends Phaser.Scene {
 
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
-    const modeButtonWidth = veryCompactMenu ? 118 : compactMenu ? 126 : 136;
-    const modeButtonHeight = compactMenu ? 32 : 36;
-    const modeGap = veryCompactMenu ? 12 : 16;
+    const modeButtonWidth = veryCompactMenu ? 110 : compactMenu ? 126 : 136;
+    const modeButtonHeight = veryCompactMenu ? 30 : compactMenu ? 32 : 36;
+    const modeGap = veryCompactMenu ? 10 : 16;
     const modeOffset = modeButtonWidth / 2 + modeGap / 2;
     const modeButtonY = leaderboardTitleTop + (veryCompactMenu ? 10 : 12) + modeButtonHeight / 2;
     const campaignModeX = centerX - modeOffset;
@@ -294,7 +301,7 @@ export class MenuScene extends Phaser.Scene {
       fontSize: readableFontSize(veryCompactMenu ? 10 : 11),
       color: hudColor,
       align: 'center',
-      wordWrap: { width: layout.gameWidth - 96, useAdvancedWrap: true },
+      wordWrap: { width: layout.gameWidth - (veryCompactMenu ? 72 : 96), useAdvancedWrap: true },
     }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.76);
     this.updateModeUi();
     leaderboardTitleTop = this.modeStatusText.y + this.modeStatusText.height + (veryCompactMenu ? 12 : 16);
@@ -307,11 +314,11 @@ export class MenuScene extends Phaser.Scene {
 
     const leaderboardTitle = this.add.text(centerX, leaderboardTitleTop, 'LEADERBOARD', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(14),
+      fontSize: readableFontSize(veryCompactMenu ? 12 : 14),
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.68);
-    const tabY = leaderboardTitle.y + leaderboardTitle.height + (veryCompactMenu ? 14 : 16) + this.leaderboardTabHeight / 2;
+    const tabY = leaderboardTitle.y + leaderboardTitle.height + (veryCompactMenu ? 12 : 16) + this.leaderboardTabHeight / 2;
 
     this.dailyTabBg = this.add.graphics().setDepth(uiDepth);
     this.weeklyTabBg = this.add.graphics().setDepth(uiDepth);
@@ -368,12 +375,12 @@ export class MenuScene extends Phaser.Scene {
     // Divider line under tabs
     const divider = this.add.graphics().setDepth(uiDepth);
     divider.lineStyle(1, COLORS.HUD, 0.3);
-    const dividerY = tabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 8 : 10);
+    const dividerY = tabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 6 : 10);
     divider.lineBetween(centerX - 120, dividerY, centerX + 120, dividerY);
-    this.leaderboardStartY = dividerY + (veryCompactMenu ? 16 : 18);
+    this.leaderboardStartY = dividerY + (veryCompactMenu ? 12 : 18);
 
     // Status text (loading / offline)
-    this.statusText = this.add.text(centerX, this.leaderboardStartY + (veryCompactMenu ? 10 : 12), 'LOADING...', {
+    this.statusText = this.add.text(centerX, this.leaderboardStartY + (veryCompactMenu ? 8 : 12), 'LOADING...', {
       fontFamily: UI_FONT,
       fontSize: this.leaderboardFontSize,
       color: hudColor,
@@ -381,10 +388,10 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(uiDepth);
 
     // TAP TO START — anchored from bottom
-    const tapY = layout.gameHeight - 60;
+    const tapY = layout.gameHeight - (shortMenu ? 48 : 60);
     const tapText = this.add.text(centerX, tapY, 'TAP TO START', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(26),
+      fontSize: readableFontSize(veryCompactMenu ? 22 : 26),
       color: gateColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
@@ -643,17 +650,18 @@ export class MenuScene extends Phaser.Scene {
     const buttonCenterX = layout.gameWidth - (compactMenu ? 76 : 82);
     const buttonCenterY = backingTop + (veryCompactMenu ? 16 : 18);
     const panelWidth = compactMenu ? 214 : 226;
-    const panelHeight = 264;
+    const settingsRowGap = veryCompactMenu ? 30 : 34;
+    const panelHeight = veryCompactMenu ? 236 : 264;
     const panelLeft = layout.gameWidth - panelWidth - 24;
     const panelTop = buttonCenterY + 22;
-    const rowPaletteY = panelTop + 30;
-    const rowOneY = panelTop + 64;
-    const rowTwoY = panelTop + 98;
-    const rowThreeY = panelTop + 132;
-    const musicVolumeLabelY = panelTop + 170;
-    const musicVolumeY = panelTop + 188;
-    const fxVolumeLabelY = panelTop + 216;
-    const fxVolumeY = panelTop + 234;
+    const rowPaletteY = panelTop + (veryCompactMenu ? 26 : 30);
+    const rowOneY = rowPaletteY + settingsRowGap;
+    const rowTwoY = rowOneY + settingsRowGap;
+    const rowThreeY = rowTwoY + settingsRowGap;
+    const musicVolumeLabelY = rowThreeY + (veryCompactMenu ? 32 : 38);
+    const musicVolumeY = musicVolumeLabelY + (veryCompactMenu ? 14 : 18);
+    const fxVolumeLabelY = musicVolumeY + (veryCompactMenu ? 18 : 28);
+    const fxVolumeY = fxVolumeLabelY + (veryCompactMenu ? 14 : 18);
     const offX = panelLeft + panelWidth - 30;
     const onX = offX - 52;
     const paletteButtonX = panelLeft + panelWidth - 63;
@@ -925,6 +933,8 @@ export class MenuScene extends Phaser.Scene {
       return;
     }
 
+    const layout = getLayout();
+    const compactStatus = isNarrowViewport(layout) || isShortViewport(layout);
     const selectedMode = this.saveSystem.getSelectedMode();
     const isCampaign = selectedMode === RunMode.CAMPAIGN;
     this.drawMenuButton(
@@ -944,8 +954,8 @@ export class MenuScene extends Phaser.Scene {
       const campaignSession = this.saveSystem.getCampaignSession();
       const walletCredits = this.saveSystem.getWalletCredits(RunMode.CAMPAIGN);
       const campaignSummary = campaignSession
-        ? `LIVES ${campaignSession.livesRemaining} // FAVORS ${campaignSession.favorIds.length}`
-        : `NEW CAMPAIGN // LIVES ${this.saveSystem.getCampaignLivesDisplay()}`;
+        ? `LIVES ${campaignSession.livesRemaining} // ${compactStatus ? 'FAV' : 'FAVORS'} ${campaignSession.favorIds.length}`
+        : `NEW CAMPAIGN // ${this.saveSystem.getCampaignLivesDisplay()} LIVES`;
       this.modeStatusText
         .setText(`WALLET ${walletCredits}c\n${campaignSummary}`)
         .setColor(`#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`);
@@ -954,7 +964,7 @@ export class MenuScene extends Phaser.Scene {
 
     const walletCredits = this.saveSystem.getWalletCredits(RunMode.ARCADE);
     this.modeStatusText
-      .setText(`WALLET ${walletCredits}c\nLEADERBOARD LIVE`)
+      .setText(`WALLET ${walletCredits}c\n${compactStatus ? 'ARCADE // LIVE BOARD' : 'LEADERBOARD LIVE'}`)
       .setColor(`#${COLORS.GATE.toString(16).padStart(6, '0')}`);
   }
 
@@ -1025,9 +1035,11 @@ export class MenuScene extends Phaser.Scene {
     }
 
     // Cap visible rows so the leaderboard leaves clean space for Slick below it.
-    const tapY = layout.gameHeight - 60;
-    const bottomUiTop = tapY - this.slickComm.getPanelHeight() - 44;
-    const maxRows = Math.max(3, Math.floor((bottomUiTop - startY) / rowHeight));
+    const compactMenu = isNarrowViewport(layout) || isShortViewport(layout);
+    const tapY = layout.gameHeight - (compactMenu ? 48 : 60);
+    const reservedCommHeight = compactMenu ? 64 : this.slickComm.getPanelHeight();
+    const bottomUiTop = tapY - reservedCommHeight - (compactMenu ? 28 : 44);
+    const maxRows = Math.max(1, Math.min(compactMenu ? 4 : 6, Math.floor((bottomUiTop - startY) / rowHeight)));
     const visibleEntries = entries.slice(0, maxRows);
 
     for (let i = 0; i < visibleEntries.length; i++) {
@@ -1064,6 +1076,7 @@ export class MenuScene extends Phaser.Scene {
     const rowHeight = this.leaderboardRowHeight;
     const uiDepth = 10;
     const deathColor = '#ff3366';
+    const compactMenu = isNarrowViewport(layout) || isShortViewport(layout);
 
     // Place below the last leaderboard entry (or status text)
     let topY = this.leaderboardStartY;
@@ -1077,13 +1090,14 @@ export class MenuScene extends Phaser.Scene {
     const y = topY + rowHeight * 0.4;
     const company = entry.company_id ? COMPANIES[entry.company_id] : null;
     const companyTag = company ? `${company.leaderboardTag} ` : '';
-    const line = `BIGGEST LOSS  ${companyTag}${entry.player_name}  ${Math.floor(entry.score)}`;
+    const line = `${compactMenu ? 'LOSS' : 'BIGGEST LOSS'}  ${companyTag}${entry.player_name}  ${Math.floor(entry.score)}`;
 
     this.biggestLossText = this.add.text(centerX, y, line, {
       fontFamily: UI_FONT,
       fontSize: this.leaderboardFontSize,
       color: deathColor,
       align: 'center',
+      wordWrap: { width: layout.gameWidth - 72, useAdvancedWrap: true },
     }).setOrigin(0.5).setDepth(uiDepth);
 
     this.positionMenuComm();
@@ -1093,10 +1107,16 @@ export class MenuScene extends Phaser.Scene {
     if (!this.slickComm) return;
 
     const layout = getLayout();
-    const tapY = layout.gameHeight - 60;
+    const compactMenu = isNarrowViewport(layout) || isShortViewport(layout);
+    const tapY = layout.gameHeight - (compactMenu ? 48 : 60);
+    if (compactMenu) {
+      this.slickComm.setPinnedCompactLayout(0, 11);
+    } else {
+      this.slickComm.setPinnedLayout(0, 11);
+    }
     const commHeight = this.slickComm.getPanelHeight();
-    const topGap = 18;
-    const bottomGap = 18;
+    const topGap = compactMenu ? 12 : 18;
+    const bottomGap = compactMenu ? 12 : 18;
 
     let leaderboardBottom = this.statusText?.visible
       ? this.statusText.y + this.statusText.height / 2
@@ -1117,6 +1137,10 @@ export class MenuScene extends Phaser.Scene {
       Math.max(availableTop, availableBottom - commHeight),
     );
 
-    this.slickComm.setPinnedLayout(commY, 11);
+    if (compactMenu) {
+      this.slickComm.setPinnedCompactLayout(commY, 11);
+    } else {
+      this.slickComm.setPinnedLayout(commY, 11);
+    }
   }
 }

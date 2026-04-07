@@ -51,7 +51,7 @@ import { getLiaisonLine } from '../data/liaisonLines';
 import { RegentComm } from '../ui/RegentComm';
 import { getSlickLine } from '../data/slickLines';
 import { getRegentLine } from '../data/regentLines';
-import { getLayout, setLayoutSize } from '../layout';
+import { getLayout, isNarrowViewport, isShortViewport, setLayoutSize } from '../layout';
 import { getSettings, updateSettings } from '../systems/SettingsSystem';
 import {
   refreshMusicForSettings,
@@ -1464,7 +1464,9 @@ export class GameScene extends Phaser.Scene {
   private showResultUi(data: ResultData): void {
     this.clearResultUi();
     const layout = getLayout();
-    const resultCommWidth = Math.min(layout.gameWidth - 96, 368);
+    const narrowResults = isNarrowViewport(layout);
+    const shortResults = isShortViewport(layout);
+    const resultCommWidth = Math.min(layout.gameWidth - (narrowResults || shortResults ? 64 : 96), 368);
     this.slickComm.setPanelWidth(resultCommWidth);
     this.regentComm.setPanelWidth(resultCommWidth);
     this.liaisonComm?.setPanelWidth(resultCommWidth);
@@ -1479,39 +1481,42 @@ export class GameScene extends Phaser.Scene {
     const panelWidth = layout.arenaWidth - arenaInset * 2;
     const panelHeight = layout.arenaHeight - arenaInset * 2;
     const panelBottom = panelTop + panelHeight;
-    const compactResults = layout.gameWidth <= 430 || layout.gameHeight <= 760;
-    const panelPaddingX = Phaser.Math.Clamp(Math.round(panelWidth * 0.08), 18, 30);
-    const panelPaddingTop = Phaser.Math.Clamp(Math.round(panelHeight * 0.055), 18, 30);
-    const panelPaddingBottom = Phaser.Math.Clamp(Math.round(panelHeight * 0.05), 18, 28);
+    const compactResults = layout.gameWidth <= 430 || layout.gameHeight <= 760 || narrowResults;
+    const ultraCompactResults = layout.gameHeight <= 680 || (narrowResults && shortResults);
+    const panelPaddingX = Phaser.Math.Clamp(Math.round(panelWidth * (ultraCompactResults ? 0.065 : 0.08)), ultraCompactResults ? 14 : 18, 30);
+    const panelPaddingTop = Phaser.Math.Clamp(Math.round(panelHeight * (ultraCompactResults ? 0.045 : 0.055)), ultraCompactResults ? 14 : 18, 30);
+    const panelPaddingBottom = Phaser.Math.Clamp(Math.round(panelHeight * (ultraCompactResults ? 0.04 : 0.05)), ultraCompactResults ? 14 : 18, 28);
     const textWidth = panelWidth - panelPaddingX * 2;
-    const titleGap = Phaser.Math.Clamp(Math.round(panelHeight * (compactResults ? 0.018 : 0.022)), 6, compactResults ? 12 : 16);
-    const lineGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.014), 6, 10);
-    const sectionGap = Phaser.Math.Clamp(Math.round(panelHeight * (compactResults ? 0.02 : 0.026)), 8, compactResults ? 16 : 20);
-    const buttonWidth = Math.min(panelWidth - panelPaddingX * 2, 392);
-    const buttonHeight = Phaser.Math.Clamp(Math.round(panelHeight * 0.074), 40, 58);
-    const buttonGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.022), 8, 16);
+    const titleGap = Phaser.Math.Clamp(Math.round(panelHeight * (ultraCompactResults ? 0.014 : compactResults ? 0.018 : 0.022)), ultraCompactResults ? 4 : 6, compactResults ? 12 : 16);
+    const lineGap = Phaser.Math.Clamp(Math.round(panelHeight * (ultraCompactResults ? 0.01 : 0.014)), ultraCompactResults ? 4 : 6, 10);
+    const sectionGap = Phaser.Math.Clamp(Math.round(panelHeight * (ultraCompactResults ? 0.016 : compactResults ? 0.02 : 0.026)), ultraCompactResults ? 6 : 8, compactResults ? 16 : 20);
+    const buttonWidth = Math.min(panelWidth - panelPaddingX * 2, ultraCompactResults ? 320 : 392);
+    const buttonHeight = Phaser.Math.Clamp(Math.round(panelHeight * 0.074), ultraCompactResults ? 36 : 40, 58);
+    const buttonGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.022), ultraCompactResults ? 6 : 8, 16);
     const commPanelHeight = Math.max(
       96,
       isDeath
         ? Math.max(this.slickComm.getPanelHeight(), this.regentComm.getPanelHeight())
         : this.slickComm.getPanelHeight(),
     );
-    const commGap = Phaser.Math.Clamp(Math.round(panelHeight * 0.026), 10, 16);
+    const commGap = Phaser.Math.Clamp(Math.round(panelHeight * (ultraCompactResults ? 0.018 : 0.026)), ultraCompactResults ? 8 : 10, 16);
     const menuButtonY = panelBottom - panelPaddingBottom - buttonHeight / 2;
     const retryButtonY = menuButtonY - buttonHeight - buttonGap;
     const retryButtonTop = retryButtonY - buttonHeight / 2;
     const titleColor = isDeath ? COLORS.ENEMY : COLORS.GATE;
     const titleText = isCampaignGameOver ? 'GAME OVER' : isDeath ? 'DESTROYED' : 'EXTRACTED';
-    const titleBarHeight = Phaser.Math.Clamp(Math.round(panelHeight * (compactResults ? 0.05 : 0.058)), 34, 48);
+    const titleBarHeight = Phaser.Math.Clamp(Math.round(panelHeight * (ultraCompactResults ? 0.045 : compactResults ? 0.05 : 0.058)), ultraCompactResults ? 30 : 34, 48);
     const titleBarTop = panelTop + Phaser.Math.Clamp(Math.round(panelHeight * 0.018), 8, 16);
     const titleBarBottom = titleBarTop + titleBarHeight;
-    const titleSize = readableFontSize(Phaser.Math.Clamp(Math.round(titleBarHeight * 0.58), 20, 30));
-    const scoreSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.05), 24, 36));
-    const metaSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.026), 12, 16));
-    const detailSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.022), 11, 14));
-    const missionHeaderSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.024), 12, 15));
-    const missionLineSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.022), 11, 14));
-    const bonusSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.03), 14, 18));
+    const titleSize = readableFontSize(Phaser.Math.Clamp(Math.round(titleBarHeight * 0.58), ultraCompactResults ? 18 : 20, 30));
+    const scoreSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.05), ultraCompactResults ? 22 : 24, 36));
+    const metaSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.026), ultraCompactResults ? 11 : 12, 16));
+    const detailSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.022), ultraCompactResults ? 10 : 11, 14));
+    const missionHeaderSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.024), ultraCompactResults ? 11 : 12, 15));
+    const missionLineSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.022), ultraCompactResults ? 10 : 11, 14));
+    const bonusSize = readableFontSize(Phaser.Math.Clamp(Math.round(panelHeight * 0.03), ultraCompactResults ? 13 : 14, 18));
+    const bankedLabel = ultraCompactResults ? 'BANKED' : 'CREDITS BANKED';
+    const lostLabel = ultraCompactResults ? 'LOST' : 'UNBANKED LOST';
 
     const backing = this.add.graphics().setDepth(205);
     backing.fillStyle(COLORS.BG, 0.78);
@@ -1541,7 +1546,7 @@ export class GameScene extends Phaser.Scene {
     const scoreText = this.add.text(
       centerX,
       currentY,
-      `CREDITS BANKED: ${Math.floor(data.score)}`,
+      `${bankedLabel}: ${Math.floor(data.score)}`,
       {
         fontFamily: UI_FONT,
         fontSize: scoreSize,
@@ -1557,7 +1562,7 @@ export class GameScene extends Phaser.Scene {
 
     if (isDeath && Math.floor(data.lostScore ?? 0) > 0) {
       currentY += lineGap;
-      const lostText = this.add.text(centerX, currentY, `UNBANKED LOST: ${Math.floor(data.lostScore ?? 0)}`, {
+      const lostText = this.add.text(centerX, currentY, `${lostLabel}: ${Math.floor(data.lostScore ?? 0)}`, {
         fontFamily: UI_FONT,
         fontSize: compactResults ? detailSize : metaSize,
         color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
@@ -1571,7 +1576,7 @@ export class GameScene extends Phaser.Scene {
 
     if (!data.scoreRecorded) {
       currentY += lineGap;
-      const blockedText = this.add.text(centerX, currentY, 'DEBUG RUN // SCORE NOT RECORDED', {
+      const blockedText = this.add.text(centerX, currentY, ultraCompactResults ? 'DEBUG RUN // NO SCORE' : 'DEBUG RUN // SCORE NOT RECORDED', {
         fontFamily: UI_FONT,
         fontSize: compactResults ? detailSize : metaSize,
         color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
@@ -1585,12 +1590,12 @@ export class GameScene extends Phaser.Scene {
 
     currentY += lineGap;
     const modeSummary = !data.scoreRecorded
-      ? 'DEBUG RUN // NO RECORDS OR PAYOUTS'
+      ? (ultraCompactResults ? 'DEBUG RUN // NO PAYOUTS' : 'DEBUG RUN // NO RECORDS OR PAYOUTS')
       : isCampaign
-      ? (isCampaignGameOver
-        ? 'CAMPAIGN OVER // FAVORS CLEARED'
-        : `CAMPAIGN // LIVES LEFT ${data.campaignLivesRemaining ?? 0}`)
-      : 'ARCADE // LEADERBOARD LIVE';
+        ? (isCampaignGameOver
+          ? 'CAMPAIGN OVER // FAVORS CLEARED'
+          : `CAMPAIGN // LIVES LEFT ${data.campaignLivesRemaining ?? 0}`)
+      : (ultraCompactResults ? 'ARCADE // LIVE BOARD' : 'ARCADE // LEADERBOARD LIVE');
     const modeSummaryColor = !data.scoreRecorded
       ? COLORS.HAZARD
       : isCampaign
@@ -1603,6 +1608,7 @@ export class GameScene extends Phaser.Scene {
       align: 'center',
       wordWrap: { width: textWidth },
     }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.82);
+    this.fitTextToWidth(modeSummaryText, textWidth, 10);
     this.resultUi.push(modeSummaryText);
     currentY += modeSummaryText.height;
     resultContentBottomY = currentY;
@@ -1612,7 +1618,7 @@ export class GameScene extends Phaser.Scene {
       const campaignProgressText = this.add.text(
         centerX,
         currentY,
-        `MISSIONS COMPLETED: ${Math.floor(data.campaignMissionsCompleted ?? 0)}`,
+        `${ultraCompactResults ? 'MISSIONS' : 'MISSIONS COMPLETED'}: ${Math.floor(data.campaignMissionsCompleted ?? 0)}`,
         {
           fontFamily: UI_FONT,
           fontSize: compactResults ? detailSize : metaSize,
@@ -1621,6 +1627,7 @@ export class GameScene extends Phaser.Scene {
           wordWrap: { width: textWidth },
         },
       ).setOrigin(0.5, 0).setDepth(210).setAlpha(0.82);
+      this.fitTextToWidth(campaignProgressText, textWidth, 10);
       this.resultUi.push(campaignProgressText);
       currentY += campaignProgressText.height;
       resultContentBottomY = currentY;
@@ -1628,7 +1635,7 @@ export class GameScene extends Phaser.Scene {
 
     if (!isDeath && data.scoreRecorded) {
       currentY += lineGap;
-      const walletLabel = isCampaign ? 'CAMPAIGN WALLET' : 'ARCADE WALLET';
+      const walletLabel = isCampaign ? (ultraCompactResults ? 'CAMP WALLET' : 'CAMPAIGN WALLET') : 'ARCADE WALLET';
       const walletText = this.add.text(centerX, currentY, `${walletLabel} +${Math.floor(data.walletPayout ?? 0)}c  //  TOTAL ${Math.floor(data.walletBalance ?? 0)}c`, {
         fontFamily: UI_FONT,
         fontSize: compactResults ? detailSize : metaSize,
@@ -1636,6 +1643,7 @@ export class GameScene extends Phaser.Scene {
         align: 'center',
         wordWrap: { width: textWidth },
       }).setOrigin(0.5, 0).setDepth(210).setAlpha(compactResults ? 0.92 : 0.86);
+      this.fitTextToWidth(walletText, textWidth, 10);
       this.resultUi.push(walletText);
       currentY += walletText.height;
       resultContentBottomY = currentY;
@@ -1658,9 +1666,9 @@ export class GameScene extends Phaser.Scene {
     // Mission results section
     const missions = data.missionProgress ?? [];
     if (missions.length > 0) {
-      const missionStartRatio = compactResults ? 0.2 : (isDeath ? 0.24 : 0.28);
+      const missionStartRatio = ultraCompactResults ? 0.18 : compactResults ? 0.2 : (isDeath ? 0.24 : 0.28);
       currentY = Math.max(currentY + sectionGap, panelTop + panelHeight * missionStartRatio);
-      const headerLabel = isDeath ? 'MISSIONS: INCOMPLETE' : 'MISSIONS:';
+      const headerLabel = isDeath ? (ultraCompactResults ? 'MISSIONS // FAILED' : 'MISSIONS: INCOMPLETE') : 'MISSIONS:';
       const headerColor = isDeath ? COLORS.HAZARD : COLORS.GATE;
       const mHeader = this.add.text(centerX, currentY, headerLabel, {
         fontFamily: UI_FONT,
@@ -1720,13 +1728,18 @@ export class GameScene extends Phaser.Scene {
       Math.max(gapTop, gapBottom - commPanelHeight),
     );
 
-    if (isDeath) {
+    const useCompactResultComm = compactResults || shortResults;
+    if (isDeath && !useCompactResultComm) {
       this.slickComm.setPinnedLayout(resultCommY, 212);
     } else {
       this.slickComm.setPinnedCompactLayout(resultCommY, 212);
     }
     if (isDeath) {
-      this.regentComm.setPinnedLayout(resultCommY, 212);
+      if (useCompactResultComm) {
+        this.regentComm.setPinnedCompactLayout(resultCommY, 212);
+      } else {
+        this.regentComm.setPinnedLayout(resultCommY, 212);
+      }
     } else {
       this.regentComm.resetLayout();
     }
@@ -2102,11 +2115,16 @@ export class GameScene extends Phaser.Scene {
     this.hidePauseMenu();
     const layout = getLayout();
     const centerX = layout.centerX;
+    const narrowPause = isNarrowViewport(layout);
+    const shortPause = isShortViewport(layout);
+    const densePause = narrowPause || shortPause;
     const compactHud = layout.gameWidth <= 430;
     const topMargin = compactHud ? 12 : 16;
     const pauseButtonHeight = compactHud ? 30 : 34;
-    const panelBottomMargin = 16;
-    const panelTop = topMargin + pauseButtonHeight + (compactHud ? 10 : 12);
+    const panelBottomMargin = densePause ? 12 : 16;
+    const panelSideInset = densePause ? 20 : 28;
+    const panelWidth = layout.gameWidth - panelSideInset * 2;
+    const panelTop = topMargin + pauseButtonHeight + (densePause ? 8 : compactHud ? 10 : 12);
     const panelHeight = layout.gameHeight - panelTop - panelBottomMargin;
 
     const blocker = this.add.zone(0, 0, layout.gameWidth, layout.gameHeight)
@@ -2128,19 +2146,19 @@ export class GameScene extends Phaser.Scene {
 
     const panel = this.add.graphics().setDepth(220);
     panel.fillStyle(COLORS.BG, 0.92);
-    panel.fillRoundedRect(28, panelTop, layout.gameWidth - 56, panelHeight, 16);
+    panel.fillRoundedRect(panelSideInset, panelTop, panelWidth, panelHeight, 16);
     panel.lineStyle(1.5, COLORS.GATE, 0.45);
-    panel.strokeRoundedRect(28, panelTop, layout.gameWidth - 56, panelHeight, 16);
+    panel.strokeRoundedRect(panelSideInset, panelTop, panelWidth, panelHeight, 16);
     this.pauseUi.push(panel);
 
-    const titleY = panelTop + 30;
-    const abandonY = titleY + 44;
-    const abandonHintY = abandonY + 24;
-    const settingsY = abandonHintY + 38;
+    const titleY = panelTop + (densePause ? 24 : 30);
+    const abandonY = titleY + (densePause ? 34 : 44);
+    const abandonHintY = abandonY + (densePause ? 18 : 24);
+    const settingsY = abandonHintY + (densePause ? 28 : 38);
 
     const title = this.add.text(centerX, titleY, 'PAUSED', {
       fontFamily: TITLE_FONT,
-      fontSize: readableFontSize(34),
+      fontSize: readableFontSize(densePause ? 30 : 34),
       color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221);
@@ -2148,7 +2166,7 @@ export class GameScene extends Phaser.Scene {
 
     const abandonText = this.add.text(centerX, abandonY, 'ABANDON RUN', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(18),
+      fontSize: readableFontSize(densePause ? 16 : 18),
       color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
@@ -2162,9 +2180,9 @@ export class GameScene extends Phaser.Scene {
     );
     this.pauseUi.push(abandonText);
 
-    const abandonHint = this.add.text(centerX, abandonHintY, 'RETURN TO MENU WITHOUT BANKING', {
+    const abandonHint = this.add.text(centerX, abandonHintY, densePause ? 'RETURN TO MENU // NO BANKING' : 'RETURN TO MENU WITHOUT BANKING', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(10),
+      fontSize: readableFontSize(densePause ? 9 : 10),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.65);
@@ -2173,12 +2191,12 @@ export class GameScene extends Phaser.Scene {
     // Settings section
     const divider = this.add.graphics().setDepth(221);
     divider.lineStyle(1, COLORS.HUD, 0.2);
-    divider.lineBetween(centerX - 100, settingsY - 16, centerX + 100, settingsY - 16);
+    divider.lineBetween(centerX - (densePause ? 88 : 100), settingsY - 16, centerX + (densePause ? 88 : 100), settingsY - 16);
     this.pauseUi.push(divider);
 
     const settingsTitle = this.add.text(centerX, settingsY, 'SETTINGS', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(16),
+      fontSize: readableFontSize(densePause ? 14 : 16),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.7);
@@ -2188,19 +2206,21 @@ export class GameScene extends Phaser.Scene {
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
     const buttonColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
-    const shakeY = settingsY + 30;
-    const scanY = settingsY + 56;
-    const paletteY = settingsY + 82;
-    const musicY = settingsY + 108;
-    const musicVolumeLabelY = settingsY + 140;
-    const musicVolumeY = settingsY + 154;
-    const fxVolumeLabelY = settingsY + 172;
-    const fxVolumeY = settingsY + 186;
+    const settingRowGap = densePause ? 22 : 26;
+    const shakeY = settingsY + (densePause ? 24 : 30);
+    const scanY = shakeY + settingRowGap;
+    const paletteY = scanY + settingRowGap;
+    const musicY = paletteY + settingRowGap;
+    const musicVolumeLabelY = musicY + (densePause ? 24 : 32);
+    const musicVolumeY = musicVolumeLabelY + (densePause ? 12 : 14);
+    const fxVolumeLabelY = musicVolumeY + (densePause ? 14 : 18);
+    const fxVolumeY = fxVolumeLabelY + (densePause ? 12 : 14);
 
     // Screen shake toggle
-    const shakeText = this.add.text(centerX, shakeY, `SCREEN SHAKE: ${settings.screenShake ? 'ON' : 'OFF'}`, {
+    const shakeLabel = densePause ? 'SHAKE' : 'SCREEN SHAKE';
+    const shakeText = this.add.text(centerX, shakeY, `${shakeLabel}: ${settings.screenShake ? 'ON' : 'OFF'}`, {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(14),
+      fontSize: readableFontSize(densePause ? 13 : 14),
         color: settings.screenShake ? buttonColor : hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
@@ -2212,16 +2232,17 @@ export class GameScene extends Phaser.Scene {
         const s = getSettings();
         updateSettings({ screenShake: !s.screenShake });
         const updated = getSettings();
-        shakeText.setText(`SCREEN SHAKE: ${updated.screenShake ? 'ON' : 'OFF'}`);
+        shakeText.setText(`${shakeLabel}: ${updated.screenShake ? 'ON' : 'OFF'}`);
         shakeText.setColor(updated.screenShake ? buttonColor : hudColor);
       },
     );
     this.pauseUi.push(shakeText);
 
     // Scanlines toggle
-    const scanText = this.add.text(centerX, scanY, `SCANLINES: ${settings.scanlines ? 'ON' : 'OFF'}`, {
+    const scanLabel = densePause ? 'SCAN' : 'SCANLINES';
+    const scanText = this.add.text(centerX, scanY, `${scanLabel}: ${settings.scanlines ? 'ON' : 'OFF'}`, {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(14),
+      fontSize: readableFontSize(densePause ? 13 : 14),
         color: settings.scanlines ? buttonColor : hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
@@ -2233,15 +2254,15 @@ export class GameScene extends Phaser.Scene {
         const s = getSettings();
         updateSettings({ scanlines: !s.scanlines });
         const updated = getSettings();
-        scanText.setText(`SCANLINES: ${updated.scanlines ? 'ON' : 'OFF'}`);
+        scanText.setText(`${scanLabel}: ${updated.scanlines ? 'ON' : 'OFF'}`);
         scanText.setColor(updated.scanlines ? buttonColor : hudColor);
         this.hologramOverlay.setEnabled(updated.scanlines);
       },
     );
     this.pauseUi.push(scanText);
 
-    const paletteButtonWidth = 112;
-    const paletteButtonHeight = 26;
+    const paletteButtonWidth = densePause ? 104 : 112;
+    const paletteButtonHeight = densePause ? 24 : 26;
     const paletteButtonLeft = centerX - paletteButtonWidth / 2;
     const paletteButtonTop = paletteY - paletteButtonHeight / 2;
     const paletteButtonBg = this.add.graphics().setDepth(221);
@@ -2255,7 +2276,7 @@ export class GameScene extends Phaser.Scene {
 
     const paletteText = this.add.text(centerX, paletteY, PALETTE_LABELS[settings.paletteId], {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(12),
+      fontSize: readableFontSize(densePause ? 11 : 12),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(222).setAlpha(0.9);
@@ -2279,7 +2300,7 @@ export class GameScene extends Phaser.Scene {
 
     const musicText = this.add.text(centerX, musicY, `MUSIC: ${settings.musicEnabled ? 'ON' : 'OFF'}`, {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(14),
+      fontSize: readableFontSize(densePause ? 13 : 14),
         color: settings.musicEnabled ? buttonColor : hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setInteractive({ useHandCursor: true });
@@ -2298,9 +2319,9 @@ export class GameScene extends Phaser.Scene {
     );
     this.pauseUi.push(musicText);
 
-    const musicBetaText = this.add.text(centerX, musicY + 16, '*BETA*', {
+    const musicBetaText = this.add.text(centerX, musicY + (densePause ? 13 : 16), '*BETA*', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(10),
+      fontSize: readableFontSize(densePause ? 9 : 10),
       color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.82);
@@ -2308,17 +2329,18 @@ export class GameScene extends Phaser.Scene {
 
     const musicVolumeLabel = this.add.text(centerX, musicVolumeLabelY, 'MUSIC VOL', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(10),
+      fontSize: readableFontSize(densePause ? 9 : 10),
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.72);
     this.pauseUi.push(musicVolumeLabel);
 
+    const sliderWidth = densePause ? 96 : 112;
     const musicVolumeSlider = new SettingsSlider({
       scene: this,
-      left: centerX - 56,
+      left: centerX - sliderWidth / 2,
       y: musicVolumeY,
-      width: 112,
+      width: sliderWidth,
       depth: 221,
       accentColor: COLORS.GATE,
       initialValue: settings.musicVolume,
@@ -2331,7 +2353,7 @@ export class GameScene extends Phaser.Scene {
 
     const fxVolumeLabel = this.add.text(centerX, fxVolumeLabelY, 'FX VOL', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(10),
+      fontSize: readableFontSize(densePause ? 9 : 10),
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.72);
@@ -2339,9 +2361,9 @@ export class GameScene extends Phaser.Scene {
 
     const fxVolumeSlider = new SettingsSlider({
       scene: this,
-      left: centerX - 56,
+      left: centerX - sliderWidth / 2,
       y: fxVolumeY,
-      width: 112,
+      width: sliderWidth,
       depth: 221,
       accentColor: COLORS.SALVAGE,
       initialValue: settings.fxVolume,
@@ -2351,28 +2373,28 @@ export class GameScene extends Phaser.Scene {
     });
     this.pauseUi.push(...fxVolumeSlider.getObjects());
 
-    const debugDividerY = settingsY + 208;
+    const debugDividerY = fxVolumeY + (densePause ? 16 : 22);
     const debugDivider = this.add.graphics().setDepth(221);
     debugDivider.lineStyle(1, COLORS.HUD, 0.2);
-    debugDivider.lineBetween(centerX - 100, debugDividerY, centerX + 100, debugDividerY);
+    debugDivider.lineBetween(centerX - (densePause ? 88 : 100), debugDividerY, centerX + (densePause ? 88 : 100), debugDividerY);
     this.pauseUi.push(debugDivider);
 
     const debugTitle = this.add.text(centerX, debugDividerY + 16, 'DEBUG PHASE', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(16),
+      fontSize: readableFontSize(densePause ? 14 : 16),
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(221).setAlpha(0.7);
     this.pauseUi.push(debugTitle);
 
-    const phaseButtonWidth = compactHud ? 34 : 38;
-    const phaseButtonHeight = compactHud ? 24 : 28;
-    const phaseButtonGap = compactHud ? 6 : 8;
-    const phaseRowGap = compactHud ? 8 : 10;
+    const phaseButtonWidth = densePause ? 30 : compactHud ? 34 : 38;
+    const phaseButtonHeight = densePause ? 22 : compactHud ? 24 : 28;
+    const phaseButtonGap = densePause ? 4 : compactHud ? 6 : 8;
+    const phaseRowGap = densePause ? 6 : compactHud ? 8 : 10;
     const buttonsPerRow = 5;
     const totalButtonWidth = buttonsPerRow * phaseButtonWidth + (buttonsPerRow - 1) * phaseButtonGap;
     const buttonStartX = centerX - totalButtonWidth / 2 + phaseButtonWidth / 2;
-    const phaseRowOneY = debugDividerY + 44;
+    const phaseRowOneY = debugDividerY + (densePause ? 34 : 44);
     const phaseRowTwoY = phaseRowOneY + phaseButtonHeight + phaseRowGap;
     const currentPhase = this.extractionSystem.getPhaseCount();
 
@@ -2390,70 +2412,77 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
-    const debugStatusText = this.add.text(centerX, phaseRowTwoY + phaseButtonHeight / 2 + 10, this.scoreRecordingBlocked ? 'SCORES BLOCKED FOR THIS RUN' : 'USING DEBUG PHASE JUMP BLOCKS SCORE RECORDING', {
+    const debugStatusText = this.add.text(centerX, phaseRowTwoY + phaseButtonHeight / 2 + 10, this.scoreRecordingBlocked ? 'SCORES BLOCKED' : (densePause ? 'DEBUG JUMPS BLOCK SCORES' : 'USING DEBUG PHASE JUMP BLOCKS SCORE RECORDING'), {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(compactHud ? 9 : 10),
       color: `#${(this.scoreRecordingBlocked ? COLORS.HAZARD : COLORS.HUD).toString(16).padStart(6, '0')}`,
       align: 'center',
-      wordWrap: { width: layout.gameWidth - 96 },
+      wordWrap: { width: panelWidth - 24 },
     }).setOrigin(0.5, 0).setDepth(221).setAlpha(this.scoreRecordingBlocked ? 0.9 : 0.66);
     this.pauseUi.push(debugStatusText);
 
     // Active missions section
     const activeMissions = this.missionSystem.getActiveMissions();
     if (activeMissions.length > 0) {
-      const missionDividerY = phaseRowTwoY + phaseButtonHeight / 2 + (compactHud ? 34 : 38);
+      const missionDividerY = phaseRowTwoY + phaseButtonHeight / 2 + (densePause ? 24 : compactHud ? 34 : 38);
       const mDivider = this.add.graphics().setDepth(221);
       mDivider.lineStyle(1, COLORS.HUD, 0.2);
-      mDivider.lineBetween(centerX - 100, missionDividerY, centerX + 100, missionDividerY);
+      mDivider.lineBetween(centerX - (densePause ? 88 : 100), missionDividerY, centerX + (densePause ? 88 : 100), missionDividerY);
       this.pauseUi.push(mDivider);
 
       const mTitle = this.add.text(centerX, missionDividerY + 16, 'MISSIONS', {
         fontFamily: UI_FONT,
-        fontSize: readableFontSize(16),
+        fontSize: readableFontSize(densePause ? 14 : 16),
         color: hudColor,
         align: 'center',
       }).setOrigin(0.5).setDepth(221).setAlpha(0.7);
       this.pauseUi.push(mTitle);
 
+      const missionCardLeft = panelSideInset + 12;
+      const missionCardWidth = panelWidth - 24;
+      const missionCardHeight = densePause ? 28 : 36;
+      const missionRowGap = densePause ? 32 : 42;
       for (let i = 0; i < activeMissions.length; i++) {
         const m = activeMissions[i];
-        const my = missionDividerY + 40 + i * 42;
+        const my = missionDividerY + (densePause ? 34 : 40) + i * missionRowGap;
         const prog = Math.min(Math.floor(m.progress), m.def.target);
         const done = m.completed;
 
         // Card background
         const cardBg = this.add.graphics().setDepth(220);
         cardBg.fillStyle(COLORS.BG, 0.6);
-        cardBg.fillRoundedRect(40, my - 4, layout.gameWidth - 80, 36, 6);
+        cardBg.fillRoundedRect(missionCardLeft, my - 4, missionCardWidth, missionCardHeight, 6);
         cardBg.lineStyle(1, done ? COLORS.GATE : COLORS.HUD, done ? 0.5 : 0.15);
-        cardBg.strokeRoundedRect(40, my - 4, layout.gameWidth - 80, 36, 6);
+        cardBg.strokeRoundedRect(missionCardLeft, my - 4, missionCardWidth, missionCardHeight, 6);
         this.pauseUi.push(cardBg);
 
-        const label = this.add.text(50, my + 2, m.def.label, {
+        const label = this.add.text(missionCardLeft + 10, my + 2, m.def.label, {
           fontFamily: UI_FONT,
-          fontSize: readableFontSize(11),
+          fontSize: readableFontSize(densePause ? 10 : 11),
           color: done ? gateColor : hudColor,
+          wordWrap: { width: missionCardWidth - (densePause ? 88 : 110), useAdvancedWrap: true },
         }).setDepth(221).setAlpha(done ? 0.9 : 0.7);
         this.pauseUi.push(label);
 
         const status = done
           ? `\u2713 DONE  +${m.def.reward}`
           : `${prog}/${m.def.target}`;
-        const statusText = this.add.text(layout.gameWidth - 50, my + 2, status, {
+        const statusText = this.add.text(missionCardLeft + missionCardWidth - 10, my + 2, status, {
           fontFamily: UI_FONT,
-          fontSize: readableFontSize(11),
+          fontSize: readableFontSize(densePause ? 10 : 11),
           color: done ? gateColor : hudColor,
           align: 'right',
         }).setOrigin(1, 0).setDepth(221).setAlpha(done ? 0.9 : 0.7);
         this.pauseUi.push(statusText);
 
-        const rewardHint = this.add.text(50, my + 17, `REWARD: +${m.def.reward}`, {
-          fontFamily: UI_FONT,
-          fontSize: readableFontSize(9),
-          color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
-        }).setDepth(221).setAlpha(0.5);
-        this.pauseUi.push(rewardHint);
+        if (!densePause) {
+          const rewardHint = this.add.text(missionCardLeft + 10, my + 17, `REWARD: +${m.def.reward}`, {
+            fontFamily: UI_FONT,
+            fontSize: readableFontSize(9),
+            color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
+          }).setDepth(221).setAlpha(0.5);
+          this.pauseUi.push(rewardHint);
+        }
       }
     }
   }
