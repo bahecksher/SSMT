@@ -929,7 +929,6 @@ export class GameScene extends Phaser.Scene {
       currentPhase,
       this.player.hasShield,
       this.runMode === RunMode.CAMPAIGN ? this.saveSystem.getCampaignLivesDisplay() : null,
-      this.runMode === RunMode.CAMPAIGN ? this.saveSystem.getCampaignMissionsCompletedDisplay() : null,
     );
     this.hud.setMissionPillsHidden(
       this.isGameplayCommState()

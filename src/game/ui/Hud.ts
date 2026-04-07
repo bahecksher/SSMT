@@ -16,14 +16,15 @@ export class Hud {
   private scene: Phaser.Scene;
   private scoreText: Phaser.GameObjects.Text;
   private livesText: Phaser.GameObjects.Text;
-  private missionsText: Phaser.GameObjects.Text;
+
   private bestText: Phaser.GameObjects.Text;
   private shieldText: Phaser.GameObjects.Text;
   private missionPillRoot: Phaser.GameObjects.Container;
   private missionPills: Phaser.GameObjects.GameObject[] = [];
   private lastScore = -1;
   private lastLives: number | null = null;
-  private lastMissionsCompleted: number | null = null;
+
+
   private lastBest = -1;
   private lastShield = false;
   private lastMissionHash = '';
@@ -61,17 +62,12 @@ export class Hud {
       fontFamily: UI_FONT,
     };
 
-    this.scoreText = scene.add.text(narrowHud ? 10 : 16, topMargin, narrowHud ? 'CR: 0' : 'CREDITS: 0', {
+    this.scoreText = scene.add.text(narrowHud ? 10 : 16, topMargin, narrowHud ? 'CR 0' : 'CREDITS 0', {
       ...titleTextStyle,
       color: colorStr(COLORS.SALVAGE),
     }).setDepth(100);
 
     this.livesText = scene.add.text(this.scoreText.x + this.scoreText.width + this.elementGap, topMargin, '', {
-      ...titleTextStyle,
-      color: colorStr(COLORS.SALVAGE),
-    }).setDepth(100);
-
-    this.missionsText = scene.add.text(this.livesText.x + this.livesText.width + 10, topMargin, '', {
       ...titleTextStyle,
       color: colorStr(COLORS.SALVAGE),
     }).setDepth(100);
@@ -95,50 +91,30 @@ export class Hud {
     _phase: number = 1,
     hasShield = false,
     campaignLivesRemaining: number | null = null,
-    campaignMissionsCompleted: number | null = null,
   ): void {
     const roundedScore = Math.floor(score);
     if (roundedScore !== this.lastScore) {
-      this.scoreText.setText(this.narrowHud ? `CR: ${roundedScore}` : `CREDITS: ${roundedScore}`);
+      this.scoreText.setText(this.narrowHud ? `CR ${roundedScore}` : `CREDITS ${roundedScore}`);
       this.lastScore = roundedScore;
     }
     if (campaignLivesRemaining !== this.lastLives) {
       this.livesText.setText(campaignLivesRemaining !== null
-        ? (this.narrowHud ? `LV ${campaignLivesRemaining}` : `// LIVES ${campaignLivesRemaining}`)
+        ? (this.narrowHud ? `// LIV ${campaignLivesRemaining}` : `// LIVES ${campaignLivesRemaining}`)
         : '');
       this.lastLives = campaignLivesRemaining;
     }
 
-    if (campaignMissionsCompleted !== this.lastMissionsCompleted) {
-      this.missionsText.setText(campaignMissionsCompleted !== null
-        ? (this.narrowHud ? `M${campaignMissionsCompleted}` : `// MISS ${campaignMissionsCompleted}`)
-        : '');
-      this.lastMissionsCompleted = campaignMissionsCompleted;
-    }
-
-    // Position lives + missions: stay on top row if they fit before the pause button,
-    // otherwise flow to the second row so they don't overlap it.
+    // Position lives: stay on top row if it fits before the pause button,
+    // otherwise flow to the second row so it doesn't overlap it.
     const scoreRightX = this.scoreText.x + this.scoreText.width + this.elementGap;
     const livesWidth = this.livesText.text.length > 0 ? this.livesText.width : 0;
-    const missionsWidth = this.missionsText.text.length > 0 ? this.missionsText.width : 0;
-    const secondaryWidth = livesWidth
-      + (livesWidth > 0 && missionsWidth > 0 ? this.elementGap : 0)
-      + missionsWidth;
-    const fitsOnTopRow = secondaryWidth === 0 || scoreRightX + secondaryWidth <= this.topRowMaxX;
+    const fitsOnTopRow = livesWidth === 0 || scoreRightX + livesWidth <= this.topRowMaxX;
 
     if (fitsOnTopRow) {
       this.livesText.setPosition(scoreRightX, this.topMargin);
-      const missionAnchorX = livesWidth > 0
-        ? this.livesText.x + this.livesText.width + this.elementGap
-        : scoreRightX;
-      this.missionsText.setPosition(missionAnchorX, this.topMargin);
     } else {
       const leftX = this.narrowHud ? 10 : 16;
       this.livesText.setPosition(leftX, this.shieldRowY);
-      const missionAnchorX = livesWidth > 0
-        ? this.livesText.x + this.livesText.width + this.elementGap
-        : leftX;
-      this.missionsText.setPosition(missionAnchorX, this.shieldRowY);
     }
 
     const roundedBest = Math.floor(best);
@@ -148,12 +124,8 @@ export class Hud {
     }
 
     const layout = getLayout();
-    const topRowRightEdge = fitsOnTopRow
-      ? (this.missionsText.text.length > 0
-        ? this.missionsText.x + this.missionsText.width
-        : this.livesText.text.length > 0
-          ? this.livesText.x + this.livesText.width
-          : this.scoreText.x + this.scoreText.width)
+    const topRowRightEdge = fitsOnTopRow && livesWidth > 0
+      ? this.livesText.x + this.livesText.width
       : this.scoreText.x + this.scoreText.width;
     const bestOnSecondRow = isNarrowViewport(layout) || topRowRightEdge + 14 > layout.gameWidth - 16 - this.bestText.width;
     this.bestText.setPosition(layout.gameWidth - 16, bestOnSecondRow ? this.shieldRowY : this.topMargin);
@@ -263,7 +235,6 @@ export class Hud {
     }
     this.scoreText.destroy();
     this.livesText.destroy();
-    this.missionsText.destroy();
     this.bestText.destroy();
     this.shieldText.destroy();
     this.missionPillRoot.destroy(true);
@@ -273,7 +244,6 @@ export class Hud {
   refreshPalette(): void {
     this.scoreText.setColor(colorStr(COLORS.SALVAGE));
     this.livesText.setColor(colorStr(COLORS.SALVAGE));
-    this.missionsText.setColor(colorStr(COLORS.SALVAGE));
     this.bestText.setColor(colorStr(COLORS.HUD));
     this.shieldText.setColor(colorStr(COLORS.SHIELD));
     this.lastMissionHash = '';
