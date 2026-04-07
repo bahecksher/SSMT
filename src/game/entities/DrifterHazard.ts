@@ -195,7 +195,7 @@ export class DrifterHazard {
     const mr = this.miningRadius;
 
     const color = this.inverted ? 0x000000 : (this.isMineable ? COLORS.ASTEROID : COLORS.ASTEROID_INERT);
-    const miningColor = this.inverted ? 0x000000 : COLORS.ASTEROID;
+    const miningColor = this.inverted ? 0x000000 : 0xffdd44;
 
     if (this.isMineable && this.radiusScale >= 1.5) {
       // Mining zone - pulsing filled area

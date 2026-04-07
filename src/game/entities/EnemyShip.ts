@@ -133,8 +133,8 @@ export class EnemyShip {
     g.closePath();
     g.strokePath();
 
-    // Subtle hologram fill
-    g.fillStyle(color, 0.05);
+    // Solid hull fill
+    g.fillStyle(color, 0.35);
     g.beginPath();
     g.moveTo(nx, ny);
     g.lineTo(wrx, wry);

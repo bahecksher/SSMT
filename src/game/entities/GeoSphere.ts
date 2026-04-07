@@ -13,6 +13,8 @@ const RING_SEGMENTS = 160;
 const RING_DEBRIS_STEP = 1;
 const RING_COLOR = 0xc7d2de;
 const RING_SCREEN_OFFSET_Y = -0.09;
+/** Global opacity multiplier so the ring reads as background, not gameplay. */
+const RING_ALPHA_MULT = 0.35;
 
 interface Vec3 {
   x: number;
@@ -190,9 +192,9 @@ export class GeoSphere {
         const avgZ = (innerA.z + innerB.z + outerA.z + outerB.z) / 4;
         if ((avgZ >= 0) !== front) continue;
 
-        const alpha = front
+        const alpha = (front
           ? 0.014 + Math.max(0, avgZ) * 0.02
-          : 0.004 + Math.max(0, avgZ + 1) * 0.008;
+          : 0.004 + Math.max(0, avgZ + 1) * 0.008) * RING_ALPHA_MULT;
         g.fillStyle(RING_COLOR, alpha);
         g.beginPath();
         g.moveTo(innerA.x, innerA.y);
@@ -210,9 +212,9 @@ export class GeoSphere {
         const pb = points[i + 1];
         const avgZ = (pa.z + pb.z) / 2;
         if ((avgZ >= 0) !== front) continue;
-        const alpha = front
+        const alpha = (front
           ? 0.075 + Math.max(0, avgZ) * 0.08
-          : 0.022 + Math.max(0, avgZ + 1) * 0.03;
+          : 0.022 + Math.max(0, avgZ + 1) * 0.03) * RING_ALPHA_MULT;
         g.lineStyle(front ? 1.15 : 1, color, alpha);
         g.lineBetween(pa.x, pa.y, pb.x, pb.y);
       }
@@ -242,9 +244,9 @@ export class GeoSphere {
         const nx = bandX / bandLen;
         const ny = bandY / bandLen;
 
-        const alpha = front
+        const alpha = (front
           ? 0.18 + Math.max(0, point.z) * 0.15
-          : 0.07 + Math.max(0, point.z + 1) * 0.05;
+          : 0.07 + Math.max(0, point.z + 1) * 0.05) * RING_ALPHA_MULT;
         const size = (front ? 2.5 : 1.7) * (0.8 + ((Math.sin(i * 0.73) + 1) * 0.5) * 0.95);
         g.fillStyle(RING_COLOR, alpha);
         g.fillCircle(baseX, baseY, size);

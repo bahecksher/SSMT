@@ -108,7 +108,7 @@ interface GameplayCommOptions {
 }
 
 export class GameScene extends Phaser.Scene {
-  private static readonly COUNTDOWN_PHRASES = ['STAY ALIVE', 'GET PAID', 'GET OUT', 'GO'];
+  private static readonly COUNTDOWN_PHRASES = ['STAY ALIVE', 'GET OUT', 'GET PAID', 'GO'];
   private static readonly START_COUNTDOWN_MS = GameScene.COUNTDOWN_PHRASES.length * 1000;
   private static readonly PAUSE_SLOW_SCALE = 0.025;
   private static readonly STARFIELD_OVERSCAN = 96;
@@ -342,13 +342,13 @@ export class GameScene extends Phaser.Scene {
         stroke: `#${COLORS.GRID.toString(16).padStart(6, '0')}`,
         strokeThickness: 4,
         align: 'center',
-        wordWrap: { width: 320 },
+        wordWrap: { width: 500 },
         shadow: {
           offsetX: 0,
           offsetY: 0,
-          color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-          blur: 14,
-          fill: true,
+          color: 'transparent',
+          blur: 0,
+          fill: false,
         },
       },
     ).setOrigin(0.5).setDepth(120).setAlpha(0.9);
@@ -1356,10 +1356,8 @@ export class GameScene extends Phaser.Scene {
     );
     this.countdownText?.setText(GameScene.COUNTDOWN_PHRASES[phraseIndex]);
 
-    const secondProgress = 1 - ((this.countdownTimer % 1000) / 1000);
-    const scale = 0.9 + secondProgress * 0.45;
-    this.countdownText?.setScale(scale);
-    this.countdownText?.setAlpha(0.72 + secondProgress * 0.24);
+    this.countdownText?.setScale(1);
+    this.countdownText?.setAlpha(0.9);
 
     if (this.countdownTimer <= 0) {
       this.countdownText?.destroy();
@@ -1423,7 +1421,7 @@ export class GameScene extends Phaser.Scene {
 
     this.countdownText.setColor(`#${COLORS.HUD.toString(16).padStart(6, '0')}`);
     this.countdownText.setStroke(`#${COLORS.GRID.toString(16).padStart(6, '0')}`, 4);
-    this.countdownText.setShadow(0, 0, `#${COLORS.HUD.toString(16).padStart(6, '0')}`, 14, true, true);
+    this.countdownText.setShadow(0, 0, 'transparent', 0, false, false);
   }
 
   private applyActivePalette(paletteId: PaletteId): void {
