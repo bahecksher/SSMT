@@ -34,6 +34,7 @@ export class Hud {
   private readonly shieldRowY: number;
   private readonly narrowHud: boolean;
   private readonly elementGap: number;
+  private readonly topRowMaxX: number;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -42,6 +43,8 @@ export class Hud {
     const narrowHud = isNarrowViewport(layout);
     this.narrowHud = narrowHud;
     this.elementGap = narrowHud ? 6 : 10;
+    const pauseButtonHalfWidth = compactHud ? 29 : 32;
+    this.topRowMaxX = layout.centerX - pauseButtonHalfWidth - 8;
     const topMargin = compactHud ? 12 : 16;
     const scoreFontSize = narrowHud ? 11 : compactHud ? 13 : 16;
     const minorFontSize = compactHud ? 11 : 14;
@@ -105,7 +108,6 @@ export class Hud {
         : '');
       this.lastLives = campaignLivesRemaining;
     }
-    this.livesText.setPosition(this.scoreText.x + this.scoreText.width + this.elementGap, this.scoreText.y);
 
     if (campaignMissionsCompleted !== this.lastMissionsCompleted) {
       this.missionsText.setText(campaignMissionsCompleted !== null
@@ -113,10 +115,31 @@ export class Hud {
         : '');
       this.lastMissionsCompleted = campaignMissionsCompleted;
     }
-    const missionAnchorX = this.livesText.text.length > 0
-      ? this.livesText.x + this.livesText.width + this.elementGap
-      : this.scoreText.x + this.scoreText.width + this.elementGap;
-    this.missionsText.setPosition(missionAnchorX, this.scoreText.y);
+
+    // Position lives + missions: stay on top row if they fit before the pause button,
+    // otherwise flow to the second row so they don't overlap it.
+    const scoreRightX = this.scoreText.x + this.scoreText.width + this.elementGap;
+    const livesWidth = this.livesText.text.length > 0 ? this.livesText.width : 0;
+    const missionsWidth = this.missionsText.text.length > 0 ? this.missionsText.width : 0;
+    const secondaryWidth = livesWidth
+      + (livesWidth > 0 && missionsWidth > 0 ? this.elementGap : 0)
+      + missionsWidth;
+    const fitsOnTopRow = secondaryWidth === 0 || scoreRightX + secondaryWidth <= this.topRowMaxX;
+
+    if (fitsOnTopRow) {
+      this.livesText.setPosition(scoreRightX, this.topMargin);
+      const missionAnchorX = livesWidth > 0
+        ? this.livesText.x + this.livesText.width + this.elementGap
+        : scoreRightX;
+      this.missionsText.setPosition(missionAnchorX, this.topMargin);
+    } else {
+      const leftX = this.narrowHud ? 10 : 16;
+      this.livesText.setPosition(leftX, this.shieldRowY);
+      const missionAnchorX = livesWidth > 0
+        ? this.livesText.x + this.livesText.width + this.elementGap
+        : leftX;
+      this.missionsText.setPosition(missionAnchorX, this.shieldRowY);
+    }
 
     const roundedBest = Math.floor(best);
     if (roundedBest !== this.lastBest) {
@@ -125,11 +148,13 @@ export class Hud {
     }
 
     const layout = getLayout();
-    const topRowRightEdge = this.missionsText.text.length > 0
-      ? this.missionsText.x + this.missionsText.width
-      : this.livesText.text.length > 0
-        ? this.livesText.x + this.livesText.width
-        : this.scoreText.x + this.scoreText.width;
+    const topRowRightEdge = fitsOnTopRow
+      ? (this.missionsText.text.length > 0
+        ? this.missionsText.x + this.missionsText.width
+        : this.livesText.text.length > 0
+          ? this.livesText.x + this.livesText.width
+          : this.scoreText.x + this.scoreText.width)
+      : this.scoreText.x + this.scoreText.width;
     const bestOnSecondRow = isNarrowViewport(layout) || topRowRightEdge + 14 > layout.gameWidth - 16 - this.bestText.width;
     this.bestText.setPosition(layout.gameWidth - 16, bestOnSecondRow ? this.shieldRowY : this.topMargin);
 
