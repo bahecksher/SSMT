@@ -73,8 +73,6 @@ export const COMPANY_IDS = [
 const PLAYER_WALLET_SHARE = 0.60;
 const PLAYER_WALLET_SHARE_PERCENT = Math.round(PLAYER_WALLET_SHARE * 100);
 const SLICK_CUT_PERCENT = 100 - PLAYER_WALLET_SHARE_PERCENT;
-const FIXED_FAVOR_LEVEL = 1;
-const FIXED_FAVOR_COST = 2000;
 
 // --- Reputation thresholds ---
 
@@ -94,6 +92,7 @@ const DEEPCORE_MINING_MULT = [1.0, 1.15, 1.30, 1.50];
 const RECLAIM_SALVAGE_MULT = [1.0, 1.15, 1.30, 1.50];
 const IRONVEIL_NPC_MULT    = [1.0, 1.50, 2.00, 3.00];
 const FREEPORT_DROP_ADD    = [0.0, 0.10, 0.20, 0.30];
+const FAVOR_COST_BY_LEVEL  = [0, 1000, 2000, 3000];
 
 // --- Helpers ---
 
@@ -173,8 +172,13 @@ export function getSlickCutPercent(): number {
   return SLICK_CUT_PERCENT;
 }
 
-export function getFavorOffer(companyId: CompanyId): CompanyFavorOffer {
-  const level = FIXED_FAVOR_LEVEL;
+export function getFavorOffer(companyId: CompanyId): CompanyFavorOffer | null {
+  const repSave = loadCompanyRep();
+  const level = getRepLevel(repSave.rep[companyId] ?? 0);
+  if (level <= 0) {
+    return null;
+  }
+
   return {
     companyId,
     level,
@@ -186,9 +190,14 @@ export function getFavorOffer(companyId: CompanyId): CompanyFavorOffer {
 
 export function computeRunBoostsFromFavors(selectedCompanies: CompanyId[]): RunBoosts {
   const boosts = createNeutralRunBoosts();
+  const repSave = loadCompanyRep();
 
   for (const companyId of selectedCompanies) {
-    applyCompanyBoost(boosts, companyId, FIXED_FAVOR_LEVEL);
+    const level = getRepLevel(repSave.rep[companyId] ?? 0);
+    if (level <= 0) {
+      continue;
+    }
+    applyCompanyBoost(boosts, companyId, level);
   }
 
   return boosts;
@@ -209,18 +218,22 @@ export function getLeaderboardCompanyId(repSave: CompanyRepSave): CompanyId | nu
   return bestRep > 0 ? bestCompany : null;
 }
 
-/** Format a boost value for display, e.g. "x1.30" or "+20%" */
+/** Format a boost value for display, e.g. "+30%" */
 function formatBoost(companyId: CompanyId, level: number): string {
   switch (companyId) {
-    case CompanyId.DEEPCORE: return `x${DEEPCORE_MINING_MULT[level].toFixed(2)}`;
-    case CompanyId.RECLAIM: return `x${RECLAIM_SALVAGE_MULT[level].toFixed(2)}`;
-    case CompanyId.IRONVEIL: return `x${IRONVEIL_NPC_MULT[level].toFixed(1)}`;
+    case CompanyId.DEEPCORE: return formatMultiplierBoost(DEEPCORE_MINING_MULT[level]);
+    case CompanyId.RECLAIM: return formatMultiplierBoost(RECLAIM_SALVAGE_MULT[level]);
+    case CompanyId.IRONVEIL: return formatMultiplierBoost(IRONVEIL_NPC_MULT[level]);
     case CompanyId.FREEPORT: return `+${Math.round(FREEPORT_DROP_ADD[level] * 100)}%`;
   }
 }
 
-function getFavorCost(_companyId: CompanyId, _level: number): number {
-  return FIXED_FAVOR_COST;
+function formatMultiplierBoost(multiplier: number): string {
+  return `+${Math.round((multiplier - 1) * 100)}%`;
+}
+
+function getFavorCost(_companyId: CompanyId, level: number): number {
+  return FAVOR_COST_BY_LEVEL[level];
 }
 
 function applyCompanyBoost(boosts: RunBoosts, companyId: CompanyId, level: number): void {

@@ -63,6 +63,7 @@ export class BeamHazard {
   private draw(): void {
     const g = this.graphic;
     g.clear();
+    const beamColor = COLORS.ENEMY;
 
     if (!this.lethal) {
       // Warning phase: thin flickering line
@@ -70,12 +71,12 @@ export class BeamHazard {
       const flicker = Math.sin(this.elapsed * 0.03) * 0.3 + 0.3;
       const alpha = flicker * (0.3 + warningProgress * 0.4);
 
-      g.lineStyle(2, COLORS.BEAM, alpha);
+      g.lineStyle(2, beamColor, alpha);
       g.lineBetween(this.x1, this.y1, this.x2, this.y2);
 
       // Growing width indicator
       const growWidth = this.width * warningProgress * 0.5;
-      g.lineStyle(growWidth, COLORS.BEAM, alpha * 0.2);
+      g.lineStyle(growWidth, beamColor, alpha * 0.2);
       g.lineBetween(this.x1, this.y1, this.x2, this.y2);
     } else {
       // Active phase: thick bright lethal beam
@@ -83,11 +84,11 @@ export class BeamHazard {
       const fadeAlpha = activeProgress > 0.7 ? 1 - (activeProgress - 0.7) / 0.3 : 1;
 
       // Glow
-      g.lineStyle(this.width * 2, COLORS.BEAM, 0.15 * fadeAlpha);
+      g.lineStyle(this.width * 2, beamColor, 0.15 * fadeAlpha);
       g.lineBetween(this.x1, this.y1, this.x2, this.y2);
 
       // Core beam
-      g.lineStyle(this.width, COLORS.BEAM, 0.9 * fadeAlpha);
+      g.lineStyle(this.width, beamColor, 0.9 * fadeAlpha);
       g.lineBetween(this.x1, this.y1, this.x2, this.y2);
 
       // Bright center

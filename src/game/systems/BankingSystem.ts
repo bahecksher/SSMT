@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PLAYER_RADIUS, EXIT_GATE_HITBOX } from '../data/tuning';
 import { getLeaderboardCompanyId, loadCompanyRep } from '../data/companyData';
 import { submitScore } from '../services/LeaderboardService';
+import { RunMode } from '../types';
 import type { Player } from '../entities/Player';
 import type { ExitGate } from '../entities/ExitGate';
 import type { ScoreSystem } from './ScoreSystem';
@@ -38,9 +39,12 @@ export class BankingSystem {
   }
 
   /** Save best score and submit to leaderboard. Call after mission bonus is added. */
-  finalizeExtraction(): void {
+  finalizeExtraction(mode: RunMode): void {
     const banked = this.scoreSystem.getBanked();
     this.saveSystem.saveBestScore(banked);
+    if (mode !== RunMode.ARCADE) {
+      return;
+    }
     const playerName = this.saveSystem.getPlayerName();
     const companyId = getLeaderboardCompanyId(loadCompanyRep());
     submitScore(playerName, banked, companyId);

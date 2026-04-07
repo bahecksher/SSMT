@@ -72,6 +72,23 @@ export const BOMB_DROP_CHANCE = 0.25;         // 25% chance enemy drops a bomb
 export const BOMB_COLLECTION_DELAY = 1500;    // 1.5s before it can be collected
 export const BONUS_COLLECTION_DELAY = 1500;   // 1.5s before bonus can be collected
 
+// Phase 10 boss - Regent gunship
+export const GUNSHIP_BOSS_GUN_COUNT = 5;
+export const GUNSHIP_BOSS_EDGE_PASS_MIN_MS = 10_000;
+export const GUNSHIP_BOSS_EDGE_PASS_MAX_MS = 15_000;
+export const GUNSHIP_BOSS_BEAM_WARNING_DURATION = 1_150;
+export const GUNSHIP_BOSS_BEAM_ACTIVE_DURATION = 750;
+export const GUNSHIP_BOSS_BEAM_COOLDOWN_DURATION = 1_350;
+export const GUNSHIP_BOSS_BEAM_STAGGER_MS = 260;
+export const GUNSHIP_BOSS_BEAM_WIDTH = 18;
+export const GUNSHIP_BOSS_GUN_RADIUS = 18;
+export const GUNSHIP_BOSS_CORE_OUTER_RADIUS = 38;
+export const GUNSHIP_BOSS_CORE_INNER_RADIUS = 17;
+export const GUNSHIP_BOSS_HULL_OFFSET = 34;
+export const GUNSHIP_BOSS_BODY_HALF_LENGTH = 188;
+export const GUNSHIP_BOSS_BODY_THICKNESS = 42;
+export const GUNSHIP_BOSS_DEBRIS_COUNT = 12;
+
 // Difficulty
 export const DIFFICULTY_SPEED_SCALE = 0.18;
 export const DIFFICULTY_SPAWN_SCALE = 0.75;

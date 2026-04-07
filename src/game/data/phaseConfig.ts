@@ -57,5 +57,6 @@ export function getPhaseConfig(phase: number): PhaseConfig {
     npcEnabled: phase >= 1,
     npcSpawnRate: Math.max(8000, NPC_SPAWN_RATE_BASE - Math.max(0, phase - 1) * 2000),
     maxConcurrentNPCs: Math.min(1 + Math.floor(phase * 0.5), 3),
+    bossEnabled: phase >= 10,
   };
 }

@@ -103,7 +103,7 @@ export class NPCShip {
   }
 
   getHullColor(): number {
-    return COLORS.NPC;
+    return COLORS.ENEMY;
   }
 
   /** Apply an impulse (used for player bump). */
@@ -192,7 +192,7 @@ export class NPCShip {
     g.setAlpha(1);
 
     const r = this.radius;
-    const color = this.inverted ? 0x000000 : COLORS.NPC;
+    const color = this.inverted ? 0x000000 : COLORS.ENEMY;
 
     // Glow ring
     g.lineStyle(1, color, 0.06);

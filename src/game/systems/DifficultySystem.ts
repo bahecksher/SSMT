@@ -8,6 +8,7 @@ import {
   DRIFTER_MINEABLE_CHANCE,
   DRIFTER_SPEED_BASE,
   ENEMY_BONUS_POINTS,
+  GUNSHIP_BOSS_DEBRIS_COUNT,
   NPC_BONUS_DROP_CHANCE,
   NPC_BONUS_POINTS,
 } from '../data/tuning';
@@ -18,9 +19,16 @@ import { EnemyShip } from '../entities/EnemyShip';
 import { NPCShip } from '../entities/NPCShip';
 import { SHIELD_PICKUP_RADIUS } from '../entities/ShieldPickup';
 import { ShipDebris } from '../entities/ShipDebris';
+import { GunshipBoss } from '../entities/GunshipBoss';
 import { Overlays } from '../ui/Overlays';
 import { getLayout, getArenaDensityScale } from '../layout';
 import { playSfx } from './SfxSystem';
+
+interface BossEvents {
+  spawned: boolean;
+  coreExposed: boolean;
+  destroyed: boolean;
+}
 
 export class DifficultySystem {
   private scene: Phaser.Scene;
@@ -29,10 +37,13 @@ export class DifficultySystem {
   private beams: BeamHazard[] = [];
   private enemies: EnemyShip[] = [];
   private npcs: NPCShip[] = [];
-  private deadNPCPositions: { x: number; y: number; vx: number; vy: number }[] = [];
+  private shieldDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private bonusDropPositions: { x: number; y: number; vx: number; vy: number; points: number; miningBonus?: boolean }[] = [];
   private bombDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private shipDebris: ShipDebris[] = [];
+  private boss: GunshipBoss | null = null;
+  private bossDefeated = false;
+  private bossEvents: BossEvents = { spawned: false, coreExposed: false, destroyed: false };
   private scaledMaxDrifters = 0;
   private scaledMaxEnemies = 0;
   private scaledMaxNPCs = 0;
@@ -59,8 +70,12 @@ export class DifficultySystem {
   }
 
   setPhase(phase: number): void {
+    const wasBossPhase = this.config.bossEnabled;
     this.config = getPhaseConfig(phase);
     this.updateDensityScale();
+    if (!wasBossPhase && this.config.bossEnabled) {
+      this.clearCombatThreats();
+    }
   }
 
   private updateDensityScale(): void {
@@ -92,10 +107,14 @@ export class DifficultySystem {
     return this.npcs;
   }
 
-  consumeDeadNPCs(): { x: number; y: number; vx: number; vy: number }[] {
-    const dead = this.deadNPCPositions;
-    this.deadNPCPositions = [];
-    return dead;
+  getBoss(): GunshipBoss | null {
+    return this.boss;
+  }
+
+  consumeShieldDrops(): { x: number; y: number; vx: number; vy: number }[] {
+    const drops = this.shieldDropPositions;
+    this.shieldDropPositions = [];
+    return drops;
   }
 
   consumeBonusDrops(): { x: number; y: number; vx: number; vy: number; points: number; miningBonus?: boolean }[] {
@@ -110,7 +129,102 @@ export class DifficultySystem {
     return drops;
   }
 
+  consumeBossEvents(): BossEvents {
+    const events = { ...this.bossEvents };
+    this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
+    return events;
+  }
+
+  checkBossBeamHit(targetX: number, targetY: number, targetRadius: number): boolean {
+    return this.boss?.checkBeamHit(targetX, targetY, targetRadius) ?? false;
+  }
+
+  getBossGunCollisionIndex(targetX: number, targetY: number, targetRadius: number): number | null {
+    return this.boss?.getCollidingGunIndex(targetX, targetY, targetRadius) ?? null;
+  }
+
+  destroyBossGun(index: number): boolean {
+    if (!this.boss) {
+      return false;
+    }
+
+    const drop = this.boss.destroyGun(index);
+    if (!drop) {
+      return false;
+    }
+
+    this.shipDebris.push(new ShipDebris(this.scene, drop.x, drop.y, drop.vx, drop.vy, COLORS.ENEMY, 16));
+    if (this.canDropShieldAt(drop.x, drop.y)) {
+      this.shieldDropPositions.push(drop);
+    }
+
+    if (this.boss.isCoreExposed()) {
+      this.bossEvents.coreExposed = true;
+    }
+
+    return true;
+  }
+
+  checkBossCoreContact(targetX: number, targetY: number, targetRadius: number): boolean {
+    return this.boss?.checkCoreContact(targetX, targetY, targetRadius) ?? false;
+  }
+
+  updateBossCoreBreach(targetX: number, targetY: number, targetRadius: number, hasShield: boolean): boolean {
+    if (!this.boss) {
+      return false;
+    }
+
+    const destroyed = this.boss.updateCoreBreach(targetX, targetY, targetRadius, hasShield);
+    if (destroyed) {
+      this.handleBossDestroyed();
+      return true;
+    }
+
+    return false;
+  }
+
+  clearBoss(): void {
+    if (!this.boss) {
+      return;
+    }
+
+    this.boss.destroy();
+    this.boss = null;
+  }
+
+  debugSetPhase(phase: number): void {
+    const targetPhase = Math.max(1, Math.floor(phase));
+
+    this.clearCombatThreats();
+    this.clearBoss();
+    for (const sd of this.shipDebris) {
+      sd.destroy();
+    }
+    this.shipDebris = [];
+    this.shieldDropPositions = [];
+    this.bonusDropPositions = [];
+    this.bombDropPositions = [];
+    this.bossDefeated = false;
+    this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
+    this.drifterTimer = 0;
+    this.beamTimer = 0;
+    this.beamBurstQueue = 0;
+    this.beamBurstTimer = 0;
+    this.enemyTimer = 0;
+    this.npcTimer = 0;
+    this.config = getPhaseConfig(targetPhase);
+    this.updateDensityScale();
+
+    if (this.config.bossEnabled) {
+      this.spawnBoss();
+    }
+  }
+
   update(delta: number, playerX = 0, playerY = 0): void {
+    if (this.config.bossEnabled && !this.boss && !this.bossDefeated) {
+      this.spawnBoss();
+    }
+
     this.asteroidCollisionSfxCooldownMs = Math.max(0, this.asteroidCollisionSfxCooldownMs - delta);
     this.drifterTimer += delta;
     if (this.drifterTimer >= this.config.hazardSpawnRate * this.scaledSpawnMult && this.drifters.length < this.scaledMaxDrifters) {
@@ -122,7 +236,7 @@ export class DifficultySystem {
       this.drifterTimer = 0;
     }
 
-    if (this.config.beamEnabled) {
+    if (this.config.beamEnabled && !this.config.bossEnabled) {
       this.beamTimer += delta;
       if (this.beamTimer >= this.config.beamFrequency && this.beamBurstQueue === 0) {
         Overlays.beamWarningFlash(this.scene);
@@ -143,7 +257,7 @@ export class DifficultySystem {
       }
     }
 
-    if (this.config.enemyEnabled) {
+    if (this.config.enemyEnabled && !this.config.bossEnabled) {
       this.enemyTimer += delta;
       if (this.enemyTimer >= this.config.enemySpawnRate * this.scaledSpawnMult && this.enemies.length < this.scaledMaxEnemies) {
         this.enemies.push(new EnemyShip(this.scene));
@@ -159,6 +273,10 @@ export class DifficultySystem {
       }
     }
 
+    this.boss?.update(delta);
+    if (this.boss?.consumeBeamWarningPulse()) {
+      Overlays.beamWarningFlash(this.scene);
+    }
     for (const d of this.drifters) d.update(delta);
     for (const npc of this.npcs) npc.update(delta);
 
@@ -180,6 +298,7 @@ export class DifficultySystem {
     this.resolveEnemyNPCCollisions();
     this.resolveDrifterCollisions();
     this.resolveBeamEntityCollisions();
+    this.resolveBossBeamEntityCollisions();
 
     for (let i = this.drifters.length - 1; i >= 0; i--) {
       if (!this.drifters[i].active) {
@@ -224,7 +343,7 @@ export class DifficultySystem {
         if (npc.killedByHazard) {
           this.shipDebris.push(new ShipDebris(this.scene, npc.x, npc.y, npc.vx, npc.vy, npc.getHullColor(), npc.radius));
           if (this.canDropShieldAt(npc.x, npc.y)) {
-            this.deadNPCPositions.push({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy });
+            this.shieldDropPositions.push({ x: npc.x, y: npc.y, vx: npc.vx, vy: npc.vy });
           }
           if (Math.random() < NPC_BONUS_DROP_CHANCE + this.bonusDropChanceAdd) {
             this.bonusDropPositions.push({
@@ -261,6 +380,7 @@ export class DifficultySystem {
   }
 
   updateVisualOnly(delta: number, playerX = 0, playerY = 0): void {
+    this.boss?.update(delta);
     for (const d of this.drifters) d.update(delta);
     for (const npc of this.npcs) npc.update(delta);
 
@@ -590,6 +710,116 @@ export class DifficultySystem {
     }
   }
 
+  private resolveBossBeamEntityCollisions(): void {
+    if (!this.boss) {
+      return;
+    }
+
+    for (const drifter of this.drifters) {
+      if (!drifter.active) continue;
+      if (this.boss.checkBeamHit(drifter.x, drifter.y, drifter.radius)) {
+        drifter.active = false;
+        this.shipDebris.push(new ShipDebris(this.scene, drifter.x, drifter.y, drifter.vx, drifter.vy, COLORS.ASTEROID, drifter.radius));
+      }
+    }
+
+    for (const enemy of this.enemies) {
+      if (!enemy.active) continue;
+      if (this.boss.checkBeamHit(enemy.x, enemy.y, enemy.radius)) {
+        enemy.active = false;
+        this.shipDebris.push(new ShipDebris(this.scene, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), COLORS.ENEMY, enemy.radius));
+        this.bonusDropPositions.push({
+          x: enemy.x,
+          y: enemy.y,
+          vx: enemy.getVelocityX() * 0.45,
+          vy: enemy.getVelocityY() * 0.45,
+          points: Math.round(ENEMY_BONUS_POINTS * this.npcBonusMult),
+        });
+        if (Math.random() < BOMB_DROP_CHANCE + this.bonusDropChanceAdd) {
+          this.bombDropPositions.push({
+            x: enemy.x,
+            y: enemy.y,
+            vx: enemy.getVelocityX() * 0.3,
+            vy: enemy.getVelocityY() * 0.3,
+          });
+        }
+      }
+    }
+
+    for (const npc of this.npcs) {
+      if (!npc.active) continue;
+      if (this.boss.checkBeamHit(npc.x, npc.y, npc.radius)) {
+        npc.active = false;
+        npc.killedByHazard = true;
+      }
+    }
+  }
+
+  private spawnBoss(): void {
+    this.clearCombatThreats();
+    this.boss = new GunshipBoss(this.scene);
+    this.bossEvents.spawned = true;
+  }
+
+  private clearCombatThreats(): void {
+    for (const beam of this.beams) {
+      beam.destroy();
+    }
+    this.beams = [];
+    this.beamTimer = 0;
+    this.beamBurstQueue = 0;
+    this.beamBurstTimer = 0;
+
+    for (const enemy of this.enemies) {
+      enemy.destroy();
+    }
+    this.enemies = [];
+    this.enemyTimer = 0;
+  }
+
+  private handleBossDestroyed(): void {
+    if (!this.boss) {
+      return;
+    }
+
+    const boss = this.boss;
+    const center = boss.getCenter();
+    const edge = boss.getEdge();
+    const layout = getLayout();
+    const inward =
+      edge === 'top' ? { x: 0, y: 1 }
+        : edge === 'bottom' ? { x: 0, y: -1 }
+          : edge === 'left' ? { x: 1, y: 0 }
+            : { x: -1, y: 0 };
+    const tangent = { x: -inward.y, y: inward.x };
+
+    this.shipDebris.push(new ShipDebris(this.scene, center.x, center.y, inward.x * 90, inward.y * 90, COLORS.ENEMY, 42));
+    for (let i = 0; i < GUNSHIP_BOSS_DEBRIS_COUNT; i++) {
+      const forwardSpeed = Phaser.Math.FloatBetween(95, 215);
+      const lateralSpeed = Phaser.Math.FloatBetween(-145, 145);
+      const spawnX = Phaser.Math.Clamp(
+        center.x + tangent.x * Phaser.Math.FloatBetween(-88, 88) + inward.x * Phaser.Math.FloatBetween(18, 42),
+        layout.arenaLeft + 22,
+        layout.arenaRight - 22,
+      );
+      const spawnY = Phaser.Math.Clamp(
+        center.y + tangent.y * Phaser.Math.FloatBetween(-88, 88) + inward.y * Phaser.Math.FloatBetween(18, 42),
+        layout.arenaTop + 22,
+        layout.arenaBottom - 22,
+      );
+      const vx = inward.x * forwardSpeed + tangent.x * lateralSpeed;
+      const vy = inward.y * forwardSpeed + tangent.y * lateralSpeed;
+      const radiusScale = Phaser.Math.FloatBetween(0.75, 1.2);
+      this.drifters.push(DrifterHazard.createFragment(this.scene, spawnX, spawnY, vx, vy, radiusScale, false));
+      this.shipDebris.push(new ShipDebris(this.scene, spawnX, spawnY, vx * 0.65, vy * 0.65, COLORS.ENEMY, 18));
+    }
+
+    boss.destroy();
+    this.boss = null;
+    this.bossDefeated = true;
+    this.bossEvents.destroyed = true;
+  }
+
   private canDropShieldAt(x: number, y: number): boolean {
     const layout = getLayout();
     return (
@@ -606,10 +836,16 @@ export class DifficultySystem {
     for (const e of this.enemies) e.destroy();
     for (const n of this.npcs) n.destroy();
     for (const sd of this.shipDebris) sd.destroy();
+    this.boss?.destroy();
     this.drifters = [];
     this.beams = [];
     this.enemies = [];
     this.npcs = [];
     this.shipDebris = [];
+    this.boss = null;
+    this.shieldDropPositions = [];
+    this.bonusDropPositions = [];
+    this.bombDropPositions = [];
+    this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
   }
 }

@@ -1,8 +1,22 @@
 import { SAVE_KEY, PLAYER_NAME_KEY } from '../constants';
 import { getSlickCut, getWalletPayout } from '../data/companyData';
-import type { SaveData } from '../types';
+import {
+  CompanyId,
+  RunMode,
+  isCompanyId,
+  isRunMode,
+  type CampaignSessionSave,
+  type SaveData,
+} from '../types';
 
-const DEFAULT_SAVE: SaveData = { bestScore: 0, walletCredits: 0 };
+const DEFAULT_CAMPAIGN_LIVES = 2;
+const DEFAULT_SAVE: SaveData = {
+  bestScore: 0,
+  selectedMode: RunMode.ARCADE,
+  arcadeWalletCredits: 0,
+  campaignWalletCredits: 0,
+  campaignSession: null,
+};
 const LETTER_COUNT = 3;
 const DIGIT_COUNT = 3;
 const CALLSIGN_SEPARATOR = '-';
@@ -11,6 +25,11 @@ export interface WalletDepositResult {
   payout: number;
   slickCut: number;
   walletBalance: number;
+}
+
+export interface CampaignLifeLossResult {
+  gameOver: boolean;
+  livesRemaining: number;
 }
 
 function randomLetters(count: number): string {
@@ -52,6 +71,30 @@ function migratePlayerName(name: string): string {
   return formatPlayerName(paddedLetters, extractDigits(name));
 }
 
+function normalizeCampaignSession(value: unknown): CampaignSessionSave | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const parsed = value as Partial<CampaignSessionSave> & Record<string, unknown>;
+  const livesRemaining = typeof parsed.livesRemaining === 'number'
+    ? Math.max(0, Math.floor(parsed.livesRemaining))
+    : 0;
+  const rawFavorIds = Array.isArray(parsed.favorIds) ? parsed.favorIds : [];
+  const favorIds = rawFavorIds
+    .filter(isCompanyId)
+    .slice(0, 2) as CompanyId[];
+
+  if (livesRemaining <= 0) {
+    return null;
+  }
+
+  return {
+    livesRemaining,
+    favorIds,
+  };
+}
+
 export class SaveSystem {
   private data: SaveData;
 
@@ -64,9 +107,19 @@ export class SaveSystem {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<SaveData> & Record<string, unknown>;
+        const legacyWalletCredits = typeof parsed.walletCredits === 'number'
+          ? Math.max(0, Math.floor(parsed.walletCredits))
+          : 0;
         return {
           bestScore: typeof parsed.bestScore === 'number' ? parsed.bestScore : DEFAULT_SAVE.bestScore,
-          walletCredits: typeof parsed.walletCredits === 'number' ? parsed.walletCredits : DEFAULT_SAVE.walletCredits,
+          selectedMode: isRunMode(parsed.selectedMode) ? parsed.selectedMode : DEFAULT_SAVE.selectedMode,
+          arcadeWalletCredits: typeof parsed.arcadeWalletCredits === 'number'
+            ? Math.max(0, Math.floor(parsed.arcadeWalletCredits))
+            : legacyWalletCredits,
+          campaignWalletCredits: typeof parsed.campaignWalletCredits === 'number'
+            ? Math.max(0, Math.floor(parsed.campaignWalletCredits))
+            : DEFAULT_SAVE.campaignWalletCredits,
+          campaignSession: normalizeCampaignSession(parsed.campaignSession),
         };
       }
     } catch {
@@ -87,8 +140,22 @@ export class SaveSystem {
     return this.data.bestScore;
   }
 
-  getWalletCredits(): number {
-    return this.data.walletCredits;
+  getSelectedMode(): RunMode {
+    return this.data.selectedMode;
+  }
+
+  setSelectedMode(mode: RunMode): void {
+    if (this.data.selectedMode === mode) {
+      return;
+    }
+    this.data.selectedMode = mode;
+    this.save();
+  }
+
+  getWalletCredits(mode: RunMode = this.data.selectedMode): number {
+    return mode === RunMode.CAMPAIGN
+      ? this.data.campaignWalletCredits
+      : this.data.arcadeWalletCredits;
   }
 
   saveBestScore(score: number): void {
@@ -98,34 +165,130 @@ export class SaveSystem {
     }
   }
 
-  addWalletCredits(amount: number): void {
+  addWalletCredits(amount: number, mode: RunMode = this.data.selectedMode): void {
     const creditAmount = Math.max(0, Math.floor(amount));
     if (creditAmount <= 0) return;
-    this.data.walletCredits += creditAmount;
+    if (mode === RunMode.CAMPAIGN) {
+      this.data.campaignWalletCredits += creditAmount;
+    } else {
+      this.data.arcadeWalletCredits += creditAmount;
+    }
     this.save();
   }
 
-  spendWalletCredits(amount: number): boolean {
+  spendWalletCredits(amount: number, mode: RunMode = this.data.selectedMode): boolean {
     const debitAmount = Math.max(0, Math.floor(amount));
     if (debitAmount <= 0) return true;
-    if (this.data.walletCredits < debitAmount) return false;
-    this.data.walletCredits -= debitAmount;
+    const balance = this.getWalletCredits(mode);
+    if (balance < debitAmount) return false;
+    if (mode === RunMode.CAMPAIGN) {
+      this.data.campaignWalletCredits -= debitAmount;
+    } else {
+      this.data.arcadeWalletCredits -= debitAmount;
+    }
     this.save();
     return true;
   }
 
-  depositWalletPayout(extractedCredits: number): WalletDepositResult {
+  depositWalletPayout(extractedCredits: number, mode: RunMode = this.data.selectedMode): WalletDepositResult {
     const bankedCredits = Math.max(0, Math.floor(extractedCredits));
     const payout = getWalletPayout(bankedCredits);
     const slickCut = getSlickCut(bankedCredits);
 
-    this.data.walletCredits += payout;
+    if (mode === RunMode.CAMPAIGN) {
+      this.data.campaignWalletCredits += payout;
+    } else {
+      this.data.arcadeWalletCredits += payout;
+    }
     this.save();
 
     return {
       payout,
       slickCut,
-      walletBalance: this.data.walletCredits,
+      walletBalance: this.getWalletCredits(mode),
+    };
+  }
+
+  ensureCampaignSession(): CampaignSessionSave {
+    if (!this.data.campaignSession) {
+      this.data.campaignSession = {
+        livesRemaining: DEFAULT_CAMPAIGN_LIVES,
+        favorIds: [],
+      };
+      this.save();
+    }
+
+    return {
+      livesRemaining: this.data.campaignSession.livesRemaining,
+      favorIds: [...this.data.campaignSession.favorIds],
+    };
+  }
+
+  startNewCampaignSession(): CampaignSessionSave {
+    this.data.campaignSession = {
+      livesRemaining: DEFAULT_CAMPAIGN_LIVES,
+      favorIds: [],
+    };
+    this.save();
+    return this.ensureCampaignSession();
+  }
+
+  clearCampaignSession(): void {
+    if (!this.data.campaignSession) {
+      return;
+    }
+    this.data.campaignSession = null;
+    this.save();
+  }
+
+  getCampaignSession(): CampaignSessionSave | null {
+    if (!this.data.campaignSession) {
+      return null;
+    }
+
+    return {
+      livesRemaining: this.data.campaignSession.livesRemaining,
+      favorIds: [...this.data.campaignSession.favorIds],
+    };
+  }
+
+  getCampaignLivesDisplay(): number {
+    return this.data.campaignSession?.livesRemaining ?? DEFAULT_CAMPAIGN_LIVES;
+  }
+
+  setCampaignFavorIds(favorIds: CompanyId[]): CampaignSessionSave {
+    const session = this.ensureCampaignSession();
+    const normalizedFavorIds = favorIds.filter(isCompanyId).slice(0, 2);
+    this.data.campaignSession = {
+      livesRemaining: session.livesRemaining,
+      favorIds: [...normalizedFavorIds],
+    };
+    this.save();
+    return this.ensureCampaignSession();
+  }
+
+  consumeCampaignLife(): CampaignLifeLossResult {
+    const session = this.ensureCampaignSession();
+    const livesRemaining = Math.max(0, session.livesRemaining - 1);
+
+    if (livesRemaining <= 0) {
+      this.data.campaignSession = null;
+      this.save();
+      return {
+        gameOver: true,
+        livesRemaining: 0,
+      };
+    }
+
+    this.data.campaignSession = {
+      ...session,
+      livesRemaining,
+    };
+    this.save();
+
+    return {
+      gameOver: false,
+      livesRemaining,
     };
   }
 

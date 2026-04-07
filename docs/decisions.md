@@ -248,3 +248,30 @@ Slick's portrait should read as a recognizable humanoid face rather than a maske
 
 ### 2026-04-03 - Comm portraits omit mouth marks
 The cast portraits should not show explicit mouths or lower-face grin bars. Slick, Regent, and all liaison portraits now rely on eyes, brows, silhouette, and panel shapes for expression instead of mouth lines.
+
+### 2026-04-06 - Phase 10 uses a single edge-running gunship boss
+Phase 10+ now swaps regular enemy/beam pressure for a gunship that patrols arena edges with destroyable beam guns. Shield rams break the guns, exposing a core that is finished by a shielded in-and-out breach, and the kill explodes into a debris field of real hazards rather than ending the run immediately.
+
+### 2026-04-06 - Gunship lasers cycle through safe, warning, and firing states
+The phase 10 gunship no longer projects permanently lethal beams. Its guns now pulse through a readable safe window, visible warning telegraph, and short lethal firing burst so players can route around the edge sweep instead of treating the whole pass as a constant wall.
+
+### 2026-04-06 - Hostile lane now shares one color and the gunship fires in staggered waves
+The phase 10 gunship now uses more destroyable guns with staggered beam timing instead of synchronized volleys, and the gunship, beam hazards, enemy ships, and NPC ships now share the same hostile color family for a more unified screen read.
+
+### 2026-04-06 - Default blue hostile lane uses Regent red instead of orange
+On the default blue palette, gameplay hostiles now use the old NPC / Regent red family rather than the previous orange enemy tone so the gunship, beams, enemies, and NPC ships feel more aligned with Regent's visual identity.
+
+### 2026-04-06 - Asteroids now use neutral grey shades
+Asteroids no longer use the bright orange lane. Across palettes, mineable and inert asteroids now render in light and dark greys to reduce visual clutter and let salvage and hostile factions carry more of the color contrast.
+
+### 2026-04-06 - Default blue player color shifted to brighter cyan
+On the default blue palette, the player ship now uses a brighter cyan instead of the older cooler blue so the player reads more clearly against the darker arena and the newly neutralized asteroid field.
+
+### 2026-04-06 - Palette rotation now includes additional neon themes
+The palette switchers now rotate through extra neon colorways beyond the original four. New `VOLT`, `PULSE`, and `FROST` themes widen the visual range without adding a separate rendering-mode toggle.
+
+### 2026-04-06 - Shields now use white across palettes
+Shields no longer carry their own blue tint. The shared shield lane is now white so pickups, shield bubbles, shield HUD, and shielded NPC rings read more cleanly against the broader neon palette range.
+
+### 2026-04-07 - Favors again scale with company standing and use percent copy
+MissionSelect favors no longer stay pinned to one flat mid-tier offer. Each company's favor is locked at `UNKNOWN`, upgrades through `KNOWN` / `TRUSTED` / `ELITE`, and now costs `1000c` / `2000c` / `3000c` for those three tiers. Favor text now uses percentage-style copy across the board, so multiplier boosts like mining, salvage, and NPC bounty read as `+15%`, `+30%`, or `+200%` instead of mixed `x1.15` and `%` formats.

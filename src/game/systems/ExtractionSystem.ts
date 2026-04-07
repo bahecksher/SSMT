@@ -70,6 +70,21 @@ export class ExtractionSystem {
     return this.phaseCount;
   }
 
+  debugSetPhase(phase: number): void {
+    this.phaseCount = Math.max(1, Math.floor(phase));
+    this.phaseTimer = 0;
+
+    if (this.gate) {
+      this.gate.destroy();
+      this.gate = null;
+    }
+
+    if (this.closingGate) {
+      this.closingGate.destroy();
+      this.closingGate = null;
+    }
+  }
+
   destroy(): void {
     if (this.gate) {
       this.gate.destroy();

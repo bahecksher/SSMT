@@ -1,6 +1,9 @@
 export interface SaveData {
   bestScore: number;
-  walletCredits: number;
+  selectedMode: RunMode;
+  arcadeWalletCredits: number;
+  campaignWalletCredits: number;
+  campaignSession: CampaignSessionSave | null;
 }
 
 export interface PhaseConfig {
@@ -19,6 +22,7 @@ export interface PhaseConfig {
   npcEnabled: boolean;
   npcSpawnRate: number;
   maxConcurrentNPCs: number;
+  bossEnabled: boolean;
 }
 
 export const GameState = {
@@ -32,6 +36,39 @@ export const GameState = {
 } as const;
 
 export type GameState = (typeof GameState)[keyof typeof GameState];
+
+export const RunMode = {
+  ARCADE: 'ARCADE',
+  CAMPAIGN: 'CAMPAIGN',
+} as const;
+
+export type RunMode = (typeof RunMode)[keyof typeof RunMode];
+
+export function isRunMode(value: unknown): value is RunMode {
+  return value === RunMode.ARCADE || value === RunMode.CAMPAIGN;
+}
+
+// --- Company Reputation ---
+
+export const CompanyId = {
+  DEEPCORE: 'DEEPCORE',
+  RECLAIM: 'RECLAIM',
+  IRONVEIL: 'IRONVEIL',
+  FREEPORT: 'FREEPORT',
+} as const;
+export type CompanyId = (typeof CompanyId)[keyof typeof CompanyId];
+
+export function isCompanyId(value: unknown): value is CompanyId {
+  return value === CompanyId.DEEPCORE
+    || value === CompanyId.RECLAIM
+    || value === CompanyId.IRONVEIL
+    || value === CompanyId.FREEPORT;
+}
+
+export interface CampaignSessionSave {
+  livesRemaining: number;
+  favorIds: CompanyId[];
+}
 
 // --- Mission System ---
 
@@ -47,16 +84,6 @@ export const MissionType = {
   COLLECT_SHIELDS: 'COLLECT_SHIELDS',
 } as const;
 export type MissionType = (typeof MissionType)[keyof typeof MissionType];
-
-// --- Company Reputation ---
-
-export const CompanyId = {
-  DEEPCORE: 'DEEPCORE',
-  RECLAIM: 'RECLAIM',
-  IRONVEIL: 'IRONVEIL',
-  FREEPORT: 'FREEPORT',
-} as const;
-export type CompanyId = (typeof CompanyId)[keyof typeof CompanyId];
 
 export interface CompanyRepSave {
   rep: Record<CompanyId, number>;

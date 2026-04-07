@@ -1,5 +1,15 @@
 import Phaser from 'phaser';
-import { applyColorPalette, SCENE_KEYS, COLORS, TITLE_FONT, UI_FONT, readableFontSize } from '../constants';
+import {
+  applyColorPalette,
+  COLORS,
+  getNextPaletteId,
+  PALETTE_LABELS,
+  SCENE_KEYS,
+  TITLE_FONT,
+  UI_FONT,
+  readableFontSize,
+  type PaletteId,
+} from '../constants';
 import { colorStr } from '../utils/geometry';
 import { getLayout, setLayoutSize } from '../layout';
 import { loadOrGenerateMissions, loadMissionSave, MAX_REROLLS, saveMissionSelection } from '../systems/MissionSystem';
@@ -10,8 +20,9 @@ import {
   COMPANY_IDS,
   computeRunBoostsFromFavors,
   getFavorOffer,
+  REP_THRESHOLDS,
 } from '../data/companyData';
-import { CompanyId } from '../types';
+import { CompanyId, RunMode } from '../types';
 import type { ActiveMission } from '../types';
 import { getMissionBrief } from '../data/missionBriefs';
 import { refreshMusicForSettings, setMissionMusic } from '../systems/MusicSystem';
@@ -32,6 +43,10 @@ interface HandoffData {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
   debrisState?: { x: number; y: number; vx: number; vy: number }[];
   npcState?: { x: number; y: number; vx: number; vy: number }[];
+  mode?: RunMode;
+  reopenSettings?: boolean;
+  selectedFavorIds?: CompanyId[];
+  rerollsUsedThisVisit?: number;
 }
 
 interface BriefingLayoutConfig {
@@ -82,6 +97,7 @@ const BACKGROUND_STARFIELD_COUNT = 170;
 export class MissionSelectScene extends Phaser.Scene {
   private saveSystem!: SaveSystem;
   private handoff: HandoffData = {};
+  private runMode: RunMode = RunMode.ARCADE;
   private missions: ActiveMission[] = [];
   private cardUi: Phaser.GameObjects.GameObject[][] = [];
   private navUi: Phaser.GameObjects.GameObject[] = [];
@@ -91,10 +107,12 @@ export class MissionSelectScene extends Phaser.Scene {
   private rerollsRemaining = MAX_REROLLS;
   private rerollsUsedThisVisit = 0;
   private selectedFavorIds = new Set<CompanyId>();
+  private carriedFavorIds = new Set<CompanyId>();
   private cursor!: CustomCursor;
   private hologramOverlay!: HologramOverlay;
   private settingsButton!: MissionButton;
   private settingsPanelUi: Phaser.GameObjects.GameObject[] = [];
+  private paletteButton!: MissionButton;
   private shakeOnButton!: MissionButton;
   private shakeOffButton!: MissionButton;
   private scanOnButton!: MissionButton;
@@ -127,9 +145,22 @@ export class MissionSelectScene extends Phaser.Scene {
 
     this.saveSystem = new SaveSystem();
     this.handoff = data ?? {};
+    this.runMode = this.handoff.mode ?? this.saveSystem.getSelectedMode();
+    this.saveSystem.setSelectedMode(this.runMode);
     this.missions = loadOrGenerateMissions();
     this.selectedFavorIds.clear();
-    this.rerollsUsedThisVisit = 0;
+    this.carriedFavorIds.clear();
+    if (this.runMode === RunMode.CAMPAIGN) {
+      const campaignSession = this.saveSystem.ensureCampaignSession();
+      for (const favorId of campaignSession.favorIds) {
+        this.carriedFavorIds.add(favorId);
+        this.selectedFavorIds.add(favorId);
+      }
+    }
+    if (this.handoff.selectedFavorIds?.length) {
+      this.selectedFavorIds = new Set(this.handoff.selectedFavorIds);
+    }
+    this.rerollsUsedThisVisit = this.handoff.rerollsUsedThisVisit ?? 0;
     this.bgDebris = [];
     this.bgDrifters = [];
     this.bgNpcs = [];
@@ -171,12 +202,12 @@ export class MissionSelectScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5).setDepth(10);
 
-    this.add.text(layout.centerX, briefing.subtitleY, 'TAP TO SELECT', {
+    this.add.text(layout.centerX, briefing.subtitleY, this.getModeSubtitle(), {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(briefing.compact ? 9 : 10),
-      color: colorStr(COLORS.HUD),
+      color: colorStr(this.runMode === RunMode.CAMPAIGN ? COLORS.SALVAGE : COLORS.GATE),
       align: 'center',
-    }).setOrigin(0.5).setDepth(10).setAlpha(0.6);
+    }).setOrigin(0.5).setDepth(10).setAlpha(0.72);
 
     for (let i = 0; i < 3; i++) {
       this.drawCard(i);
@@ -187,6 +218,9 @@ export class MissionSelectScene extends Phaser.Scene {
     this.drawMenuButton();
     this.createSettingsUi();
     this.drawDeployButton();
+    if (this.handoff.reopenSettings) {
+      this.setSettingsOpen(true);
+    }
   }
 
   private getBriefingLayoutConfig(): BriefingLayoutConfig {
@@ -422,18 +456,20 @@ export class MissionSelectScene extends Phaser.Scene {
     const buttonCenterX = layout.gameWidth - briefing.cardMarginX - buttonWidth / 2 + 4;
     const buttonCenterY = briefing.compact ? 26 : 30;
     const panelWidth = briefing.compact ? 216 : 228;
-    const panelHeight = 236;
+    const panelHeight = 264;
     const panelLeft = layout.gameWidth - panelWidth - 24;
     const panelTop = buttonCenterY + 22;
-    const rowOneY = panelTop + 30;
-    const rowTwoY = panelTop + 66;
-    const rowThreeY = panelTop + 102;
-    const musicVolumeLabelY = panelTop + 142;
-    const musicVolumeY = panelTop + 160;
-    const fxVolumeLabelY = panelTop + 188;
-    const fxVolumeY = panelTop + 206;
+    const rowPaletteY = panelTop + 30;
+    const rowOneY = panelTop + 64;
+    const rowTwoY = panelTop + 98;
+    const rowThreeY = panelTop + 132;
+    const musicVolumeLabelY = panelTop + 170;
+    const musicVolumeY = panelTop + 188;
+    const fxVolumeLabelY = panelTop + 216;
+    const fxVolumeY = panelTop + 234;
     const offX = panelLeft + panelWidth - 30;
     const onX = offX - 52;
+    const paletteButtonX = panelLeft + panelWidth - 63;
     const sliderLeft = panelLeft + 80;
     const sliderWidth = panelWidth - 122;
 
@@ -472,6 +508,13 @@ export class MissionSelectScene extends Phaser.Scene {
     panelHit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
     });
+
+    const paletteLabel = this.add.text(panelLeft + 14, rowPaletteY, 'PALETTE', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
+      color: hudColor,
+      align: 'left',
+    }).setOrigin(0, 0.5).setDepth(20);
 
     const shakeLabel = this.add.text(panelLeft + 14, rowOneY, 'SHAKE', {
       fontFamily: UI_FONT,
@@ -515,6 +558,16 @@ export class MissionSelectScene extends Phaser.Scene {
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(20).setAlpha(0.72);
 
+    this.paletteButton = this.createUiButton(
+      paletteButtonX,
+      rowPaletteY,
+      94,
+      24,
+      PALETTE_LABELS[getSettings().paletteId],
+      20,
+      readableFontSize(10),
+      () => this.applySettings({ paletteId: getNextPaletteId(getSettings().paletteId) }),
+    );
     this.shakeOnButton = this.createUiButton(onX, rowOneY, 42, 24, 'ON', 20, readableFontSize(10), () => this.applySettings({ screenShake: true }));
     this.shakeOffButton = this.createUiButton(offX, rowOneY, 46, 24, 'OFF', 20, readableFontSize(10), () => this.applySettings({ screenShake: false }));
     this.scanOnButton = this.createUiButton(onX, rowTwoY, 42, 24, 'ON', 20, readableFontSize(10), () => this.applySettings({ scanlines: true }));
@@ -546,6 +599,10 @@ export class MissionSelectScene extends Phaser.Scene {
       blocker,
       panelBg,
       panelHit,
+      paletteLabel,
+      this.paletteButton.bg,
+      this.paletteButton.label,
+      this.paletteButton.hit,
       shakeLabel,
       scanLabel,
       musicLabel,
@@ -624,6 +681,22 @@ export class MissionSelectScene extends Phaser.Scene {
     button.label.setAlpha(active ? 1 : 0.78);
   }
 
+  private drawPaletteUiButton(button: MissionButton, paletteId: PaletteId): void {
+    const left = button.label.x - button.width / 2;
+    const top = button.label.y - button.height / 2;
+    const buttonAccent = COLORS.HUD;
+    button.bg.clear();
+    button.bg.fillStyle(COLORS.BG, 0.92);
+    button.bg.lineStyle(1.1, buttonAccent, 0.5);
+    button.bg.fillRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.strokeRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.fillStyle(buttonAccent, 0.08);
+    button.bg.fillRoundedRect(left + 4, top + 4, button.width - 8, button.height - 8, 6);
+    button.label.setText(PALETTE_LABELS[paletteId]);
+    button.label.setColor(colorStr(buttonAccent));
+    button.label.setAlpha(0.9);
+  }
+
   private setSettingsPanelVisible(visible: boolean): void {
     for (const obj of this.settingsPanelUi) {
       (obj as Phaser.GameObjects.GameObject & { visible: boolean }).visible = visible;
@@ -641,6 +714,11 @@ export class MissionSelectScene extends Phaser.Scene {
 
   private applySettings(partial: Partial<GameSettings>): void {
     const updated = updateSettings(partial);
+    if (partial.paletteId) {
+      applyColorPalette(updated.paletteId);
+      this.scene.restart(this.buildMissionSelectRestartHandoff());
+      return;
+    }
     this.hologramOverlay.setEnabled(updated.scanlines);
     refreshMusicForSettings(this);
     this.updateSettingsUi();
@@ -654,6 +732,7 @@ export class MissionSelectScene extends Phaser.Scene {
     this.drawUiButton(this.settingsButton, this.settingsButton.label.x, this.settingsButton.label.y, this.settingsOpen);
 
     const settings = getSettings();
+    this.drawPaletteUiButton(this.paletteButton, settings.paletteId);
     this.drawUiButton(this.shakeOnButton, this.shakeOnButton.label.x, this.shakeOnButton.label.y, settings.screenShake);
     this.drawUiButton(this.shakeOffButton, this.shakeOffButton.label.x, this.shakeOffButton.label.y, !settings.screenShake);
     this.drawUiButton(this.scanOnButton, this.scanOnButton.label.x, this.scanOnButton.label.y, settings.scanlines);
@@ -667,7 +746,7 @@ export class MissionSelectScene extends Phaser.Scene {
   private executeReroll(): void {
     if (this.rerollsRemaining <= 0) return;
     const rerollCost = this.getCurrentRerollCost();
-    if (!this.saveSystem.spendWalletCredits(rerollCost)) {
+    if (!this.saveSystem.spendWalletCredits(rerollCost, this.runMode)) {
       this.drawRerollButton();
       this.drawFavorSection();
       return;
@@ -710,13 +789,19 @@ export class MissionSelectScene extends Phaser.Scene {
   }
 
   private getWalletCreditsAfterSelectedFavors(): number {
-    return this.saveSystem.getWalletCredits() - this.getSelectedFavorCost();
+    return this.saveSystem.getWalletCredits(this.runMode) - this.getSelectedFavorCost();
   }
 
   private getSelectedFavorCost(): number {
     let total = 0;
     for (const companyId of this.selectedFavorIds) {
-      total += getFavorOffer(companyId).cost;
+      if (this.carriedFavorIds.has(companyId)) {
+        continue;
+      }
+      const offer = getFavorOffer(companyId);
+      if (offer) {
+        total += offer.cost;
+      }
     }
     return total;
   }
@@ -727,15 +812,14 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
-    const walletCredits = this.saveSystem.getWalletCredits();
+    const walletCredits = this.saveSystem.getWalletCredits(this.runMode);
     const selectedCost = this.getSelectedFavorCost();
     const selectedCount = this.selectedFavorIds.size;
     const headerY = this.getFavorSectionTop();
 
-    const walletText = this.add.text(layout.centerX, headerY, `WALLET: ${walletCredits}c`, {
-      fontFamily: TITLE_FONT,
-      fontSize: readableFontSize(briefing.compact ? 15 : 16),
-      fontStyle: 'bold',
+    const walletText = this.add.text(layout.centerX, headerY, this.getWalletHeader(walletCredits), {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(briefing.compact ? 16 : 17),
       color: colorStr(COLORS.SALVAGE),
       align: 'center',
       stroke: colorStr(COLORS.BG),
@@ -746,20 +830,24 @@ export class MissionSelectScene extends Phaser.Scene {
     const gridTop = briefing.favorGridTop;
     const cardWidth = briefing.favorCardWidth;
     const denseFavorLayout = briefing.favorCardHeight <= 68;
+    const favorUnlockRep = REP_THRESHOLDS[1]?.repRequired ?? 3;
 
     for (let i = 0; i < COMPANY_IDS.length; i++) {
       const companyId = COMPANY_IDS[i];
       const company = COMPANIES[companyId];
       const offer = getFavorOffer(companyId);
       const selected = this.selectedFavorIds.has(companyId);
-      const atFavorLimit = !selected && selectedCount >= MAX_SELECTED_FAVORS;
+      const carried = this.carriedFavorIds.has(companyId);
+      const locked = !offer;
+      const offerCost = offer?.cost ?? 0;
+      const atFavorLimit = !locked && !selected && selectedCount >= MAX_SELECTED_FAVORS;
       const cardLeft = briefing.cardMarginX;
       const cardTop = gridTop + i * (briefing.favorCardHeight + briefing.favorCardGap);
-      const canSelect = selected || (!atFavorLimit && selectedCost + offer.cost <= walletCredits);
+      const canSelect = selected || (!locked && !atFavorLimit && selectedCost + offerCost <= walletCredits);
       const borderColor = COLORS.HUD;
-      const statusLabel = selected ? 'SELECTED' : atFavorLimit ? 'MAX 2' : !canSelect ? 'SHORT' : null;
-      const statusColor = selected ? COLORS.HUD : atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
-      const statusTextColor = atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
+      const statusLabel = carried ? 'CARRIED' : selected ? 'SELECTED' : locked ? 'LOCKED' : atFavorLimit ? 'MAX 2' : !canSelect ? 'SHORT' : null;
+      const statusColor = carried ? COLORS.GATE : selected ? COLORS.HUD : locked || atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
+      const statusTextColor = carried ? COLORS.GATE : locked || atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
       const portraitLeftInset = denseFavorLayout ? 10 : 12;
       const portraitTopClearance = denseFavorLayout ? 8 : 10;
       const portraitBottomPadding = denseFavorLayout ? 6 : 8;
@@ -784,15 +872,15 @@ export class MissionSelectScene extends Phaser.Scene {
       const offerAnchorY = cardTop + Math.round(briefing.favorCardHeight * (denseFavorLayout ? 0.48 : 0.54));
 
       const bg = this.add.graphics().setDepth(10);
-      bg.fillStyle(COLORS.BG, 0.92);
+      bg.fillStyle(COLORS.BG, locked ? 0.82 : 0.92);
       bg.fillRoundedRect(cardLeft, cardTop, cardWidth, briefing.favorCardHeight, 8);
       if (selected) {
         bg.fillStyle(company.color, 0.24);
         bg.fillRoundedRect(cardLeft + 1, cardTop + 1, cardWidth - 2, briefing.favorCardHeight - 2, 8);
       }
-      bg.lineStyle(selected ? 2.1 : 1.35, borderColor, selected ? 1 : 0.26);
+      bg.lineStyle(selected ? 2.1 : 1.35, borderColor, selected ? 1 : locked ? 0.16 : 0.26);
       bg.strokeRoundedRect(cardLeft, cardTop, cardWidth, briefing.favorCardHeight, 8);
-      bg.fillStyle(company.color, 0.84);
+      bg.fillStyle(company.color, locked ? 0.38 : 0.84);
       bg.fillRoundedRect(cardLeft + 5, cardTop + 5, selected ? 6 : 4, briefing.favorCardHeight - 10, 2);
       this.favorUi.push(bg);
 
@@ -822,24 +910,28 @@ export class MissionSelectScene extends Phaser.Scene {
         fontFamily: TITLE_FONT,
         fontSize: readableFontSize(briefing.compact ? 14 : 16),
         fontStyle: 'bold',
-        color: colorStr(company.color),
+        color: colorStr(locked ? COLORS.HUD : company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
         wordWrap: { width: textWidth },
-      }).setDepth(11).setAlpha(0.96);
+      }).setDepth(11).setAlpha(locked ? 0.72 : 0.96);
       companyText.setLineSpacing(briefing.compact ? -2 : -1);
       this.favorUi.push(companyText);
 
-      const offerLine = `${offer.label} ${offer.boostValue} // ${offer.cost}c`;
+      const offerLine = carried && offer
+        ? `${offer.label} ${offer.boostValue} // ACTIVE`
+        : offer
+          ? `${offer.label} ${offer.boostValue} // ${offer.cost}c`
+          : `${company.boostLabel} // KNOWN AT ${favorUnlockRep} REP`;
       const offerText = this.add.text(textLeft, Math.max(companyText.y + companyText.height + sectionGap, offerAnchorY), offerLine, {
         fontFamily: UI_FONT,
         fontSize: readableFontSize(denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
         fontStyle: 'bold',
-        color: colorStr(company.color),
+        color: colorStr(locked ? COLORS.HUD : company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
         wordWrap: { width: textWidth },
-      }).setDepth(11).setAlpha(0.94);
+      }).setDepth(11).setAlpha(locked ? 0.76 : 0.94);
       offerText.setLineSpacing(-1);
       this.favorUi.push(offerText);
 
@@ -850,6 +942,9 @@ export class MissionSelectScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true });
       hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
         event.stopPropagation();
+        if (carried || !offer) {
+          return;
+        }
         if (selected) {
           this.selectedFavorIds.delete(companyId);
         } else if (!atFavorLimit && selectedCost + offer.cost <= walletCredits) {
@@ -940,14 +1035,19 @@ export class MissionSelectScene extends Phaser.Scene {
     this.saveMissions();
     const selectedFavorIds = Array.from(this.selectedFavorIds);
     const totalFavorCost = this.getSelectedFavorCost();
-    if (!this.saveSystem.spendWalletCredits(totalFavorCost)) {
+    if (!this.saveSystem.spendWalletCredits(totalFavorCost, this.runMode)) {
       this.drawFavorSection();
       return;
+    }
+
+    if (this.runMode === RunMode.CAMPAIGN) {
+      this.saveSystem.setCampaignFavorIds(selectedFavorIds);
     }
 
     const runBoosts = computeRunBoostsFromFavors(selectedFavorIds);
     this.scene.start(SCENE_KEYS.GAME, {
       ...this.buildBackgroundHandoff(),
+      mode: this.runMode,
       selectedMissions: this.missions.filter((m) => m.accepted),
       runBoosts: selectedFavorIds.length > 0 ? runBoosts : undefined,
     });
@@ -1059,6 +1159,16 @@ export class MissionSelectScene extends Phaser.Scene {
     };
   }
 
+  private buildMissionSelectRestartHandoff(): HandoffData {
+    return {
+      ...this.buildBackgroundHandoff(),
+      mode: this.runMode,
+      reopenSettings: this.settingsOpen,
+      selectedFavorIds: Array.from(this.selectedFavorIds),
+      rerollsUsedThisVisit: this.rerollsUsedThisVisit,
+    };
+  }
+
   private updateBackground(delta: number): void {
     for (let i = this.bgDebris.length - 1; i >= 0; i--) {
       this.bgDebris[i].update(delta);
@@ -1165,5 +1275,19 @@ export class MissionSelectScene extends Phaser.Scene {
     for (const npc of this.bgNpcs) npc.destroy();
     this.bgNpcs = [];
     this.geoSphere?.destroy();
+  }
+
+  private getModeSubtitle(): string {
+    return this.runMode === RunMode.CAMPAIGN
+      ? 'CAMPAIGN // TAP TO SELECT'
+      : 'ARCADE // TAP TO SELECT';
+  }
+
+  private getWalletHeader(walletCredits: number): string {
+    if (this.runMode === RunMode.CAMPAIGN) {
+      return `CAMPAIGN WALLET: ${walletCredits}c // LIVES ${this.saveSystem.getCampaignLivesDisplay()}`;
+    }
+
+    return `ARCADE WALLET: ${walletCredits}c`;
   }
 }

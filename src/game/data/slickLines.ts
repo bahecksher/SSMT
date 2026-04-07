@@ -2,6 +2,8 @@ export type SlickLineKey =
   | 'menuIntro'
   | 'runStart'
   | 'phaseAdvance'
+  | 'bossCoreExposed'
+  | 'bossDestroyed'
   | 'gateOpen'
   | 'gateClose'
   | 'hazardDeath'
@@ -25,6 +27,16 @@ const SLICK_LINES: Record<SlickLineKey, string[]> = {
   phaseAdvance: [
     "Tortuga's waking up. Keep the shell moving.",
     "You're still linked. Keep getting paid.",
+  ],
+  bossCoreExposed: [
+    "You've cracked the guns. Punch through the core and pull back out.",
+    'Core is open. Take a shield straight through it, then break away.',
+    'That hull is peeled back. In and out through the core, pilot.',
+  ],
+  bossDestroyed: [
+    "That's the gunship down. Wreckage is everywhere, so fly clean.",
+    'Nice kill. Now thread the debris and get yourself out.',
+    'Gunship is scrap. Do not let the fallout finish the job.',
   ],
   gateOpen: [
     "Gate's live, pilot. Cut the link or get greedy.",

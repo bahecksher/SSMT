@@ -29,6 +29,7 @@ import { refreshMusicForSettings, setMenuMusic } from '../systems/MusicSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { SettingsSlider } from '../ui/SettingsSlider';
+import { RunMode } from '../types';
 
 type Period = 'daily' | 'weekly';
 interface BackgroundHandoffData {
@@ -36,6 +37,7 @@ interface BackgroundHandoffData {
   debrisState?: { x: number; y: number; vx: number; vy: number }[];
   npcState?: { x: number; y: number; vx: number; vy: number }[];
   reopenSettings?: boolean;
+  mode?: RunMode;
 }
 
 type MenuButton = {
@@ -57,6 +59,7 @@ const MENU_STARFIELD_OVERSCAN = 96;
 const MENU_STARFIELD_COUNT = 170;
 
 export class MenuScene extends Phaser.Scene {
+  private saveSystem!: SaveSystem;
   private leaderboardTexts: Phaser.GameObjects.Text[] = [];
   private dailyTabBg!: Phaser.GameObjects.Graphics;
   private dailyTab!: Phaser.GameObjects.Text;
@@ -65,6 +68,8 @@ export class MenuScene extends Phaser.Scene {
   private weeklyTab!: Phaser.GameObjects.Text;
   private weeklyTabHit!: Phaser.GameObjects.Zone;
   private settingsButton!: MenuButton;
+  private campaignModeButton!: MenuButton;
+  private arcadeModeButton!: MenuButton;
   private settingsPanelUi: Phaser.GameObjects.GameObject[] = [];
   private paletteButton!: MenuButton;
   private shakeOnButton!: MenuButton;
@@ -84,6 +89,7 @@ export class MenuScene extends Phaser.Scene {
   private leaderboardFontSize = '14px';
   private biggestLossText: Phaser.GameObjects.Text | null = null;
   private statusText!: Phaser.GameObjects.Text;
+  private modeStatusText!: Phaser.GameObjects.Text;
   private pilotText!: Phaser.GameObjects.Text;
 
   // Background simulation
@@ -110,9 +116,9 @@ export class MenuScene extends Phaser.Scene {
     setMenuMusic(this);
     const layout = getLayout();
     const centerX = layout.centerX;
-    const save = new SaveSystem();
-    const best = save.getBestScore();
-    const playerName = save.getPlayerName();
+    this.saveSystem = new SaveSystem();
+    const best = this.saveSystem.getBestScore();
+    const playerName = this.saveSystem.getPlayerName();
     const handoff = data ?? {};
     this.bgDebris = [];
     this.bgDrifters = [];
@@ -220,11 +226,11 @@ export class MenuScene extends Phaser.Scene {
 
     this.pilotText.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       pointer.event.stopPropagation();
-      const currentInitials = save.getPlayerName().split('-')[0];
+      const currentInitials = this.saveSystem.getPlayerName().split('-')[0];
       const nextInitials = window.prompt('Choose 3 letters for your callsign', currentInitials);
       if (nextInitials === null) return;
 
-      const updatedName = save.setPlayerInitials(nextInitials);
+      const updatedName = this.saveSystem.setPlayerInitials(nextInitials);
       if (!updatedName) return;
       playUiSelectSfx(this);
       this.pilotText.setText(`PILOT: ${updatedName}`);
@@ -248,9 +254,58 @@ export class MenuScene extends Phaser.Scene {
       leaderboardTitleTop = bestText.y + bestText.height + (veryCompactMenu ? 8 : 12);
     }
 
-    // Leaderboard section
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
+    const modeButtonWidth = veryCompactMenu ? 118 : compactMenu ? 126 : 136;
+    const modeButtonHeight = compactMenu ? 32 : 36;
+    const modeGap = veryCompactMenu ? 12 : 16;
+    const modeOffset = modeButtonWidth / 2 + modeGap / 2;
+    const modeLabel = this.add.text(centerX, leaderboardTitleTop, 'MODE', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
+      color: hudColor,
+      align: 'center',
+    }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.68);
+    const modeButtonY = modeLabel.y + modeLabel.height + (veryCompactMenu ? 14 : 16) + modeButtonHeight / 2;
+    const campaignModeX = centerX - modeOffset;
+    const arcadeModeX = centerX + modeOffset;
+    this.campaignModeButton = this.createMenuButton(
+      campaignModeX,
+      modeButtonY,
+      modeButtonWidth,
+      modeButtonHeight,
+      'CAMPAIGN',
+      uiDepth + 1,
+      readableFontSize(compactMenu ? 10 : 11),
+      () => {
+        this.saveSystem.setSelectedMode(RunMode.CAMPAIGN);
+        this.updateModeUi();
+      },
+    );
+    this.arcadeModeButton = this.createMenuButton(
+      arcadeModeX,
+      modeButtonY,
+      modeButtonWidth,
+      modeButtonHeight,
+      'ARCADE',
+      uiDepth + 1,
+      readableFontSize(compactMenu ? 10 : 11),
+      () => {
+        this.saveSystem.setSelectedMode(RunMode.ARCADE);
+        this.updateModeUi();
+      },
+    );
+    this.modeStatusText = this.add.text(centerX, modeButtonY + modeButtonHeight / 2 + (veryCompactMenu ? 10 : 12), '', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(veryCompactMenu ? 10 : 11),
+      color: hudColor,
+      align: 'center',
+      wordWrap: { width: layout.gameWidth - 96, useAdvancedWrap: true },
+    }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.76);
+    this.updateModeUi();
+    leaderboardTitleTop = this.modeStatusText.y + this.modeStatusText.height + (veryCompactMenu ? 12 : 16);
+
+    // Leaderboard section
     const tabGap = veryCompactMenu ? 12 : 16;
     const tabOffset = this.leaderboardTabWidth / 2 + tabGap / 2;
     const dailyTabX = centerX - tabOffset;
@@ -375,10 +430,17 @@ export class MenuScene extends Phaser.Scene {
       }
 
       // Snapshot background entity state for seamless handoff
+      const selectedMode = this.saveSystem.getSelectedMode();
+      if (selectedMode === RunMode.CAMPAIGN) {
+        this.saveSystem.ensureCampaignSession();
+      }
       playUiSelectSfx(this);
       const backgroundHandoff = this.buildBackgroundHandoff();
       this.cleanupBackground();
-      this.scene.start(SCENE_KEYS.MISSION_SELECT, backgroundHandoff);
+      this.scene.start(SCENE_KEYS.MISSION_SELECT, {
+        ...backgroundHandoff,
+        mode: selectedMode,
+      } satisfies BackgroundHandoffData);
     });
 
     // Load initial leaderboard
@@ -862,6 +924,44 @@ export class MenuScene extends Phaser.Scene {
     this.drawMenuButton(this.musicOffButton, this.musicOffButton.label.x, this.musicOffButton.label.y, !settings.musicEnabled);
     this.musicVolumeSlider.setValue(settings.musicVolume);
     this.fxVolumeSlider.setValue(settings.fxVolume);
+  }
+
+  private updateModeUi(): void {
+    if (!this.campaignModeButton || !this.arcadeModeButton || !this.modeStatusText) {
+      return;
+    }
+
+    const selectedMode = this.saveSystem.getSelectedMode();
+    const isCampaign = selectedMode === RunMode.CAMPAIGN;
+    this.drawMenuButton(
+      this.campaignModeButton,
+      this.campaignModeButton.label.x,
+      this.campaignModeButton.label.y,
+      isCampaign,
+    );
+    this.drawMenuButton(
+      this.arcadeModeButton,
+      this.arcadeModeButton.label.x,
+      this.arcadeModeButton.label.y,
+      !isCampaign,
+    );
+
+    if (isCampaign) {
+      const campaignSession = this.saveSystem.getCampaignSession();
+      const walletCredits = this.saveSystem.getWalletCredits(RunMode.CAMPAIGN);
+      const campaignSummary = campaignSession
+        ? `LIVES ${campaignSession.livesRemaining} // FAVORS ${campaignSession.favorIds.length}`
+        : `NEW CAMPAIGN // LIVES ${this.saveSystem.getCampaignLivesDisplay()}`;
+      this.modeStatusText
+        .setText(`CAMPAIGN WALLET ${walletCredits}c // ${campaignSummary}`)
+        .setColor(`#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`);
+      return;
+    }
+
+    const walletCredits = this.saveSystem.getWalletCredits(RunMode.ARCADE);
+    this.modeStatusText
+      .setText(`ARCADE WALLET ${walletCredits}c // LEADERBOARD LIVE`)
+      .setColor(`#${COLORS.GATE.toString(16).padStart(6, '0')}`);
   }
 
   private updateTabStyles(): void {

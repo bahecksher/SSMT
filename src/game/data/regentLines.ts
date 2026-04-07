@@ -2,6 +2,7 @@ export type RegentLineKey =
   | 'threatDetected'
   | 'enemyEnter'
   | 'beamUnlock'
+  | 'bossEnter'
   | 'gateClose'
   | 'killTaunt'
   | 'whyWontYouDie';
@@ -22,6 +23,11 @@ const REGENT_LINES: Record<RegentLineKey, string[]> = {
     'Protect the assembly sites. Burn them out.',
     'Keep the ring lanes clear. Fire the lances.',
     "Should've left when you had the chance.",
+  ],
+  bossEnter: [
+    'Gunship online. Sweep the perimeter and erase the diver.',
+    'Edge batteries hot. Let the scavenger burn against the wall.',
+    'You wanted the next phase. Here it is.',
   ],
   gateClose: [
     'No where to go.',
