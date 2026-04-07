@@ -68,12 +68,13 @@ export function isCompanyId(value: unknown): value is CompanyId {
 export interface CampaignSessionSave {
   livesRemaining: number;
   favorIds: CompanyId[];
+  missionsCompleted: number;
 }
 
 // --- Mission System ---
 
 export const MissionType = {
-  REACH_CREDITS: 'REACH_CREDITS',
+  BREAK_ASTEROIDS: 'BREAK_ASTEROIDS',
   EXTRACT_CREDITS: 'EXTRACT_CREDITS',
   DESTROY_NPCS: 'DESTROY_NPCS',
   DESTROY_ENEMIES: 'DESTROY_ENEMIES',
@@ -84,6 +85,18 @@ export const MissionType = {
   COLLECT_SHIELDS: 'COLLECT_SHIELDS',
 } as const;
 export type MissionType = (typeof MissionType)[keyof typeof MissionType];
+
+export function isMissionType(value: unknown): value is MissionType {
+  return value === MissionType.BREAK_ASTEROIDS
+    || value === MissionType.EXTRACT_CREDITS
+    || value === MissionType.DESTROY_NPCS
+    || value === MissionType.DESTROY_ENEMIES
+    || value === MissionType.MINING_CREDITS
+    || value === MissionType.SALVAGE_CREDITS
+    || value === MissionType.SURVIVE_EXTRACT
+    || value === MissionType.NO_DAMAGE_PHASE
+    || value === MissionType.COLLECT_SHIELDS;
+}
 
 export interface CompanyRepSave {
   rep: Record<CompanyId, number>;

@@ -17,10 +17,10 @@ const MISSION_BRIEFS: Record<MissionDef['type'], readonly [string, string, strin
     'The ring is shedding rich ore. Stay on the rock.',
     'Chew the shattered moon down to sparks.',
   ],
-  REACH_CREDITS: [
-    'Sit on the haul. Tortuga pays the patient.',
-    'Hold the weight while Regent closes in.',
-    'Carry a fortune right under their guns.',
+  BREAK_ASTEROIDS: [
+    'Crack the ring open. Deepcore wants broken rock.',
+    'Split their ore loose before Regent can claim it.',
+    'Shatter the belt until the whole lane glitters.',
   ],
   DESTROY_ENEMIES: [
     'Regent patrol is screening something below.',

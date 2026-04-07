@@ -15,11 +15,15 @@ const PILL_VISIBILITY_TWEEN_MS = 180;
 export class Hud {
   private scene: Phaser.Scene;
   private scoreText: Phaser.GameObjects.Text;
+  private livesText: Phaser.GameObjects.Text;
+  private missionsText: Phaser.GameObjects.Text;
   private bestText: Phaser.GameObjects.Text;
   private shieldText: Phaser.GameObjects.Text;
   private missionPillRoot: Phaser.GameObjects.Container;
   private missionPills: Phaser.GameObjects.GameObject[] = [];
   private lastScore = -1;
+  private lastLives: number | null = null;
+  private lastMissionsCompleted: number | null = null;
   private lastBest = -1;
   private lastShield = false;
   private lastMissionHash = '';
@@ -50,6 +54,16 @@ export class Hud {
       color: colorStr(COLORS.SALVAGE),
     }).setDepth(100);
 
+    this.livesText = scene.add.text(this.scoreText.x + this.scoreText.width + 10, topMargin, '', {
+      ...titleTextStyle,
+      color: colorStr(COLORS.SALVAGE),
+    }).setDepth(100);
+
+    this.missionsText = scene.add.text(this.livesText.x + this.livesText.width + 10, topMargin, '', {
+      ...titleTextStyle,
+      color: colorStr(COLORS.SALVAGE),
+    }).setDepth(100);
+
     this.bestText = scene.add.text(layout.gameWidth - 16, topMargin, 'BEST: 0', {
       ...titleTextStyle,
     }).setOrigin(1, 0).setDepth(100);
@@ -63,12 +77,33 @@ export class Hud {
     this.missionPillRoot = scene.add.container(0, 0).setDepth(100);
   }
 
-  update(score: number, best: number, _phase: number = 1, hasShield = false): void {
+  update(
+    score: number,
+    best: number,
+    _phase: number = 1,
+    hasShield = false,
+    campaignLivesRemaining: number | null = null,
+    campaignMissionsCompleted: number | null = null,
+  ): void {
     const roundedScore = Math.floor(score);
     if (roundedScore !== this.lastScore) {
       this.scoreText.setText(`CREDITS: ${roundedScore}`);
       this.lastScore = roundedScore;
     }
+    if (campaignLivesRemaining !== this.lastLives) {
+      this.livesText.setText(campaignLivesRemaining !== null ? `// LIVES ${campaignLivesRemaining}` : '');
+      this.lastLives = campaignLivesRemaining;
+    }
+    this.livesText.setPosition(this.scoreText.x + this.scoreText.width + 10, this.scoreText.y);
+
+    if (campaignMissionsCompleted !== this.lastMissionsCompleted) {
+      this.missionsText.setText(campaignMissionsCompleted !== null ? `// MISS ${campaignMissionsCompleted}` : '');
+      this.lastMissionsCompleted = campaignMissionsCompleted;
+    }
+    const missionAnchorX = this.livesText.text.length > 0
+      ? this.livesText.x + this.livesText.width + 10
+      : this.scoreText.x + this.scoreText.width + 10;
+    this.missionsText.setPosition(missionAnchorX, this.scoreText.y);
 
     const roundedBest = Math.floor(best);
     if (roundedBest !== this.lastBest) {
@@ -180,6 +215,8 @@ export class Hud {
       this.missionPillTween = null;
     }
     this.scoreText.destroy();
+    this.livesText.destroy();
+    this.missionsText.destroy();
     this.bestText.destroy();
     this.shieldText.destroy();
     this.missionPillRoot.destroy(true);
@@ -188,6 +225,8 @@ export class Hud {
 
   refreshPalette(): void {
     this.scoreText.setColor(colorStr(COLORS.SALVAGE));
+    this.livesText.setColor(colorStr(COLORS.SALVAGE));
+    this.missionsText.setColor(colorStr(COLORS.SALVAGE));
     this.bestText.setColor(colorStr(COLORS.HUD));
     this.shieldText.setColor(colorStr(COLORS.SHIELD));
     this.lastMissionHash = '';
@@ -249,8 +288,8 @@ export class Hud {
 function getHudMissionLabel(mission: ActiveMission): string {
   const target = mission.def.target;
   switch (mission.def.type) {
-    case MissionType.REACH_CREDITS:
-      return `HOLD ${target}`;
+    case MissionType.BREAK_ASTEROIDS:
+      return `ROCKS x${target}`;
     case MissionType.EXTRACT_CREDITS:
       return `BANK ${target}`;
     case MissionType.DESTROY_NPCS:

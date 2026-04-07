@@ -30,6 +30,7 @@ export interface WalletDepositResult {
 export interface CampaignLifeLossResult {
   gameOver: boolean;
   livesRemaining: number;
+  missionsCompleted: number;
 }
 
 function randomLetters(count: number): string {
@@ -84,6 +85,9 @@ function normalizeCampaignSession(value: unknown): CampaignSessionSave | null {
   const favorIds = rawFavorIds
     .filter(isCompanyId)
     .slice(0, 2) as CompanyId[];
+  const missionsCompleted = typeof parsed.missionsCompleted === 'number'
+    ? Math.max(0, Math.floor(parsed.missionsCompleted))
+    : 0;
 
   if (livesRemaining <= 0) {
     return null;
@@ -92,6 +96,7 @@ function normalizeCampaignSession(value: unknown): CampaignSessionSave | null {
   return {
     livesRemaining,
     favorIds,
+    missionsCompleted,
   };
 }
 
@@ -214,6 +219,7 @@ export class SaveSystem {
       this.data.campaignSession = {
         livesRemaining: DEFAULT_CAMPAIGN_LIVES,
         favorIds: [],
+        missionsCompleted: 0,
       };
       this.save();
     }
@@ -221,6 +227,7 @@ export class SaveSystem {
     return {
       livesRemaining: this.data.campaignSession.livesRemaining,
       favorIds: [...this.data.campaignSession.favorIds],
+      missionsCompleted: this.data.campaignSession.missionsCompleted,
     };
   }
 
@@ -228,6 +235,7 @@ export class SaveSystem {
     this.data.campaignSession = {
       livesRemaining: DEFAULT_CAMPAIGN_LIVES,
       favorIds: [],
+      missionsCompleted: 0,
     };
     this.save();
     return this.ensureCampaignSession();
@@ -249,11 +257,16 @@ export class SaveSystem {
     return {
       livesRemaining: this.data.campaignSession.livesRemaining,
       favorIds: [...this.data.campaignSession.favorIds],
+      missionsCompleted: this.data.campaignSession.missionsCompleted,
     };
   }
 
   getCampaignLivesDisplay(): number {
     return this.data.campaignSession?.livesRemaining ?? DEFAULT_CAMPAIGN_LIVES;
+  }
+
+  getCampaignMissionsCompletedDisplay(): number {
+    return this.data.campaignSession?.missionsCompleted ?? 0;
   }
 
   setCampaignFavorIds(favorIds: CompanyId[]): CampaignSessionSave {
@@ -262,6 +275,22 @@ export class SaveSystem {
     this.data.campaignSession = {
       livesRemaining: session.livesRemaining,
       favorIds: [...normalizedFavorIds],
+      missionsCompleted: session.missionsCompleted,
+    };
+    this.save();
+    return this.ensureCampaignSession();
+  }
+
+  addCampaignMissionCompletions(amount: number): CampaignSessionSave {
+    const session = this.ensureCampaignSession();
+    const completedAmount = Math.max(0, Math.floor(amount));
+    if (completedAmount <= 0) {
+      return session;
+    }
+
+    this.data.campaignSession = {
+      ...session,
+      missionsCompleted: session.missionsCompleted + completedAmount,
     };
     this.save();
     return this.ensureCampaignSession();
@@ -277,6 +306,7 @@ export class SaveSystem {
       return {
         gameOver: true,
         livesRemaining: 0,
+        missionsCompleted: session.missionsCompleted,
       };
     }
 
@@ -289,6 +319,7 @@ export class SaveSystem {
     return {
       gameOver: false,
       livesRemaining,
+      missionsCompleted: session.missionsCompleted,
     };
   }
 

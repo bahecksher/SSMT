@@ -1,5 +1,5 @@
 import { MISSIONS_KEY } from '../constants';
-import { MissionType } from '../types';
+import { MissionType, isMissionType } from '../types';
 import type { ActiveMission, MissionSaveData } from '../types';
 import { generateMission } from '../data/missionCatalog';
 import { REP_PER_TIER, loadCompanyRep, saveCompanyRep } from '../data/companyData';
@@ -24,11 +24,11 @@ export class MissionSystem {
 
   // --- Tracking methods (called from GameScene) ---
 
-  trackCreditsReached(unbanked: number): void {
+  trackAsteroidsBroken(count = 1): void {
     for (const m of this.missions) {
       if (!m.accepted || m.completed) continue;
-      if (m.def.type === MissionType.REACH_CREDITS) {
-        m.progress = unbanked;
+      if (m.def.type === MissionType.BREAK_ASTEROIDS) {
+        m.progress += count;
         this.checkComplete(m);
       }
     }
@@ -240,7 +240,7 @@ function writeMissionSave(data: MissionSaveData): void {
 export function loadOrGenerateMissions(): ActiveMission[] {
   const saved = loadMissionSave();
   // Filter out stale missions from old format (missing company field)
-  const missions = saved.activeMissions.filter((m) => m.def?.company);
+  const missions = saved.activeMissions.filter((m) => m.def?.company && isMissionType(m.def?.type));
 
   // Reset progress for persisted missions (fresh run)
   for (const m of missions) {

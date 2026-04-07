@@ -260,13 +260,7 @@ export class MenuScene extends Phaser.Scene {
     const modeButtonHeight = compactMenu ? 32 : 36;
     const modeGap = veryCompactMenu ? 12 : 16;
     const modeOffset = modeButtonWidth / 2 + modeGap / 2;
-    const modeLabel = this.add.text(centerX, leaderboardTitleTop, 'MODE', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(14),
-      color: hudColor,
-      align: 'center',
-    }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.68);
-    const modeButtonY = modeLabel.y + modeLabel.height + (veryCompactMenu ? 14 : 16) + modeButtonHeight / 2;
+    const modeButtonY = leaderboardTitleTop + (veryCompactMenu ? 10 : 12) + modeButtonHeight / 2;
     const campaignModeX = centerX - modeOffset;
     const arcadeModeX = centerX + modeOffset;
     this.campaignModeButton = this.createMenuButton(
@@ -953,14 +947,14 @@ export class MenuScene extends Phaser.Scene {
         ? `LIVES ${campaignSession.livesRemaining} // FAVORS ${campaignSession.favorIds.length}`
         : `NEW CAMPAIGN // LIVES ${this.saveSystem.getCampaignLivesDisplay()}`;
       this.modeStatusText
-        .setText(`CAMPAIGN WALLET ${walletCredits}c // ${campaignSummary}`)
+        .setText(`WALLET ${walletCredits}c\n${campaignSummary}`)
         .setColor(`#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`);
       return;
     }
 
     const walletCredits = this.saveSystem.getWalletCredits(RunMode.ARCADE);
     this.modeStatusText
-      .setText(`ARCADE WALLET ${walletCredits}c // LEADERBOARD LIVE`)
+      .setText(`WALLET ${walletCredits}c\nLEADERBOARD LIVE`)
       .setColor(`#${COLORS.GATE.toString(16).padStart(6, '0')}`);
   }
 

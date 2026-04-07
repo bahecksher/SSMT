@@ -7,41 +7,41 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
   [CompanyId.DEEPCORE]: {
     1: {
       intro: [
-        "Holt here. Tortuga's ring is full of moon slag and easy ore.",
-        "DEEPCORE ops. The battle broke a moon for us. Go cash it in.",
+        "Holt here - The moon slag is easy pickings. Get afer it.",
+        "DEEPCORE ops. The battle over Tortuga broke the moon wide open.",
       ],
       runStart: [
-        'Ignore the wrecks. The ring is low-hanging profit.',
-        'They can keep the planet. We want the stone around it.',
+        'Ignore the wrecks - The ring is low-hanging purified profit.',
+        'They can keep the planet - We want the Moon rock around it.',
       ],
       boost: [
-        'DEEPCORE drill sync active. Moon-slag yield boosted.',
+        'DEEPCORE drill-sync active. Moon-slag yield boosted.',
       ],
     },
     2: {
       intro: [
-        "Holt again. The ring is paying, and DEEPCORE wants a bigger bite.",
-        'You keep hauling ore off Tortuga, we keep opening the taps.',
+        "The ring is paying - DEEPCORE wants a bigger bite.",
+        'You keep hauling ore off Tortuga, The taps are open.',
       ],
       runStart: [
-        'Work the broken moon hard. We tuned your drill for slag seams.',
+        'Work the ring. We tuned your drill for slag seams.',
         "Every rock you crack is profit Regent can't use.",
       ],
       boost: [
-        'Enhanced yield protocol online. Strip the ring faster.',
+        'Enhanced yield protocol online. Strip that slag.',
       ],
     },
     3: {
       intro: [
-        "Holt. Elite clearance. DEEPCORE intends to own Tortuga's sky.",
-        "Top tier, pilot. That ring is ours if you can keep it bleeding.",
+        "DEEPCORE intends to own Tortuga's ring.",
+        "Top tier, pilot. That ring is ours.",
       ],
       runStart: [
-        'Full bore mining. Grind the shattered moon to dust.',
-        "Strip every bright seam before Regent can turn it into armor.",
+        'Full bore mining. Grind the shattered ring to dust.',
+        "Strip every bright seam before Regent can turn it into plates.",
       ],
       boost: [
-        'Maximum yield protocol engaged. Peak ring harvest online.',
+        'Maximum yield protocol engaged. Peak ring season.',
       ],
     },
   },
@@ -50,14 +50,14 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
     1: {
       intro: [
         "Voss, RECLAIM operations. Tortuga's dead fleets are still worth plenty.",
-        'RECLAIM CO checking in. Allied and Regent both left valuables drifting.',
+        'RECLAIM CO here. Allied and Regent both left valuables drifting. Find them.',
       ],
       runStart: [
-        'Every busted hull in that ring still has a buyer.',
-        'Salvage smart. The dead over Tortuga still pay.',
+        'Every busted hull in that ring has a buyer.',
+        'Salvage smart. The dead over Tortuga still pay out.',
       ],
       boost: [
-        'RECLAIM salvage protocols active. Wreck yield boosted.',
+        'RECLAIM salvage-protocols active. Wreck yield boosted.',
       ],
     },
     2: {
@@ -75,7 +75,7 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
     },
     3: {
       intro: [
-        "Voss. Elite clearance. You're one of the few who can read Tortuga's graveyard.",
+        "Voss here. You're one of the few who can read navigate this graveyard.",
         'Top shelf, pilot. Go pull the best pieces before they vanish below the storms.',
       ],
       runStart: [
@@ -91,7 +91,7 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
   [CompanyId.IRONVEIL]: {
     1: {
       intro: [
-        'Kade. IRONVEIL SEC. Anything not flying Regent colors is just clutter.',
+        'Kade. IRONVEIL SEC. Anything flying Regent colors is fair game.',
         "IRONVEIL's on the line. Tortuga is a live contract zone now.",
       ],
       runStart: [
@@ -105,7 +105,7 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
     2: {
       intro: [
         "Kade again. We're seeing traffic patterns around hidden build sites.",
-        "You're making a name for yourself. Keep Regent nervous.",
+        "You're making a name for yourself. You're making Regent nervous.",
       ],
       runStart: [
         'Enhanced bounty rates active. Break their escorts and their workers.',
@@ -117,7 +117,7 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
     },
     3: {
       intro: [
-        "Kade. Elite clearance. Regent is building something under that ring.",
+        "Kade. Regent is building something under in that ring...",
         'Top enforcer, pilot. We do not let hidden war machines hatch.',
       ],
       runStart: [
@@ -159,7 +159,7 @@ const LIAISON_LINES: Record<CompanyId, Record<number, Record<LiaisonLineKey, str
     },
     3: {
       intro: [
-        "Nyla. Elite tier. Open Tortuga and the whole sector reroutes through us.",
+        "Nyla. Open Tortuga and the whole sector reroutes through us.",
         'Top tier, pilot. One broken blockade can redraw a star chart.',
       ],
       runStart: [

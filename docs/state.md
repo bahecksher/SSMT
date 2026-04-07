@@ -1,11 +1,19 @@
 # State
-_Last updated: 2026-04-07 0055_
+_Last updated: 2026-04-07 0132_
 
 ## Current focus
-MissionSelect readability cleanup around the restored favor economy, alongside ongoing phase 10 gunship tuning and palette polish.
+Campaign progression readability, mission objective cleanup around the restored favor economy, and ongoing phase 10 gunship tuning.
 
 ## What's working
 - Menu, Mission Select, save data, and results support distinct `CAMPAIGN` and `ARCADE` modes with separate wallets and campaign life / favor carryover
+- Deepcore's old `HOLD UNBANKED` contract has been replaced by `BREAK ASTEROIDS`, which now progresses from player-caused mineable asteroid breaks instead of temporary unbanked-credit thresholds
+- Legacy saved `HOLD` mission cards are filtered out of persisted mission state and replaced by current-format contracts on load
+- The menu no longer shows the extra `MODE` heading above the `CAMPAIGN` / `ARCADE` buttons, leaving that choice area cleaner and more self-explanatory
+- The menu mode helper text under the `CAMPAIGN` / `ARCADE` buttons now renders as a fixed two-line block, keeping wallet and mode-summary copy from getting cut off
+- During campaign runs, the HUD now lists remaining lives beside the credits above the arena, and the `LIVES` tag now matches the credits line's font, size, and color treatment
+- Campaign mode now tracks a session-local completed mission count, shows it in the top HUD as `// MISS {n}`, and surfaces the same total on campaign result screens
+- The gameplay countdown now uses the title font instead of the older UI-font treatment, so the pre-run phrases match the newer headline styling
+- Death/game-over results now use banked credits as the main score readout and show unbanked loss as a separate line when applicable
 - Company favors are again locked at `UNKNOWN` and scale through `KNOWN`, `TRUSTED`, and `ELITE` tiers with standardized prices of `1000c`, `2000c`, and `3000c`
 - Favor boost copy now uses percentage formatting consistently, so mining, salvage, NPC bounty, and drop-rate cards all read in the same `%` language
 - MissionSelect dims locked favor cards, shows `KNOWN AT 3 REP`, and blocks selection until a company reaches the first standing tier
@@ -25,7 +33,7 @@ MissionSelect readability cleanup around the restored favor economy, alongside o
 ## In progress
 - Live tuning for phase 10 stagger spacing, beam safe-window length, shield pacing, debris density, and final color balance across the player / salvage / hostile lanes
 - Validation of whether carried campaign favors should follow current standing or preserve the exact tier that was active when armed
-- Small readability passes on dense MissionSelect headings and labels as they surface in playtesting
+- Small readability passes on dense Menu, MissionSelect, and HUD labels as they surface in playtesting
 
 ## Known issues
 - Local `BEST` score is still shared across campaign and arcade even though leaderboard submission is arcade-only
@@ -40,21 +48,23 @@ MissionSelect readability cleanup around the restored favor economy, alongside o
 - Supabase `scores` still needs a nullable `company_id` column added server-side
 
 ## Next actions
-1. Play MissionSelect in both campaign and arcade to confirm the updated wallet header remains readable on short and long wallet strings
-2. Decide whether carried campaign favors should preserve their purchase tier or continue following current company standing
-3. Keep using the pause-menu phase jump to tune the phase 10 gunship cadence and post-kill debris pressure
+1. Play a Deepcore mission set and confirm `BREAK ASTEROIDS` progresses from mining depletion and shield crashes, but not from unrelated board wipes
+2. Complete one or more missions across a score-recorded campaign extraction and confirm the campaign mission total increments, persists into the next life/run, and resets on a new campaign
+3. Die after banking and after carrying unbanked credits to confirm the game-over screen now emphasizes banked score while still surfacing what was lost
 
 ## Active plan
-docs/plans/2026-04-07 0052 Plan - Favor Tier Return.md
+docs/plans/2026-04-07 0120 Plan - Mining Mission Asteroid Break Swap.md
 
 ## How to verify
 1. Run `npm.cmd run build`
-2. Open MissionSelect in campaign mode and confirm `CAMPAIGN WALLET` reads more clearly than before on the favor header
-3. Open MissionSelect in arcade mode and confirm the shorter `ARCADE WALLET` line still centers and fits cleanly
-4. Confirm low-rep favor cards still read `KNOWN AT 3 REP` and high-rep cards still show `1000c`, `2000c`, and `3000c`
-5. Confirm favor boost lines still display percentage copy instead of mixed `x1.15` and `%` formats
+2. Open MissionSelect until a Deepcore secondary contract appears and confirm it now reads `BREAK {target} ASTEROIDS`
+3. Start a run with that contract and confirm the mission advances when you mine a mineable asteroid to depletion
+4. In campaign mode, complete at least one mission and extract; confirm the HUD and result screen show the updated campaign mission total
+5. Start the next campaign run or lose a life and confirm the mission total persists until the campaign ends
+6. Bank some credits, then die, and confirm the result screen shows `CREDITS BANKED` as the main score line plus `UNBANKED LOST` when applicable
 
 ## Recent logs
-- docs/log/2026-04-07 0055 MissionSelect Wallet Header Readability.md - switched the MissionSelect wallet header to a cleaner, larger non-bold font treatment
-- docs/log/2026-04-07 0052 Favor Tier Return and Percent Copy.md - restored standing-based favor tiers and unified favor copy to percentage formatting
-- docs/log/2026-04-06 2320 White Shields.md - changed the shared shield color lane to white across all palettes
+- docs/log/2026-04-07 0132 Campaign Mission Completion Tracking.md - added persistent campaign mission completion tracking to campaign session state, HUD, and result screens
+- docs/log/2026-04-07 0126 Death Results Show Banked Score.md - changed death/game-over results to show banked credits as the main score and unbanked loss as secondary detail
+- docs/log/2026-04-07 0124 Countdown Title Font.md - changed the gameplay countdown phrases from the UI font to the title font
+- docs/log/2026-04-07 0123 Campaign HUD Lives Match Credits.md - restyled the campaign lives tag to match the credits line above the arena

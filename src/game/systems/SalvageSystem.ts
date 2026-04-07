@@ -28,6 +28,7 @@ export class SalvageSystem {
   private miningFloatPoints = 0;
   private frameSalvageIncome = 0;
   private frameMiningIncome = 0;
+  private frameAsteroidsBroken = 0;
   private salvageYieldMult = 1.0;
   private miningYieldMult = 1.0;
 
@@ -56,6 +57,7 @@ export class SalvageSystem {
     this.inRange = false;
     this.frameSalvageIncome = 0;
     this.frameMiningIncome = 0;
+    this.frameAsteroidsBroken = 0;
 
     // --- Salvage scoring: stack all overlapping salvage zones ---
     let totalSalvagePoints = 0;
@@ -140,6 +142,7 @@ export class SalvageSystem {
         if (drifter.hp <= 0) {
           drifter.hp = 0;
           drifter.depleted = true;
+          this.frameAsteroidsBroken++;
         }
       }
     }
@@ -219,6 +222,10 @@ export class SalvageSystem {
 
   getLastFrameMiningIncome(): number {
     return this.frameMiningIncome;
+  }
+
+  getLastFrameAsteroidsBroken(): number {
+    return this.frameAsteroidsBroken;
   }
 
   destroy(): void {

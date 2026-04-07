@@ -19,7 +19,7 @@ export const MISSION_TEMPLATES = [
     tiers: [
       { target: 500, reward: 300 },
       { target: 1000, reward: 500 },
-      { target: 5000, reward: 1000 },
+      { target: 4000, reward: 1000 },
     ] as const,
   },
   {
@@ -30,7 +30,7 @@ export const MISSION_TEMPLATES = [
     tiers: [
       { target: 500, reward: 300 },
       { target: 1000, reward: 500 },
-      { target: 5000, reward: 1000 },
+      { target: 4000, reward: 1000 },
     ] as const,
   },
 
@@ -47,14 +47,14 @@ export const MISSION_TEMPLATES = [
     ] as const,
   },
   {
-    type: 'REACH_CREDITS' as const,
+    type: 'BREAK_ASTEROIDS' as const,
     company: 'DEEPCORE' as const,
     weight: 2,
-    labelTemplate: 'HOLD {target} UNBANKED',
+    labelTemplate: 'BREAK {target} ASTEROIDS',
     tiers: [
-      { target: 500, reward: 300 },
-      { target: 2000, reward: 1000 },
-      { target: 4000, reward: 2000 },
+      { target: 3, reward: 500 },
+      { target: 6, reward: 1000 },
+      { target: 10, reward: 2000 },
     ] as const,
   },
 
@@ -65,9 +65,9 @@ export const MISSION_TEMPLATES = [
     weight: 1,
     labelTemplate: 'DESTROY {target} ENEMIES',
     tiers: [
-      { target: 3, reward: 300 },
-      { target: 5, reward: 1000 },
-      { target: 10, reward: 2000 },
+      { target: 3, reward: 1000 },
+      { target: 6, reward: 3000 },
+      { target: 9, reward: 5000 },
     ] as const,
   },
   {
@@ -76,8 +76,8 @@ export const MISSION_TEMPLATES = [
     weight: 1,
     labelTemplate: 'ELIMINATE {target} RIVAL MINERS',
     tiers: [
-      { target: 3, reward: 1000 },
-      { target: 6, reward: 1500 },
+      { target: 3, reward: 500 },
+      { target: 6, reward: 1000 },
       { target: 9, reward: 2000 },
     ] as const,
   },

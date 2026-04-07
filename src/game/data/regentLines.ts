@@ -9,15 +9,15 @@ export type RegentLineKey =
 
 const REGENT_LINES: Record<RegentLineKey, string[]> = {
   threatDetected: [
-    'Off-world interference detected over Tortuga. Investigating.',
+    'Off-world interface detected. Investigating.',
     'Ring-lane intrusion detected. Dispatching patrol.',
   ],
   enemyEnter: [
     'Tortuga is closed. Leave now or be erased.',
     'Regent project territory. You have zero seconds to comply.',
-    'Scrap diver, you trespass above a sovereign world.',
-    'This sky belongs to Regent. Die in it.',
-    'Attention, scavenger. You are not welcome here.',
+    'Scrap diver, you are done here.',
+    'This sky belongs to Regent. Die.',
+    'Attention, scavenger. You are dead.',
   ],
   beamUnlock: [
     'Protect the assembly sites. Burn them out.',
@@ -25,14 +25,14 @@ const REGENT_LINES: Record<RegentLineKey, string[]> = {
     "Should've left when you had the chance.",
   ],
   bossEnter: [
-    'Gunship online. Sweep the perimeter and erase the diver.',
-    'Edge batteries hot. Let the scavenger burn against the wall.',
-    'You wanted the next phase. Here it is.',
+    'Gunship online. Sweep the perimeter and erase them!',
+    'Edge batteries hot. Burn it all!.',
+    'You wanted this.',
   ],
   gateClose: [
-    'No where to go.',
-    'Nothing leaves Tortuga.',
-    'The project stays hidden.',
+    'No where to run.',
+    'Nothing leaves.',
+    'Come out come out where ever you are..',
   ],
   killTaunt: [
     'All that and nothing to show for it.',
@@ -43,8 +43,8 @@ const REGENT_LINES: Record<RegentLineKey, string[]> = {
   whyWontYouDie: [
     "Why won't you DIE?!",
     'Still here, pilot?!',
-    'You are delaying the Regent project.',
-    'Fire everything. The assembly must continue.',
+    'You are delaying our project.',
+    'Fire everything. Assembly must continue!',
   ],
 };
 

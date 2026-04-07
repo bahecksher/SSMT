@@ -85,6 +85,7 @@ interface StarfieldStar {
 
 interface ResultData {
   score: number;
+  lostScore?: number;
   cause: 'death' | 'extract';
   mode: RunMode;
   scoreRecorded: boolean;
@@ -93,6 +94,7 @@ interface ResultData {
   slickCut?: number;
   walletBalance?: number;
   campaignLivesRemaining?: number;
+  campaignMissionsCompleted?: number;
   campaignGameOver?: boolean;
   missionProgress?: { label: string; progress: number; target: number; completed: boolean; reward: number }[];
 }
@@ -333,7 +335,7 @@ export class GameScene extends Phaser.Scene {
       layout.centerY,
       GameScene.COUNTDOWN_PHRASES[0],
       {
-        fontFamily: UI_FONT,
+        fontFamily: TITLE_FONT,
         fontSize: readableFontSize(44),
         fontStyle: 'bold',
         color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -837,6 +839,7 @@ export class GameScene extends Phaser.Scene {
         this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
         // Shield destroys or splits the asteroid it hit
         if (hitDrifter) {
+          this.missionSystem.trackAsteroidsBroken();
           this.difficultySystem.shieldDestroyDrifter(hitDrifter);
         }
         // Shield destroys enemy on contact
@@ -869,9 +872,10 @@ export class GameScene extends Phaser.Scene {
       // Mission tracking for income sources and credit thresholds
       const frameSalvage = this.salvageSystem.getLastFrameSalvageIncome();
       const frameMining = this.salvageSystem.getLastFrameMiningIncome();
+      const frameAsteroidsBroken = this.salvageSystem.getLastFrameAsteroidsBroken();
       if (frameSalvage > 0) this.missionSystem.trackSalvageIncome(frameSalvage);
       if (frameMining > 0) this.missionSystem.trackMiningIncome(frameMining);
-      this.missionSystem.trackCreditsReached(this.scoreSystem.getUnbanked());
+      if (frameAsteroidsBroken > 0) this.missionSystem.trackAsteroidsBroken(frameAsteroidsBroken);
       // Check for mission completions and show pop-ups
       const completions = this.missionSystem.consumeNewCompletions();
       for (const m of completions) {
@@ -924,6 +928,8 @@ export class GameScene extends Phaser.Scene {
       this.scoreSystem.getBest(),
       currentPhase,
       this.player.hasShield,
+      this.runMode === RunMode.CAMPAIGN ? this.saveSystem.getCampaignLivesDisplay() : null,
+      this.runMode === RunMode.CAMPAIGN ? this.saveSystem.getCampaignMissionsCompletedDisplay() : null,
     );
     this.hud.setMissionPillsHidden(
       this.isGameplayCommState()
@@ -1007,7 +1013,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleDeath(cause: DeathCause): void {
+    const bankedScore = this.scoreSystem.getBanked();
     const lostScore = this.scoreSystem.getUnbanked();
+    const campaignSession = this.runMode === RunMode.CAMPAIGN
+      ? this.saveSystem.getCampaignSession()
+      : null;
     const missionProgress = this.missionSystem.getActiveMissions().map((m) => ({
       label: m.def.label,
       progress: Math.floor(m.progress),
@@ -1017,24 +1027,29 @@ export class GameScene extends Phaser.Scene {
     }));
     this.missionSystem.save();
     let campaignLivesRemaining: number | undefined;
+    let campaignMissionsCompleted: number | undefined = campaignSession?.missionsCompleted;
     let campaignGameOver = false;
     if (this.runMode === RunMode.CAMPAIGN && !this.scoreRecordingBlocked) {
       const campaignLifeLoss = this.saveSystem.consumeCampaignLife();
       campaignLivesRemaining = campaignLifeLoss.livesRemaining;
+      campaignMissionsCompleted = campaignLifeLoss.missionsCompleted;
       campaignGameOver = campaignLifeLoss.gameOver;
     } else if (this.runMode === RunMode.CAMPAIGN) {
       campaignLivesRemaining = this.saveSystem.getCampaignLivesDisplay();
+      campaignMissionsCompleted = this.saveSystem.getCampaignMissionsCompletedDisplay();
     } else if (!this.scoreRecordingBlocked) {
       const playerName = this.saveSystem.getPlayerName();
       const companyId = getLeaderboardCompanyId(loadCompanyRep());
       submitLoss(playerName, lostScore, companyId);
     }
     this.resultData = {
-      score: lostScore,
+      score: bankedScore,
+      lostScore,
       cause: 'death',
       mode: this.runMode,
       scoreRecorded: !this.scoreRecordingBlocked,
       campaignLivesRemaining,
+      campaignMissionsCompleted,
       campaignGameOver,
       missionProgress,
     };
@@ -1094,6 +1109,7 @@ export class GameScene extends Phaser.Scene {
       completed: m.completed,
       reward: m.def.reward,
     }));
+    const completedMissionCount = missionProgress.filter((m) => m.completed).length;
     if (missionBonus > 0) {
       this.scoreSystem.addBanked(missionBonus);
     }
@@ -1103,8 +1119,14 @@ export class GameScene extends Phaser.Scene {
       slickCut: 0,
       walletBalance: this.saveSystem.getWalletCredits(this.runMode),
     };
+    let campaignMissionsCompleted = this.runMode === RunMode.CAMPAIGN
+      ? this.saveSystem.getCampaignMissionsCompletedDisplay()
+      : undefined;
     if (scoreRecorded) {
       this.missionSystem.claimAndClear();
+      if (this.runMode === RunMode.CAMPAIGN && completedMissionCount > 0) {
+        campaignMissionsCompleted = this.saveSystem.addCampaignMissionCompletions(completedMissionCount).missionsCompleted;
+      }
       walletDeposit = this.saveSystem.depositWalletPayout(score, this.runMode);
       this.bankingSystem.finalizeExtraction(this.runMode);
     }
@@ -1118,6 +1140,7 @@ export class GameScene extends Phaser.Scene {
       slickCut: walletDeposit.slickCut,
       walletBalance: walletDeposit.walletBalance,
       campaignLivesRemaining: this.runMode === RunMode.CAMPAIGN ? this.saveSystem.getCampaignLivesDisplay() : undefined,
+      campaignMissionsCompleted,
       missionProgress,
     };
     this.showSlickExclusive(getSlickLine('extraction'), 0);
@@ -1518,21 +1541,33 @@ export class GameScene extends Phaser.Scene {
     const scoreText = this.add.text(
       centerX,
       currentY,
-      isDeath ? `CREDITS LOST: ${Math.floor(data.score)}` : `CREDITS BANKED: ${Math.floor(data.score)}`,
+      `CREDITS BANKED: ${Math.floor(data.score)}`,
       {
         fontFamily: UI_FONT,
         fontSize: scoreSize,
-        color: `#${(isDeath ? COLORS.HAZARD : COLORS.SALVAGE).toString(16).padStart(6, '0')}`,
+        color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
         align: 'center',
         ...(isDeath ? { wordWrap: { width: textWidth } } : {}),
       },
     ).setOrigin(0.5, 0).setDepth(210);
-    if (!isDeath) {
-      this.fitTextToWidth(scoreText, panelWidth - Math.round(panelPaddingX * 1.1), 16);
-    }
+    this.fitTextToWidth(scoreText, panelWidth - Math.round(panelPaddingX * 1.1), 16);
     this.resultUi.push(scoreText);
     currentY += scoreText.height;
     let resultContentBottomY = currentY;
+
+    if (isDeath && Math.floor(data.lostScore ?? 0) > 0) {
+      currentY += lineGap;
+      const lostText = this.add.text(centerX, currentY, `UNBANKED LOST: ${Math.floor(data.lostScore ?? 0)}`, {
+        fontFamily: UI_FONT,
+        fontSize: compactResults ? detailSize : metaSize,
+        color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
+        align: 'center',
+        wordWrap: { width: textWidth },
+      }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.86);
+      this.resultUi.push(lostText);
+      currentY += lostText.height;
+      resultContentBottomY = currentY;
+    }
 
     if (!data.scoreRecorded) {
       currentY += lineGap;
@@ -1571,6 +1606,25 @@ export class GameScene extends Phaser.Scene {
     this.resultUi.push(modeSummaryText);
     currentY += modeSummaryText.height;
     resultContentBottomY = currentY;
+
+    if (isCampaign) {
+      currentY += lineGap;
+      const campaignProgressText = this.add.text(
+        centerX,
+        currentY,
+        `MISSIONS COMPLETED: ${Math.floor(data.campaignMissionsCompleted ?? 0)}`,
+        {
+          fontFamily: UI_FONT,
+          fontSize: compactResults ? detailSize : metaSize,
+          color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
+          align: 'center',
+          wordWrap: { width: textWidth },
+        },
+      ).setOrigin(0.5, 0).setDepth(210).setAlpha(0.82);
+      this.resultUi.push(campaignProgressText);
+      currentY += campaignProgressText.height;
+      resultContentBottomY = currentY;
+    }
 
     if (!isDeath && data.scoreRecorded) {
       currentY += lineGap;

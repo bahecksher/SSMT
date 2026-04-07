@@ -275,3 +275,9 @@ Shields no longer carry their own blue tint. The shared shield lane is now white
 
 ### 2026-04-07 - Favors again scale with company standing and use percent copy
 MissionSelect favors no longer stay pinned to one flat mid-tier offer. Each company's favor is locked at `UNKNOWN`, upgrades through `KNOWN` / `TRUSTED` / `ELITE`, and now costs `1000c` / `2000c` / `3000c` for those three tiers. Favor text now uses percentage-style copy across the board, so multiplier boosts like mining, salvage, and NPC bounty read as `+15%`, `+30%`, or `+200%` instead of mixed `x1.15` and `%` formats.
+
+### 2026-04-07 - Deepcore's secondary mission now tracks broken asteroids instead of held unbanked credits
+The old `HOLD {target} UNBANKED` contract was misleading because mission rewards still only pay out on extraction. Deepcore's secondary mission now asks the player to `BREAK {target} ASTEROIDS`, and progress only comes from player-caused mineable asteroid breaks such as mining depletion or shield rams. Persisted legacy `HOLD` cards are dropped from saved mission state and replaced by freshly generated current-format missions.
+
+### 2026-04-07 - Campaign sessions track completed mission count across runs
+Campaign mode now keeps a session-local mission completion total alongside lives and carried favors. The count only increases when completed missions are actually claimed on a score-recorded campaign extraction, persists across later campaign runs and deaths, and resets when the campaign session ends or a new campaign starts.
