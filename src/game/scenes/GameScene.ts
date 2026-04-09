@@ -337,10 +337,9 @@ export class GameScene extends Phaser.Scene {
       {
         fontFamily: TITLE_FONT,
         fontSize: readableFontSize(44),
-        fontStyle: 'bold',
         color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
         stroke: `#${COLORS.GRID.toString(16).padStart(6, '0')}`,
-        strokeThickness: 4,
+        strokeThickness: 2,
         align: 'center',
         wordWrap: { width: 500 },
         shadow: {
@@ -1420,7 +1419,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.countdownText.setColor(`#${COLORS.HUD.toString(16).padStart(6, '0')}`);
-    this.countdownText.setStroke(`#${COLORS.GRID.toString(16).padStart(6, '0')}`, 4);
+    this.countdownText.setStroke(`#${COLORS.GRID.toString(16).padStart(6, '0')}`, 2);
     this.countdownText.setShadow(0, 0, 'transparent', 0, false, false);
   }
 

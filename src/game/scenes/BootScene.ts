@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { GeoSphere } from '../entities/GeoSphere';
-import { COLORS, SCENE_KEYS, UI_FONT, readableFontSize } from '../constants';
+import { COLORS, SCENE_KEYS, TITLE_FONT, UI_FONT, readableFontSize } from '../constants';
 import { getSlickLine } from '../data/slickLines';
 import { getLayout, setLayoutSize } from '../layout';
 import { preloadMusic } from '../systems/MusicSystem';
@@ -10,9 +10,8 @@ import { HologramOverlay } from '../ui/HologramOverlay';
 const BOOT_STARFIELD_OVERSCAN = 96;
 const BOOT_STARFIELD_COUNT = 170;
 const BOOT_BAR_HEIGHT = 18;
-const BOOT_MESSAGE = 'Securing Connecting';
+const BOOT_MESSAGE = 'Securing Connection';
 const BOOT_MIN_DISPLAY_MS = 4000;
-const BOOT_LOAD_PHASE_PROGRESS = 0.84;
 
 interface BootStar {
   x: number;
@@ -28,9 +27,7 @@ interface BootStar {
 export class BootScene extends Phaser.Scene {
   private loaderBarRect = { x: 0, y: 0, width: 0, height: BOOT_BAR_HEIGHT };
   private bootDisplayStartedAt = 0;
-  private waitPhaseStartedAt = 0;
   private menuHandoffAt: number | null = null;
-  private assetProgress = 0;
   private starfield!: Phaser.GameObjects.Graphics;
   private starfieldStars: BootStar[] = [];
   private geoSphere!: GeoSphere;
@@ -50,16 +47,10 @@ export class BootScene extends Phaser.Scene {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
     this.bootDisplayStartedAt = this.getNow();
-    this.waitPhaseStartedAt = 0;
     this.menuHandoffAt = null;
-    this.assetProgress = 0;
     this.createBackdrop();
     this.createLoaderUi();
     this.refreshLoaderProgress(0);
-
-    this.load.on(Phaser.Loader.Events.PROGRESS, (value: number) => {
-      this.assetProgress = Phaser.Math.Clamp(value, 0, 1);
-    });
 
     preloadMusic(this);
     preloadSfx(this);
@@ -70,9 +61,6 @@ export class BootScene extends Phaser.Scene {
       setLayoutSize(this.scale.width, this.scale.height);
       this.scene.start(SCENE_KEYS.MENU, { bootTransition: true });
     };
-
-    this.assetProgress = 1;
-    this.waitPhaseStartedAt = this.getNow();
 
     if (typeof document === 'undefined' || !('fonts' in document)) {
       this.scheduleMenuHandoff(startMenu);
@@ -87,6 +75,9 @@ export class BootScene extends Phaser.Scene {
         return;
       }
 
+      this.titleText?.setStyle({ fontFamily: TITLE_FONT });
+      this.titleText?.setAlpha(1);
+      this.flavorText?.setAlpha(0.82);
       this.scheduleMenuHandoff(startMenu);
     });
   }
@@ -139,19 +130,19 @@ export class BootScene extends Phaser.Scene {
     this.loaderPanel.strokeRoundedRect(panelX + 4, panelY + 4, panelWidth - 8, panelHeight - 8, 12);
 
     this.titleText = this.add.text(layout.centerX, panelY + 22, BOOT_MESSAGE, {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: readableFontSize(compact ? 16 : 18),
       color: gateColor,
       align: 'center',
-    }).setOrigin(0.5, 0).setDepth(uiDepth + 1);
+    }).setOrigin(0.5, 0).setDepth(uiDepth + 1).setAlpha(0);
     this.fitSingleLineText(this.titleText, panelWidth - 48, compact ? 12 : 14);
 
     this.flavorText = this.add.text(layout.centerX, this.titleText.y + this.titleText.height + 12, getSlickLine('menuIntro'), {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(compact ? 12 : 14),
+      fontSize: readableFontSize(compact ? 15 : 17),
       color: hudColor,
       align: 'center',
-    }).setOrigin(0.5, 0).setDepth(uiDepth + 1).setAlpha(0.82);
+    }).setOrigin(0.5, 0).setDepth(uiDepth + 1).setAlpha(0);
     this.fitSingleLineText(this.flavorText, panelWidth - 56, compact ? 9 : 10);
 
     const barWidth = panelWidth - (compact ? 44 : 52);
@@ -198,16 +189,14 @@ export class BootScene extends Phaser.Scene {
 
   private updateLoaderProgress(): void {
     const now = this.getNow();
+    const elapsed = now - this.bootDisplayStartedAt;
     let targetProgress: number;
 
-    if (this.menuHandoffAt !== null && this.waitPhaseStartedAt > 0) {
-      const duration = Math.max(1, this.menuHandoffAt - this.waitPhaseStartedAt);
-      const waitProgress = Phaser.Math.Clamp((now - this.waitPhaseStartedAt) / duration, 0, 1);
-      targetProgress = BOOT_LOAD_PHASE_PROGRESS + waitProgress * (1 - BOOT_LOAD_PHASE_PROGRESS);
-    } else if (this.waitPhaseStartedAt > 0) {
-      targetProgress = BOOT_LOAD_PHASE_PROGRESS;
+    if (this.menuHandoffAt !== null) {
+      const totalDuration = Math.max(1, this.menuHandoffAt - this.bootDisplayStartedAt);
+      targetProgress = Phaser.Math.Clamp(elapsed / totalDuration, 0, 1);
     } else {
-      targetProgress = Phaser.Math.Clamp(this.assetProgress * BOOT_LOAD_PHASE_PROGRESS, 0, BOOT_LOAD_PHASE_PROGRESS);
+      targetProgress = Phaser.Math.Clamp((elapsed / BOOT_MIN_DISPLAY_MS) * 0.95, 0, 0.95);
     }
 
     const easedProgress = Phaser.Math.Linear(this.currentProgress, targetProgress, 0.18);
