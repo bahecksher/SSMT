@@ -1,25 +1,23 @@
 # State
-_Last updated: 2026-04-07 0219_
+_Last updated: 2026-04-09 0116_
 
 ## Current focus
-Mobile readability and spacing cleanup for narrow / short phone screens (iPhone 13 mini class), with HUD abbreviations, settings panel spacing, and pause-button overlap fix.
+Startup presentation during cold browser loads, including boot-loader typography, meaningful progress timing, a softer CRT close-and-open handoff, and title-font fidelity on the main menu.
 
 ## What's working
+- Boot now shows a live startup loading screen with starfield, rotating globe/ring, scanline overlay, the single-line status `Securing Connecting` in the alternate UI font, a larger single-line Slick intro, a loading bar that keeps progressing until handoff, and a minimum ~4 second display before the menu can open
+- The boot flow now launches `MenuScene` through a two-step CRT-style handoff that closes inward to a narrow center slit and then opens back out, using translucent HUD-tinted shutters and flash instead of a harsh white wipe
+- Menu title text is explicitly refreshed after the title font loads so `SLICK'S`, `SALVAGE & MINING`, and `REMOTE PILOT INTERFACE` keep the intended title-font styling
 - Menu, Mission Select, save data, and results support distinct `CAMPAIGN` and `ARCADE` modes with separate wallets and campaign life / favor carryover
 - Deepcore's secondary mission now uses `BREAK ASTEROIDS`, and campaign sessions track completed mission count across runs
-- HUD now abbreviates labels on narrow (<=390px) screens: `CR:` instead of `CREDITS:`, `LV` instead of `// LIVES`, `M` instead of `// MISS`, with smaller font (11px) and tighter element gaps (6px)
-- HUD lives/missions text flows to second row when score width would collide with centered pause button (`topRowMaxX` boundary check)
-- Menu and MissionSelect settings panels now use proportional row spacing that compresses on veryCompact screens instead of fixed pixel offsets
-- Mission Select compacts mission cards, wallet copy, favor badges, and favor-card text aggressively on cramped phone screens (ultraDense favor layout)
-- Compact comm panels reduce typography and padding, and the top HUD drops `BEST` to a second row when the first row gets crowded
-- Result overlays use ultraCompactResults with shorter labels (`BANKED` / `LOST`) and tighter gaps on small screens
-- Pause menu debug phase section uses tighter spacing on densePause screens (34px gap instead of 44px for phase buttons)
-- Phase 10 gunship boss, palette rotation, white shield lane, and favor-tier pricing/copy updates remain in place
+- Narrow-screen HUD, settings, Mission Select, pause, and results all have the recent compact-phone spacing pass in place
+- Asteroid mining rings are yellow, enemy ships use visible hull fill, countdown text stays on one line without glow/zoom, and the globe ring is intentionally subtle
 - `npm.cmd run build` passes
 
 ## In progress
-- On-device validation of all screens on iPhone 13 mini Safari viewport (~375x635)
-- Live tuning for phase 10 stagger spacing, beam safe-window length, shield pacing, debris density, and final hostile/player color balance
+- Hard-refresh / cold-cache browser validation of the startup loading screen copy, menu-title font appearance, progress feel, and the new close-then-open CRT transition timing
+- On-device validation of Menu, Mission Select, HUD, pause, and results around the iPhone 13 mini `375x635` class viewport
+- Live tuning for phase 10 stagger spacing, beam safe-window length, shield pacing, debris density, and hostile/player color balance
 
 ## Known issues
 - Local `BEST` score is still shared across campaign and arcade even though leaderboard submission is arcade-only
@@ -34,25 +32,23 @@ Mobile readability and spacing cleanup for narrow / short phone screens (iPhone 
 - Supabase `scores` still needs a nullable `company_id` column added server-side
 
 ## Next actions
-1. Smoke test Menu, Mission Select, pause, and result screens on an iPhone 13 mini or equivalent `375x635` viewport and note any remaining collisions
-2. Run a campaign session and confirm the lives/missions row flows correctly as score grows past the pause button boundary
-3. Resume gameplay tuning and campaign/favor validation after the mobile layout pass is confirmed on-device
+1. Hard-refresh the game in a browser and confirm the CRT transition briefly closes inward and then opens back out before the menu becomes interactive
+2. Confirm the HUD-tinted transition feels softer than the earlier white pass while still reading clearly on cold load
+3. Resume the pending mobile viewport validation after the startup flow is confirmed
 
 ## Active plan
-docs/plans/2026-04-07 0148 Plan - Mobile Screen Cleanup.md
+docs/plans/2026-04-09 0116 Plan revision - Startup Loading Screen.md
 
 ## How to verify
 1. Run `npm.cmd run build`
-2. Open the game in a narrow / short mobile viewport around `375x635`
-3. On Menu, confirm leaderboard rows stop before the Slick comm panel and `TAP TO START`
-4. On Mission Select, confirm mission cards, wallet text, and all four favor cards stay readable without text collisions
-5. In a campaign run, confirm the top HUD shows `CR: {n} LV {n} M{n}` without overflow on narrow screens
-6. As score grows past ~4 digits, confirm lives/missions drop to the second row instead of overlapping the pause button
-7. Pause and finish a run, then confirm the pause and result overlays remain readable without stacked sections overlapping
-8. Open Settings on MissionSelect and confirm all rows (palette, shake, scan, music, volume sliders) fit within the panel
+2. Open the game from a cold browser load or hard refresh
+3. Confirm startup shows the starfield, rotating globe/ring, `Securing Connecting` in the alternate font, a larger single-line Slick intro, and the loading bar before the menu appears
+4. Confirm the loading bar does not look finished early and only reaches full as the menu handoff occurs
+5. Confirm the menu reveal briefly closes inward to a center slit and then opens back out using a soft HUD-tinted CRT treatment
+6. Confirm the `SLICK'S` title block on the menu is rendered in the title font
 
 ## Recent logs
-- docs/log/2026-04-07 0219 HUD Pause Button Overlap Fix.md — lives/missions flow to second row when score collides with pause button
-- docs/log/2026-04-07 0209 HUD and Settings Panel Mobile Pass.md — abbreviated HUD labels for narrow screens, tightened settings panel and pause menu spacing
-- docs/log/2026-04-07 0148 Mobile Screen Cleanup.md — tightened narrow/short phone layouts across menu, mission select, HUD, pause, and results
-- docs/log/2026-04-07 0132 Campaign Mission Completion Tracking.md — added persistent campaign mission completion tracking
+- docs/log/2026-04-09 0116 Boot Loader CRT Close and Open Transition.md - replaced the outward-only white reveal with a softer HUD-tinted close-in then open CRT handoff
+- docs/log/2026-04-09 0109 Boot Loader CRT Transparency Tuning.md - softened the outward white CRT reveal by making the shutters, line glow, and flash semi-transparent
+- docs/log/2026-04-09 0107 Boot Loader Transition Direction and Menu Title Font.md - flipped the CRT handoff outward, made it white, and refreshed the menu title after the title font loads
+- docs/log/2026-04-09 0101 Boot Loader Status Font Swap.md - changed the boot status line to the alternate font and cleaned up the unused title-font import

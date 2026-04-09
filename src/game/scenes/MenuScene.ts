@@ -38,6 +38,7 @@ interface BackgroundHandoffData {
   npcState?: { x: number; y: number; vx: number; vy: number }[];
   reopenSettings?: boolean;
   mode?: RunMode;
+  bootTransition?: boolean;
 }
 
 type MenuButton = {
@@ -197,21 +198,25 @@ export class MenuScene extends Phaser.Scene {
       .setDepth(uiDepth + 1)
       .setAlpha(0.96);
 
-    const titlePrimary = this.add.text(centerX, portraitCenterY + portraitRadius + (veryCompactMenu ? 8 : compactMenu ? 10 : 14), "SLICK'S", {
+    const titlePrimaryY = portraitCenterY + portraitRadius + (veryCompactMenu ? 8 : compactMenu ? 10 : 14);
+    const titleSecondaryGap = veryCompactMenu ? 0 : 2;
+    const titleTertiaryGap = veryCompactMenu ? 2 : 4;
+    const pilotGap = veryCompactMenu ? 12 : 16;
+    const titlePrimary = this.add.text(centerX, titlePrimaryY, "SLICK'S", {
       fontFamily: TITLE_FONT,
       fontSize: titlePrimarySize,
       color: `#${COLORS.PLAYER.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth);
 
-    const titleSecondary = this.add.text(centerX, titlePrimary.y + titlePrimary.height + (veryCompactMenu ? 0 : 2), 'SALVAGE & MINING', {
+    const titleSecondary = this.add.text(centerX, titlePrimary.y + titlePrimary.height + titleSecondaryGap, 'SALVAGE & MINING', {
       fontFamily: TITLE_FONT,
       fontSize: titleSecondarySize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth);
 
-    const titleTertiary = this.add.text(centerX, titleSecondary.y + titleSecondary.height + (veryCompactMenu ? 2 : 4), 'REMOTE PILOT INTERFACE', {
+    const titleTertiary = this.add.text(centerX, titleSecondary.y + titleSecondary.height + titleTertiaryGap, 'REMOTE PILOT INTERFACE', {
       fontFamily: TITLE_FONT,
       fontSize: titleTertiarySize,
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
@@ -219,12 +224,33 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5, 0).setDepth(uiDepth);
 
     // Player name and best score
-    this.pilotText = this.add.text(centerX, titleTertiary.y + titleTertiary.height + (veryCompactMenu ? 12 : 16), `PILOT: ${playerName}`, {
+    this.pilotText = this.add.text(centerX, titleTertiary.y + titleTertiary.height + pilotGap, `PILOT: ${playerName}`, {
       fontFamily: UI_FONT,
       fontSize: metaSize,
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth).setInteractive({ useHandCursor: true });
+
+    const layoutTitleBlock = () => {
+      titlePrimary.setPosition(centerX, titlePrimaryY);
+      titleSecondary.setPosition(centerX, titlePrimary.y + titlePrimary.height + titleSecondaryGap);
+      titleTertiary.setPosition(centerX, titleSecondary.y + titleSecondary.height + titleTertiaryGap);
+      this.pilotText.setPosition(centerX, titleTertiary.y + titleTertiary.height + pilotGap);
+    };
+    layoutTitleBlock();
+    if (typeof document !== 'undefined' && 'fonts' in document) {
+      void document.fonts.load('16px "pixel_lcd"').then(() => {
+        if (!this.sys.isActive()) {
+          return;
+        }
+
+        [titlePrimary, titleSecondary, titleTertiary].forEach((titleText) => {
+          titleText.setStyle({ fontFamily: TITLE_FONT });
+          titleText.setText(titleText.text);
+        });
+        layoutTitleBlock();
+      });
+    }
 
     this.pilotText.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       pointer.event.stopPropagation();
@@ -446,6 +472,9 @@ export class MenuScene extends Phaser.Scene {
 
     // Load initial leaderboard
     this.loadLeaderboard();
+    if (handoff.bootTransition) {
+      this.playBootCrtTransition();
+    }
   }
 
   update(_time: number, delta: number): void {
@@ -641,6 +670,109 @@ export class MenuScene extends Phaser.Scene {
     this.cursor.destroy(this);
     this.titlePilot.destroy();
     this.slickComm.destroy();
+  }
+
+  private playBootCrtTransition(): void {
+    const layout = getLayout();
+    const depth = 140;
+    const centerX = layout.centerX;
+    const centerY = layout.centerY;
+    const slitHeight = 10;
+    const shutterHeight = Math.max(1, centerY - slitHeight / 2);
+    const closeDuration = 150;
+    const holdDuration = 45;
+    const openDuration = 240;
+    this.input.enabled = false;
+
+    const topShutter = this.add.rectangle(centerX, 0, layout.gameWidth + 4, shutterHeight, COLORS.HUD, 1)
+      .setOrigin(0.5, 0)
+      .setDepth(depth)
+      .setScale(1, 0)
+      .setAlpha(0);
+    const bottomShutter = this.add.rectangle(centerX, layout.gameHeight, layout.gameWidth + 4, shutterHeight, COLORS.HUD, 1)
+      .setOrigin(0.5, 1)
+      .setDepth(depth)
+      .setScale(1, 0)
+      .setAlpha(0);
+    const glowLine = this.add.rectangle(centerX, centerY, layout.gameWidth * 0.42, 6, COLORS.HUD, 1)
+      .setDepth(depth + 1)
+      .setScale(0.24, 1)
+      .setAlpha(0);
+    const coreLine = this.add.rectangle(centerX, centerY, layout.gameWidth * 0.22, 2, 0xffffff, 1)
+      .setDepth(depth + 2)
+      .setScale(0.12, 1)
+      .setAlpha(0);
+    const flash = this.add.rectangle(centerX, centerY, layout.gameWidth, layout.gameHeight, COLORS.HUD, 1)
+      .setDepth(depth + 3)
+      .setAlpha(0);
+
+    this.tweens.add({
+      targets: [topShutter, bottomShutter],
+      scaleY: 1,
+      alpha: 0.3,
+      duration: closeDuration,
+      ease: 'Cubic.easeIn',
+    });
+
+    this.tweens.add({
+      targets: [topShutter, bottomShutter],
+      scaleY: 0,
+      alpha: 0,
+      delay: closeDuration + holdDuration,
+      duration: openDuration,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        topShutter.destroy();
+        bottomShutter.destroy();
+        this.input.enabled = true;
+      },
+    });
+
+    this.tweens.add({
+      targets: glowLine,
+      scaleX: 0.82,
+      alpha: 0.54,
+      duration: closeDuration,
+      ease: 'Sine.easeOut',
+    });
+
+    this.tweens.add({
+      targets: glowLine,
+      scaleX: 2.4,
+      alpha: 0,
+      delay: closeDuration + holdDuration,
+      duration: openDuration,
+      ease: 'Quad.easeOut',
+      onComplete: () => glowLine.destroy(),
+    });
+
+    this.tweens.add({
+      targets: coreLine,
+      scaleX: 1,
+      alpha: 0.88,
+      duration: closeDuration,
+      ease: 'Sine.easeOut',
+    });
+
+    this.tweens.add({
+      targets: coreLine,
+      scaleX: 3.2,
+      alpha: 0,
+      delay: closeDuration + holdDuration,
+      duration: openDuration - 20,
+      ease: 'Cubic.easeOut',
+      onComplete: () => coreLine.destroy(),
+    });
+
+    this.tweens.add({
+      targets: flash,
+      alpha: 0.12,
+      duration: closeDuration - 20,
+      yoyo: true,
+      hold: holdDuration + 30,
+      ease: 'Quad.easeOut',
+      onComplete: () => flash.destroy(),
+    });
   }
 
   private createSettingsUi(uiDepth: number, backingTop: number, compactMenu: boolean, veryCompactMenu: boolean): void {
