@@ -198,7 +198,18 @@ Format:
 - **When in doubt, check `docs/spec/` or ask.** Don't assume intent.
 - **If you disagree with an existing plan or decision**, note the disagreement in your log and ask. Don't override.
 - **Timestamps are not optional.** Every log, plan, and spec revision gets a timestamp from `date '+%Y-%m-%d %H%M'`. No exceptions.
-
+- Do not try to implement everything at once
+- Complete only the current prompt
+- Preserve existing architecture unless a clear bug requires change
+- Explain major structural decisions briefly
+- Keep all tuning values data-driven
+- Prefer clear, maintainable TypeScript over clever abstractions
+- Flag any ambiguity before making major architectural changes
+- When finished, list:
+  1. files created/changed
+  2. what works
+  3. what is still stubbed
+  4. any risks or follow-up recommendations
 ---
 
 ## End of every session

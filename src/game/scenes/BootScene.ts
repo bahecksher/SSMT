@@ -38,6 +38,8 @@ export class BootScene extends Phaser.Scene {
   private titleText!: Phaser.GameObjects.Text;
   private flavorText!: Phaser.GameObjects.Text;
   private currentProgress = 0;
+  private fontsReady = false;
+  private fontPromise: Promise<void> | null = null;
 
   constructor() {
     super(SCENE_KEYS.BOOT);
@@ -51,6 +53,7 @@ export class BootScene extends Phaser.Scene {
     this.createBackdrop();
     this.createLoaderUi();
     this.refreshLoaderProgress(0);
+    this.startFontLoad();
 
     preloadMusic(this);
     preloadSfx(this);
@@ -62,24 +65,19 @@ export class BootScene extends Phaser.Scene {
       this.scene.start(SCENE_KEYS.MENU, { bootTransition: true });
     };
 
-    if (typeof document === 'undefined' || !('fonts' in document)) {
+    if (this.fontsReady) {
       this.scheduleMenuHandoff(startMenu);
       return;
     }
 
-    void Promise.allSettled([
-      document.fonts.load('16px "FreePixel"'),
-      document.fonts.load('16px "pixel_lcd"'),
-    ]).finally(() => {
-      if (!this.sys.isActive()) {
-        return;
-      }
-
-      this.titleText?.setStyle({ fontFamily: TITLE_FONT });
-      this.titleText?.setAlpha(1);
-      this.flavorText?.setAlpha(0.82);
+    if (this.fontPromise) {
+      void this.fontPromise.then(() => {
+        if (!this.sys.isActive()) return;
+        this.scheduleMenuHandoff(startMenu);
+      });
+    } else {
       this.scheduleMenuHandoff(startMenu);
-    });
+    }
   }
 
   update(_time: number, delta: number): void {
@@ -165,6 +163,26 @@ export class BootScene extends Phaser.Scene {
     accent.lineBetween(panelX + 16, panelY + 18, panelX + 16, panelY + 46);
     accent.lineBetween(panelX + panelWidth - 16, panelY + 18, panelX + panelWidth - 44, panelY + 18);
     accent.lineBetween(panelX + panelWidth - 16, panelY + 18, panelX + panelWidth - 16, panelY + 46);
+  }
+
+  private startFontLoad(): void {
+    if (typeof document === 'undefined' || !('fonts' in document)) {
+      this.fontsReady = true;
+      this.titleText?.setAlpha(1);
+      this.flavorText?.setAlpha(0.82);
+      return;
+    }
+
+    this.fontPromise = Promise.allSettled([
+      document.fonts.load('16px "FreePixel"'),
+      document.fonts.load('16px "pixel_lcd"'),
+    ]).then(() => {
+      if (!this.sys.isActive()) return;
+      this.fontsReady = true;
+      this.titleText?.setStyle({ fontFamily: TITLE_FONT });
+      this.titleText?.setAlpha(1);
+      this.flavorText?.setAlpha(0.82);
+    });
   }
 
   private scheduleMenuHandoff(startMenu: () => void): void {
