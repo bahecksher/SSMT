@@ -36,15 +36,15 @@ const MUSIC_KEYS: Record<MusicTrack, string> = {
 
 const BASE_URL = import.meta.env.BASE_URL;
 
-const MUSIC_PATHS: Record<MusicTrack, string> = {
-  menuSynth: `${BASE_URL}audio/menu-synth.wav`,
-  bassOne: `${BASE_URL}audio/bass-1.wav`,
-  drumsTwo: `${BASE_URL}audio/drums-2.wav`,
-  drumsThree: `${BASE_URL}audio/drums-3.wav`,
-  bassThree: `${BASE_URL}audio/bass-3.wav`,
-  gameSynth: `${BASE_URL}audio/synth-3.wav`,
-  fullPhase1: `${BASE_URL}audio/full-phase-1.wav`,
-  fullPhase2: `${BASE_URL}audio/full-phase-2.wav`,
+const MUSIC_PATHS: Record<MusicTrack, string[]> = {
+  menuSynth: [`${BASE_URL}audio/menu-synth.ogg`, `${BASE_URL}audio/menu-synth.mp3`],
+  bassOne: [`${BASE_URL}audio/bass-1.ogg`, `${BASE_URL}audio/bass-1.mp3`],
+  drumsTwo: [`${BASE_URL}audio/drums-2.ogg`, `${BASE_URL}audio/drums-2.mp3`],
+  drumsThree: [`${BASE_URL}audio/drums-3.ogg`, `${BASE_URL}audio/drums-3.mp3`],
+  bassThree: [`${BASE_URL}audio/bass-3.ogg`, `${BASE_URL}audio/bass-3.mp3`],
+  gameSynth: [`${BASE_URL}audio/synth-3.ogg`, `${BASE_URL}audio/synth-3.mp3`],
+  fullPhase1: [`${BASE_URL}audio/full-phase-1.ogg`, `${BASE_URL}audio/full-phase-1.mp3`],
+  fullPhase2: [`${BASE_URL}audio/full-phase-2.ogg`, `${BASE_URL}audio/full-phase-2.mp3`],
 };
 
 const MUSIC_START_DELAY_S = 0.05;
