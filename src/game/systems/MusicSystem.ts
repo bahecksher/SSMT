@@ -10,6 +10,9 @@ const LAYERED_TRACKS = [
   'gameSynth',
 ] as const;
 const FULL_TRACKS = ['fullPhase1', 'fullPhase2'] as const;
+const BOOT_TRACKS = ['menuSynth', 'bassOne', 'drumsTwo'] as const;
+const MID_GAME_TRACKS = ['drumsThree', 'bassThree', 'gameSynth'] as const;
+const LATE_GAME_TRACKS = [...FULL_TRACKS] as const;
 
 type LayeredTrack = typeof LAYERED_TRACKS[number];
 type FullTrack = typeof FULL_TRACKS[number];
@@ -117,6 +120,7 @@ let selectedLateGameTrack: FullTrack | null = null;
 let preserveMutedFullTrack = false;
 let layeredSounds: Partial<Record<LayeredTrack, ManagedSound>> = {};
 let fullTrackSounds: Partial<Record<FullTrack, ManagedSound>> = {};
+const pendingTrackLoads = new WeakMap<Phaser.Scene, Set<MusicTrack>>();
 
 function resetState(scene: Phaser.Scene): void {
   activeGame = scene.game;
@@ -137,11 +141,78 @@ function ensureSession(scene: Phaser.Scene): void {
   }
 }
 
+function isTrackLoaded(scene: Phaser.Scene, track: MusicTrack): boolean {
+  return scene.cache.audio.exists(MUSIC_KEYS[track]);
+}
+
+function getPendingTrackLoads(scene: Phaser.Scene): Set<MusicTrack> {
+  let pending = pendingTrackLoads.get(scene);
+  if (pending) {
+    return pending;
+  }
+
+  pending = new Set<MusicTrack>();
+  pendingTrackLoads.set(scene, pending);
+  scene.events.once('shutdown', () => {
+    pendingTrackLoads.delete(scene);
+  });
+  return pending;
+}
+
+function queueMusicTracks(scene: Phaser.Scene, tracks: readonly MusicTrack[]): void {
+  if (!getSettings().musicEnabled) {
+    return;
+  }
+
+  const pending = getPendingTrackLoads(scene);
+  const missingTracks = tracks.filter((track) => !isTrackLoaded(scene, track) && !pending.has(track));
+  if (missingTracks.length === 0) {
+    return;
+  }
+
+  for (const track of missingTracks) {
+    pending.add(track);
+    scene.load.audio(MUSIC_KEYS[track], MUSIC_PATHS[track]);
+  }
+
+  scene.load.once(Phaser.Loader.Events.COMPLETE, () => {
+    for (const track of missingTracks) {
+      pending.delete(track);
+    }
+
+    if (!scene.sys.isActive()) {
+      return;
+    }
+
+    startMusic(scene);
+    applyMusicState(scene, 0);
+  });
+
+  if (!scene.load.isLoading()) {
+    scene.load.start();
+  }
+}
+
+function queueTracksForCurrentState(scene: Phaser.Scene): void {
+  const tracks: MusicTrack[] = [];
+  for (const track of LAYERED_TRACKS) {
+    if (targetLayeredMix[track] > 0) {
+      tracks.push(track);
+    }
+  }
+
+  if (activeFullTrack) {
+    tracks.push(activeFullTrack);
+  }
+
+  queueMusicTracks(scene, tracks);
+}
+
 function ensureLayeredSounds(scene: Phaser.Scene): void {
   ensureSession(scene);
 
   for (const track of LAYERED_TRACKS) {
-    if (!layeredSounds[track]) {
+    if (!layeredSounds[track] && isTrackLoaded(scene, track)) {
       const existingSound = scene.sound.get(MUSIC_KEYS[track]);
       layeredSounds[track] = (existingSound ?? scene.sound.add(MUSIC_KEYS[track], {
         loop: true,
@@ -151,8 +222,12 @@ function ensureLayeredSounds(scene: Phaser.Scene): void {
   }
 }
 
-function ensureFullTrackSound(scene: Phaser.Scene, track: FullTrack): ManagedSound {
+function ensureFullTrackSound(scene: Phaser.Scene, track: FullTrack): ManagedSound | null {
   ensureSession(scene);
+
+  if (!isTrackLoaded(scene, track)) {
+    return null;
+  }
 
   if (!fullTrackSounds[track]) {
     const existingSound = scene.sound.get(MUSIC_KEYS[track]);
@@ -221,7 +296,7 @@ function applyFullTrackState(scene: Phaser.Scene, fadeMs = FULL_TRACK_FADE_MS): 
 
   if (activeFullTrack) {
     const activeSound = ensureFullTrackSound(scene, activeFullTrack);
-    if (!activeSound.isPlaying) {
+    if (activeSound && !activeSound.isPlaying) {
       activeSound.volume = 0;
       activeSound.play({
         loop: true,
@@ -285,9 +360,17 @@ function queueUnlock(scene: Phaser.Scene): void {
 }
 
 export function preloadMusic(scene: Phaser.Scene): void {
-  for (const track of [...LAYERED_TRACKS, ...FULL_TRACKS]) {
+  if (!getSettings().musicEnabled) {
+    return;
+  }
+
+  for (const track of BOOT_TRACKS) {
     scene.load.audio(MUSIC_KEYS[track], MUSIC_PATHS[track]);
   }
+}
+
+export function warmMusicCache(scene: Phaser.Scene): void {
+  queueMusicTracks(scene, MID_GAME_TRACKS);
 }
 
 function startMusic(scene: Phaser.Scene): void {
@@ -340,6 +423,7 @@ function setMusicState(scene: Phaser.Scene, options: MusicStateOptions): void {
   activeFullTrack = options.fullTrack ?? null;
   preserveMutedFullTrack = options.preserveLateGameTrack ?? false;
 
+  queueTracksForCurrentState(scene);
   startMusic(scene);
   applyMusicState(scene, options.fadeMs ?? MUSIC_FADE_MS);
 }
@@ -377,6 +461,10 @@ export function setMissionMusic(scene: Phaser.Scene): void {
 }
 
 export function setGameplayMusicForPhase(scene: Phaser.Scene, phase: number): void {
+  if (phase >= FULL_TRACK_START_PHASE - 1) {
+    queueMusicTracks(scene, LATE_GAME_TRACKS);
+  }
+
   if (phase >= FULL_TRACK_START_PHASE) {
     if (!selectedLateGameTrack) {
       selectedLateGameTrack = Phaser.Utils.Array.GetRandom([...FULL_TRACKS]);
@@ -408,6 +496,7 @@ export function setGameplayMusicForPhase(scene: Phaser.Scene, phase: number): vo
 }
 
 export function refreshMusicForSettings(scene: Phaser.Scene): void {
+  queueTracksForCurrentState(scene);
   if (getSettings().musicEnabled) {
     startMusic(scene);
   }

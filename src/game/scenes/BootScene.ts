@@ -11,7 +11,7 @@ const BOOT_STARFIELD_OVERSCAN = 96;
 const BOOT_STARFIELD_COUNT = 170;
 const BOOT_BAR_HEIGHT = 18;
 const BOOT_MESSAGE = 'Securing Connection';
-const BOOT_MIN_DISPLAY_MS = 4000;
+const BOOT_MIN_DISPLAY_MS = 1500;
 
 interface BootStar {
   x: number;

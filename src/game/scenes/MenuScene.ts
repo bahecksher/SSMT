@@ -25,7 +25,7 @@ import { pickAsteroidSize } from '../data/phaseConfig';
 import { getSlickLine } from '../data/slickLines';
 import { getLayout, isNarrowViewport, isShortViewport, setLayoutSize } from '../layout';
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
-import { refreshMusicForSettings, setMenuMusic } from '../systems/MusicSystem';
+import { refreshMusicForSettings, setMenuMusic, warmMusicCache } from '../systems/MusicSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { SettingsSlider } from '../ui/SettingsSlider';
@@ -115,6 +115,7 @@ export class MenuScene extends Phaser.Scene {
     setLayoutSize(this.scale.width, this.scale.height);
     applyColorPalette(getSettings().paletteId);
     setMenuMusic(this);
+    warmMusicCache(this);
     const layout = getLayout();
     const centerX = layout.centerX;
     this.saveSystem = new SaveSystem();

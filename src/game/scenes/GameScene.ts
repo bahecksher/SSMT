@@ -58,6 +58,7 @@ import {
   setGameplayMusicForPhase,
   setPauseMusic,
   setResultMusic,
+  warmMusicCache,
 } from '../systems/MusicSystem';
 import { playSfx, playUiSelectSfx } from '../systems/SfxSystem';
 import { CustomCursor } from '../ui/CustomCursor';
@@ -185,6 +186,7 @@ export class GameScene extends Phaser.Scene {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
     applyColorPalette(getSettings().paletteId);
+    warmMusicCache(this);
     const handoff = data ?? {};
     const layout = getLayout();
     this.state = GameState.COUNTDOWN;

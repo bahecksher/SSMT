@@ -25,7 +25,7 @@ import {
 import { CompanyId, RunMode } from '../types';
 import type { ActiveMission } from '../types';
 import { getMissionBrief } from '../data/missionBriefs';
-import { refreshMusicForSettings, setMissionMusic } from '../systems/MusicSystem';
+import { refreshMusicForSettings, setMissionMusic, warmMusicCache } from '../systems/MusicSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
 import { CustomCursor } from '../ui/CustomCursor';
@@ -142,6 +142,7 @@ export class MissionSelectScene extends Phaser.Scene {
     setLayoutSize(this.scale.width, this.scale.height);
     applyColorPalette(getSettings().paletteId);
     setMissionMusic(this);
+    warmMusicCache(this);
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
 
