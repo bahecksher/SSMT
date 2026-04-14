@@ -281,3 +281,21 @@ The old `HOLD {target} UNBANKED` contract was misleading because mission rewards
 
 ### 2026-04-07 - Campaign sessions track completed mission count across runs
 Campaign mode now keeps a session-local mission completion total alongside lives and carried favors. The count only increases when completed missions are actually claimed on a score-recorded campaign extraction, persists across later campaign runs and deaths, and resets when the campaign session ends or a new campaign starts.
+
+### 2026-04-14 - Corporation affiliation stays rep-driven for leaderboard identity
+The new corporation leaderboard and arena identity use the pilot's highest saved company rep as the current affiliation. We are not adding a separate corporation enlistment picker yet; the game already tracks rep per company, score submission already tags runs with that affiliation, and the smaller change keeps the feature aligned with existing progression.
+
+### 2026-04-14 - Accessible game flow is arcade-only for now
+Campaign mode is no longer exposed in the menu or allowed through normal scene handoffs. The saved selected mode now normalizes back to `ARCADE`, and stale campaign mode entries are prevented from reopening the unfinished flow, while the deeper campaign-only data structures remain in code for a later revisit instead of being ripped out in the same pass.
+
+### 2026-04-14 - Corporation affiliation is now manually selectable in the menu
+The `WORKING WITH` slot on the main menu is now an explicit corporation selector instead of read-only highest-rep text. A player's chosen corporation drives leaderboard tagging and corporation-colored UI/arena presentation, while highest saved rep remains only as the fallback when no manual selection has been made yet.
+
+### 2026-04-14 - Manual corporation choices are gated by earned rep
+The main-menu corporation selector no longer cycles through every faction by default. Players can always remain `FREE AGENT`, but the only corporations they can explicitly choose are the ones where they currently have positive saved rep.
+
+### 2026-04-14 - MissionSelect surfaces rep payout and current company standing
+MissionSelect should show both sides of company progression at the point of choice. Contract cards now surface the rep payout awarded on completion, while favor cards show each corporation's current standing, raw rep total, and progress toward the next tier so players can judge both short-term and long-term value on the same screen.
+
+### 2026-04-14 - Rep gain rules are stated before and after a run
+The UI should not make players infer how company reputation works from thresholds alone. MissionSelect now explicitly says accepted contracts pay bonus credits and company rep on extraction, locked favor cards point players toward completing contracts, and extraction results report the rep actually claimed so the earn loop is visible end-to-end.

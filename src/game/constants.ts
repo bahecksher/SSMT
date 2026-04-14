@@ -23,6 +23,7 @@ export const PLAYER_NAME_KEY = 'ssmt_player_name';
 export const SETTINGS_KEY = 'ssmt_settings';
 export const MISSIONS_KEY = 'ssmt_missions';
 export const COMPANY_REP_KEY = 'ssmt_company_rep';
+export const COMPANY_AFFILIATION_KEY = 'ssmt_company_affiliation';
 
 export const PALETTE_ORDER = ['green', 'orange', 'blue', 'red', 'volt', 'pulse', 'frost'] as const;
 export type PaletteId = (typeof PALETTE_ORDER)[number];

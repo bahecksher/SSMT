@@ -17,7 +17,7 @@ export class Hud {
   private scoreText: Phaser.GameObjects.Text;
   private livesText: Phaser.GameObjects.Text;
 
-  private bestText: Phaser.GameObjects.Text;
+  private phaseText: Phaser.GameObjects.Text;
   private shieldText: Phaser.GameObjects.Text;
   private missionPillRoot: Phaser.GameObjects.Container;
   private missionPills: Phaser.GameObjects.GameObject[] = [];
@@ -25,7 +25,7 @@ export class Hud {
   private lastLives: number | null = null;
 
 
-  private lastBest = -1;
+  private lastPhase = -1;
   private lastShield = false;
   private lastMissionHash = '';
   private missionPillsHidden = false;
@@ -72,7 +72,7 @@ export class Hud {
       color: colorStr(COLORS.SALVAGE),
     }).setDepth(100);
 
-    this.bestText = scene.add.text(layout.gameWidth - 16, topMargin, 'BEST: 0', {
+    this.phaseText = scene.add.text(layout.gameWidth - 16, topMargin, 'PHASE 1', {
       ...titleTextStyle,
     }).setOrigin(1, 0).setDepth(100);
 
@@ -87,8 +87,8 @@ export class Hud {
 
   update(
     score: number,
-    best: number,
-    _phase: number = 1,
+    _best: number,
+    phase: number = 1,
     hasShield = false,
     campaignLivesRemaining: number | null = null,
   ): void {
@@ -117,18 +117,18 @@ export class Hud {
       this.livesText.setPosition(leftX, this.shieldRowY);
     }
 
-    const roundedBest = Math.floor(best);
-    if (roundedBest !== this.lastBest) {
-      this.bestText.setText(`BEST: ${roundedBest}`);
-      this.lastBest = roundedBest;
+    const roundedPhase = Math.max(1, Math.floor(phase));
+    if (roundedPhase !== this.lastPhase) {
+      this.phaseText.setText(`PHASE ${roundedPhase}`);
+      this.lastPhase = roundedPhase;
     }
 
     const layout = getLayout();
     const topRowRightEdge = fitsOnTopRow && livesWidth > 0
       ? this.livesText.x + this.livesText.width
       : this.scoreText.x + this.scoreText.width;
-    const bestOnSecondRow = isNarrowViewport(layout) || topRowRightEdge + 14 > layout.gameWidth - 16 - this.bestText.width;
-    this.bestText.setPosition(layout.gameWidth - 16, bestOnSecondRow ? this.shieldRowY : this.topMargin);
+    const phaseOnSecondRow = isNarrowViewport(layout) || topRowRightEdge + 14 > layout.gameWidth - 16 - this.phaseText.width;
+    this.phaseText.setPosition(layout.gameWidth - 16, phaseOnSecondRow ? this.shieldRowY : this.topMargin);
 
     if (hasShield !== this.lastShield) {
       this.shieldText.setText(hasShield ? 'SHIELD' : '');
@@ -235,7 +235,7 @@ export class Hud {
     }
     this.scoreText.destroy();
     this.livesText.destroy();
-    this.bestText.destroy();
+    this.phaseText.destroy();
     this.shieldText.destroy();
     this.missionPillRoot.destroy(true);
     this.missionPills = [];
@@ -244,7 +244,7 @@ export class Hud {
   refreshPalette(): void {
     this.scoreText.setColor(colorStr(COLORS.SALVAGE));
     this.livesText.setColor(colorStr(COLORS.SALVAGE));
-    this.bestText.setColor(colorStr(COLORS.HUD));
+    this.phaseText.setColor(colorStr(COLORS.HUD));
     this.shieldText.setColor(colorStr(COLORS.SHIELD));
     this.lastMissionHash = '';
     this.updateMissions(this.currentMissions);

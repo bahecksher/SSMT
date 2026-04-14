@@ -1,6 +1,6 @@
-import { CompanyId } from '../types';
+import { CompanyId, isCompanyId } from '../types';
 import type { CompanyFavorOffer, CompanyRepSave, RunBoosts } from '../types';
-import { COMPANY_REP_KEY } from '../constants';
+import { COMPANY_AFFILIATION_KEY, COMPANY_REP_KEY } from '../constants';
 
 export interface CompanyDef {
   id: CompanyId;
@@ -18,6 +18,13 @@ export interface RepStanding {
   label: string;
   nextRepRequired: number | null;
   progressToNext: number;
+}
+
+export type CompanyAffiliationSource = 'selected' | 'rep' | 'none';
+
+export interface CompanyAffiliationState {
+  companyId: CompanyId | null;
+  source: CompanyAffiliationSource;
 }
 
 export const COMPANIES: Record<CompanyId, CompanyDef> = {
@@ -147,6 +154,34 @@ export function saveCompanyRep(data: CompanyRepSave): void {
   } catch { /* private browsing */ }
 }
 
+export function loadSelectedCompanyAffiliation(): CompanyId | null | undefined {
+  try {
+    const raw = localStorage.getItem(COMPANY_AFFILIATION_KEY);
+    if (raw === null) {
+      return undefined;
+    }
+
+    const parsed = JSON.parse(raw) as { companyId?: unknown };
+    if (parsed.companyId === null) {
+      return null;
+    }
+    if (isCompanyId(parsed.companyId)) {
+      return parsed.companyId;
+    }
+  } catch { /* corrupted or private browsing */ }
+  return undefined;
+}
+
+export function saveSelectedCompanyAffiliation(companyId: CompanyId | null): void {
+  try {
+    localStorage.setItem(COMPANY_AFFILIATION_KEY, JSON.stringify({ companyId }));
+  } catch { /* private browsing */ }
+}
+
+export function getSelectableCompanyIds(repSave: CompanyRepSave): CompanyId[] {
+  return COMPANY_IDS.filter((companyId) => (repSave.rep[companyId] ?? 0) > 0);
+}
+
 function createNeutralRunBoosts(): RunBoosts {
   return {
     miningYieldMult: 1.0,
@@ -203,7 +238,24 @@ export function computeRunBoostsFromFavors(selectedCompanies: CompanyId[]): RunB
   return boosts;
 }
 
-export function getLeaderboardCompanyId(repSave: CompanyRepSave): CompanyId | null {
+export function getCompanyAffiliation(repSave: CompanyRepSave): CompanyAffiliationState {
+  const selectedCompanyId = loadSelectedCompanyAffiliation();
+  if (selectedCompanyId !== undefined) {
+    if (selectedCompanyId === null) {
+      return {
+        companyId: null,
+        source: 'selected',
+      };
+    }
+
+    if (getSelectableCompanyIds(repSave).includes(selectedCompanyId)) {
+      return {
+        companyId: selectedCompanyId,
+        source: 'selected',
+      };
+    }
+  }
+
   let bestCompany: CompanyId | null = null;
   let bestRep = 0;
 
@@ -215,7 +267,21 @@ export function getLeaderboardCompanyId(repSave: CompanyRepSave): CompanyId | nu
     }
   }
 
-  return bestRep > 0 ? bestCompany : null;
+  if (bestRep > 0) {
+    return {
+      companyId: bestCompany,
+      source: 'rep',
+    };
+  }
+
+  return {
+    companyId: null,
+    source: 'none',
+  };
+}
+
+export function getLeaderboardCompanyId(repSave: CompanyRepSave): CompanyId | null {
+  return getCompanyAffiliation(repSave).companyId;
 }
 
 /** Format a boost value for display, e.g. "+30%" */

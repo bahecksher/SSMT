@@ -39,9 +39,9 @@ import { SlickComm } from '../ui/SlickComm';
 import { LiaisonComm } from '../ui/LiaisonComm';
 import {
   COMPANIES,
-  computeRunBoostsFromFavors,
   getLeaderboardCompanyId,
   getRepLevel,
+  REP_PER_TIER,
   getSlickCutPercent,
   getWalletSharePercent,
   loadCompanyRep,
@@ -91,13 +91,14 @@ interface ResultData {
   mode: RunMode;
   scoreRecorded: boolean;
   missionBonus?: number;
+  missionRepEarned?: number;
   walletPayout?: number;
   slickCut?: number;
   walletBalance?: number;
   campaignLivesRemaining?: number;
   campaignMissionsCompleted?: number;
   campaignGameOver?: boolean;
-  missionProgress?: { label: string; progress: number; target: number; completed: boolean; reward: number }[];
+  missionProgress?: { label: string; progress: number; target: number; completed: boolean; reward: number; repGain: number }[];
 }
 
 type DeathCause = 'asteroid' | 'enemy' | 'laser';
@@ -177,6 +178,8 @@ export class GameScene extends Phaser.Scene {
   private pausedFromState: GameState = GameState.PLAYING;
   private cursor!: CustomCursor;
   private scoreRecordingBlocked = false;
+  private affiliatedCompanyId: CompanyId | null = null;
+  private affiliationStatusText!: Phaser.GameObjects.Text;
 
   constructor() {
     super(SCENE_KEYS.GAME);
@@ -212,18 +215,15 @@ export class GameScene extends Phaser.Scene {
     this.scoreRecordingBlocked = false;
 
     this.saveSystem = new SaveSystem();
-    this.runMode = handoff.mode ?? this.saveSystem.getSelectedMode();
+    this.runMode = RunMode.ARCADE;
     this.saveSystem.setSelectedMode(this.runMode);
-    const campaignSession = this.runMode === RunMode.CAMPAIGN
-      ? this.saveSystem.getCampaignSession()
-      : null;
     this.activeRunBoosts = handoff.runBoosts
-      ?? (campaignSession && campaignSession.favorIds.length > 0
-        ? computeRunBoostsFromFavors(campaignSession.favorIds)
-        : null);
+      ?? null;
     this.inputSystem = new InputSystem(this);
     this.scoreSystem = new ScoreSystem();
     this.scoreSystem.setBest(this.saveSystem.getBestScore());
+    const affiliationRepSave = loadCompanyRep();
+    this.affiliatedCompanyId = getLeaderboardCompanyId(affiliationRepSave);
 
     // Starfield background (hologram-tinted)
     this.starfield = this.add.graphics().setDepth(-1);
@@ -331,6 +331,20 @@ export class GameScene extends Phaser.Scene {
         strokeThickness: 3,
       },
     ).setOrigin(0.5).setDepth(101).setAlpha(0.88).setVisible(false);
+    this.affiliationStatusText = this.add.text(
+      layout.centerX,
+      this.bossStatusText.y,
+      '',
+      {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(layout.gameWidth <= 430 ? 10 : 11),
+        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+        align: 'center',
+        stroke: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
+        strokeThickness: 3,
+      },
+    ).setOrigin(0.5).setDepth(101).setAlpha(0.76).setVisible(false);
+    this.updateAffiliationStatusUi();
     this.createPauseButton();
     this.countdownText = this.add.text(
       layout.centerX,
@@ -981,12 +995,30 @@ export class GameScene extends Phaser.Scene {
     const boss = this.difficultySystem.getBoss();
     if (!boss || (this.state !== GameState.PLAYING && this.state !== GameState.PAUSED)) {
       this.bossStatusText.setVisible(false);
+      this.updateAffiliationStatusUi();
       return;
     }
 
     this.bossStatusText.setText(boss.getStatusLabel());
     this.bossStatusText.setColor(`#${boss.getStatusColor().toString(16).padStart(6, '0')}`);
     this.bossStatusText.setVisible(true);
+    this.affiliationStatusText.setVisible(false);
+  }
+
+  private updateAffiliationStatusUi(): void {
+    if (!this.affiliationStatusText) {
+      return;
+    }
+
+    const affiliatedCompany = this.affiliatedCompanyId ? COMPANIES[this.affiliatedCompanyId] : null;
+    if (!affiliatedCompany || (this.state !== GameState.PLAYING && this.state !== GameState.PAUSED)) {
+      this.affiliationStatusText.setVisible(false);
+      return;
+    }
+
+    this.affiliationStatusText.setText(`WORKING WITH // ${affiliatedCompany.leaderboardTag}`);
+    this.affiliationStatusText.setColor(`#${affiliatedCompany.color.toString(16).padStart(6, '0')}`);
+    this.affiliationStatusText.setVisible(true);
   }
 
   private spawnRareDebris(phase: number): void {
@@ -1024,6 +1056,7 @@ export class GameScene extends Phaser.Scene {
       target: m.def.target,
       completed: m.completed,
       reward: m.def.reward,
+      repGain: REP_PER_TIER[m.def.tier],
     }));
     this.missionSystem.save();
     let campaignLivesRemaining: number | undefined;
@@ -1108,8 +1141,12 @@ export class GameScene extends Phaser.Scene {
       target: m.def.target,
       completed: m.completed,
       reward: m.def.reward,
+      repGain: REP_PER_TIER[m.def.tier],
     }));
     const completedMissionCount = missionProgress.filter((m) => m.completed).length;
+    const missionRepEarned = missionProgress.reduce((total, mission) => (
+      mission.completed ? total + mission.repGain : total
+    ), 0);
     if (missionBonus > 0) {
       this.scoreSystem.addBanked(missionBonus);
     }
@@ -1136,6 +1173,7 @@ export class GameScene extends Phaser.Scene {
       mode: this.runMode,
       scoreRecorded,
       missionBonus: missionBonus > 0 ? missionBonus : undefined,
+      missionRepEarned: missionRepEarned > 0 ? missionRepEarned : undefined,
       walletPayout: walletDeposit.payout,
       slickCut: walletDeposit.slickCut,
       walletBalance: walletDeposit.walletBalance,
@@ -1313,6 +1351,7 @@ export class GameScene extends Phaser.Scene {
     this.clearResultUi();
     this.hud.destroy();
     this.bossStatusText.destroy();
+    this.affiliationStatusText.destroy();
     this.clearCommState();
     this.slickComm.destroy();
     this.regentComm.destroy();
@@ -1392,7 +1431,17 @@ export class GameScene extends Phaser.Scene {
 
   private redrawArenaBorder(): void {
     const layout = getLayout();
+    const affiliatedCompany = this.affiliatedCompanyId ? COMPANIES[this.affiliatedCompanyId] : null;
+    const outerBorderColor = affiliatedCompany?.color ?? COLORS.ARENA_BORDER;
+    const innerBorderColor = affiliatedCompany?.accent ?? COLORS.HUD;
     this.arenaBorder.clear();
+    if (affiliatedCompany) {
+      this.arenaBorder.fillStyle(outerBorderColor, 0.045);
+      this.arenaBorder.fillRect(0, 0, layout.gameWidth, layout.arenaTop);
+      this.arenaBorder.fillRect(0, layout.arenaBottom, layout.gameWidth, layout.gameHeight - layout.arenaBottom);
+      this.arenaBorder.fillRect(0, layout.arenaTop, layout.arenaLeft, layout.arenaHeight);
+      this.arenaBorder.fillRect(layout.arenaRight, layout.arenaTop, layout.gameWidth - layout.arenaRight, layout.arenaHeight);
+    }
     this.arenaBorder.lineStyle(1, COLORS.GRID, 0.06);
     for (let x = layout.arenaLeft + 40; x < layout.arenaRight; x += 40) {
       this.arenaBorder.lineBetween(x, layout.arenaTop, x, layout.arenaBottom);
@@ -1401,12 +1450,12 @@ export class GameScene extends Phaser.Scene {
       this.arenaBorder.lineBetween(layout.arenaLeft, y, layout.arenaRight, y);
     }
 
-    this.arenaBorder.lineStyle(1.25, COLORS.ARENA_BORDER, 0.32);
+    this.arenaBorder.lineStyle(1.25, outerBorderColor, affiliatedCompany ? 0.42 : 0.32);
     this.arenaBorder.strokeRect(layout.arenaLeft, layout.arenaTop, layout.arenaWidth, layout.arenaHeight);
-    this.arenaBorder.lineStyle(1, COLORS.HUD, 0.12);
+    this.arenaBorder.lineStyle(1, innerBorderColor, affiliatedCompany ? 0.18 : 0.12);
     this.arenaBorder.strokeRect(layout.arenaLeft + 3, layout.arenaTop + 3, layout.arenaWidth - 6, layout.arenaHeight - 6);
     const cornerMeasure = 12;
-    this.arenaBorder.lineStyle(2, COLORS.ARENA_BORDER, 0.72);
+    this.arenaBorder.lineStyle(2, outerBorderColor, affiliatedCompany ? 0.84 : 0.72);
     for (const [cx, cy] of [[layout.arenaLeft, layout.arenaTop], [layout.arenaRight, layout.arenaTop], [layout.arenaLeft, layout.arenaBottom], [layout.arenaRight, layout.arenaBottom]]) {
       const sx = cx === layout.arenaLeft ? 1 : -1;
       const sy = cy === layout.arenaTop ? 1 : -1;
@@ -1438,6 +1487,7 @@ export class GameScene extends Phaser.Scene {
     this.redrawArenaBorder();
     this.hud.refreshPalette();
     this.updateBossStatusUi();
+    this.updateAffiliationStatusUi();
     this.refreshCountdownPalette();
     this.refreshPauseUi();
 
@@ -1678,13 +1728,36 @@ export class GameScene extends Phaser.Scene {
       currentY += mHeader.height + lineGap;
       resultContentBottomY = currentY;
 
+      const missionRepTotal = Math.floor(data.missionRepEarned ?? 0);
+      const repSummary = isDeath
+        ? (ultraCompactResults ? 'NO REP // EXTRACT REQUIRED' : 'NO COMPANY REP CLAIMED // EXTRACTION REQUIRED')
+        : missionRepTotal > 0
+          ? `COMPANY REP GAINED: +${missionRepTotal}`
+          : 'NO COMPANY REP GAINED';
+      const repSummaryColor = isDeath
+        ? COLORS.HAZARD
+        : missionRepTotal > 0
+          ? COLORS.GATE
+          : COLORS.HUD;
+      const repSummaryText = this.add.text(centerX, currentY, repSummary, {
+        fontFamily: UI_FONT,
+        fontSize: compactResults ? detailSize : metaSize,
+        color: `#${repSummaryColor.toString(16).padStart(6, '0')}`,
+        align: 'center',
+        wordWrap: { width: textWidth },
+      }).setOrigin(0.5, 0).setDepth(210).setAlpha(isDeath ? 0.78 : 0.84);
+      this.fitTextToWidth(repSummaryText, textWidth, 10);
+      this.resultUi.push(repSummaryText);
+      currentY += repSummaryText.height + lineGap;
+      resultContentBottomY = currentY;
+
       for (let i = 0; i < missions.length; i++) {
         const m = missions[i];
         const prog = Math.min(m.progress, m.target);
         let line: string;
         let lineColor: number;
         if (!isDeath && m.completed) {
-          line = `\u2713 ${m.label}  +${m.reward}`;
+          line = `\u2713 ${m.label}  +${m.reward}c // +${m.repGain} REP`;
           lineColor = COLORS.GATE;
         } else {
           line = `  ${m.label}  ${prog}/${m.target}`;

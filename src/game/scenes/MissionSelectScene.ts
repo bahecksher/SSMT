@@ -20,7 +20,9 @@ import {
   COMPANY_IDS,
   computeRunBoostsFromFavors,
   getFavorOffer,
-  REP_THRESHOLDS,
+  getRepStanding,
+  loadCompanyRep,
+  REP_PER_TIER,
 } from '../data/companyData';
 import { CompanyId, RunMode } from '../types';
 import type { ActiveMission } from '../types';
@@ -55,6 +57,7 @@ interface BriefingLayoutConfig {
   veryCompact: boolean;
   titleY: number;
   subtitleY: number;
+  instructionY: number;
   cardMarginX: number;
   cardWidth: number;
   cardTop: number;
@@ -148,18 +151,11 @@ export class MissionSelectScene extends Phaser.Scene {
 
     this.saveSystem = new SaveSystem();
     this.handoff = data ?? {};
-    this.runMode = this.handoff.mode ?? this.saveSystem.getSelectedMode();
+    this.runMode = RunMode.ARCADE;
     this.saveSystem.setSelectedMode(this.runMode);
     this.missions = loadOrGenerateMissions();
     this.selectedFavorIds.clear();
     this.carriedFavorIds.clear();
-    if (this.runMode === RunMode.CAMPAIGN) {
-      const campaignSession = this.saveSystem.ensureCampaignSession();
-      for (const favorId of campaignSession.favorIds) {
-        this.carriedFavorIds.add(favorId);
-        this.selectedFavorIds.add(favorId);
-      }
-    }
     if (this.handoff.selectedFavorIds?.length) {
       this.selectedFavorIds = new Set(this.handoff.selectedFavorIds);
     }
@@ -208,9 +204,24 @@ export class MissionSelectScene extends Phaser.Scene {
     this.add.text(layout.centerX, briefing.subtitleY, this.getModeSubtitle(), {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(briefing.veryCompact ? 8 : briefing.compact ? 9 : 10),
-      color: colorStr(this.runMode === RunMode.CAMPAIGN ? COLORS.SALVAGE : COLORS.GATE),
+      color: colorStr(COLORS.GATE),
       align: 'center',
     }).setOrigin(0.5).setDepth(10).setAlpha(0.72);
+
+    this.add.text(
+      layout.centerX,
+      briefing.instructionY,
+      briefing.veryCompact
+        ? 'ACCEPTED CONTRACTS PAY REP ON EXTRACT'
+        : 'ACCEPTED CONTRACTS PAY BONUS CREDITS + COMPANY REP ON EXTRACTION',
+      {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(briefing.veryCompact ? 7 : briefing.compact ? 8 : 9),
+        color: colorStr(COLORS.HUD),
+        align: 'center',
+        wordWrap: { width: briefing.cardWidth, useAdvancedWrap: true },
+      },
+    ).setOrigin(0.5).setDepth(10).setAlpha(0.6);
 
     for (let i = 0; i < 3; i++) {
       this.drawCard(i);
@@ -237,9 +248,10 @@ export class MissionSelectScene extends Phaser.Scene {
     const cardWidth = layout.gameWidth - cardMarginX * 2;
     const titleY = Phaser.Math.Clamp(Math.round(layout.gameHeight * (veryCompact ? 0.062 : 0.075)), veryCompact ? 38 : compact ? 46 : 50, 72);
     const subtitleY = titleY + (veryCompact ? 16 : compact ? 18 : 22);
+    const instructionY = subtitleY + (veryCompact ? 12 : compact ? 14 : 16);
     const cardHeight = Phaser.Math.Clamp(Math.round(layout.gameHeight * (veryCompact ? 0.068 : 0.075)), veryCompact ? 54 : 58, CARD_HEIGHT);
     const cardGap = veryCompact ? 6 : compact ? 8 : CARD_GAP;
-    const cardTop = subtitleY + (veryCompact ? 12 : compact ? 14 : 18);
+    const cardTop = instructionY + (veryCompact ? 12 : compact ? 14 : 18);
     const missionToRerollGap = veryCompact ? 6 : tight ? 8 : compact ? 12 : 14;
     const rerollHeight = veryCompact ? 26 : compact ? 28 : 32;
     const rerollY = cardTop + cardHeight * 3 + cardGap * 2 + missionToRerollGap;
@@ -255,10 +267,10 @@ export class MissionSelectScene extends Phaser.Scene {
     const favorCardWidth = cardWidth;
     const favorToDeployGap = veryCompact ? 8 : tight ? 10 : compact ? 14 : 16;
     const favorCardsAvailableHeight = Math.floor((deployY - deployButtonHeight / 2) - favorToDeployGap - favorGridTop);
-    const stackedFavorCardHeight = Math.max(44, Math.floor(
+    const stackedFavorCardHeight = Math.max(56, Math.floor(
       (favorCardsAvailableHeight - favorCardGap * (COMPANY_IDS.length - 1)) / COMPANY_IDS.length,
     ));
-    const favorCardHeight = Math.max(44, Math.min(cardHeight, stackedFavorCardHeight));
+    const favorCardHeight = Math.max(56, Math.min(cardHeight, stackedFavorCardHeight));
 
     return {
       compact,
@@ -266,6 +278,7 @@ export class MissionSelectScene extends Phaser.Scene {
       veryCompact,
       titleY,
       subtitleY,
+      instructionY,
       cardMarginX,
       cardWidth,
       cardTop,
@@ -301,6 +314,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const companyDef = COMPANIES[mission.def.company];
     const companyColor = companyDef.color;
+    const missionRepGain = REP_PER_TIER[mission.def.tier];
 
     const bg = this.add.graphics().setDepth(depth);
     bg.fillStyle(COLORS.BG, 0.9);
@@ -351,23 +365,34 @@ export class MissionSelectScene extends Phaser.Scene {
     label.setLineSpacing(briefing.veryCompact ? -3 : briefing.compact ? -2 : -1);
     this.cardUi[index].push(label);
 
+    const rewardColumnWidth = briefing.veryCompact ? 78 : briefing.compact ? 118 : 132;
     const footerY = cardTop + briefing.cardHeight - (briefing.veryCompact ? 6 : briefing.compact ? 8 : 9);
     const missionBrief = this.add.text(cardLeft + 14, footerY, getMissionBrief(mission.def), {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(briefing.veryCompact ? 7 : briefing.compact ? 8 : 9),
       color: colorStr(companyColor),
-      wordWrap: { width: cardWidth - (briefing.veryCompact ? 96 : 110), useAdvancedWrap: true },
+      wordWrap: { width: cardWidth - rewardColumnWidth - 28, useAdvancedWrap: true },
     }).setOrigin(0, 1).setDepth(depth + 1).setAlpha(0.82);
     missionBrief.setLineSpacing(briefing.veryCompact ? -3 : -2);
     this.cardUi[index].push(missionBrief);
 
-    const rewardText = this.add.text(cardLeft + cardWidth - 14, footerY, `+${mission.def.reward}c`, {
+    const payoutFontSize = readableFontSize(briefing.veryCompact ? 9 : briefing.compact ? 10 : 11);
+    const creditRewardText = this.add.text(cardLeft + cardWidth - 14, footerY - (briefing.veryCompact ? 11 : 12), `+${mission.def.reward}c`, {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(briefing.veryCompact ? 10 : briefing.compact ? 11 : 12),
+      fontSize: payoutFontSize,
+      fontStyle: 'bold',
+      color: colorStr(companyColor),
+      align: 'right',
+    }).setOrigin(1, 1).setDepth(depth + 1).setAlpha(0.78);
+    this.cardUi[index].push(creditRewardText);
+
+    const repRewardText = this.add.text(cardLeft + cardWidth - 14, footerY, `+${missionRepGain} REP`, {
+      fontFamily: UI_FONT,
+      fontSize: payoutFontSize,
       fontStyle: 'bold',
       color: colorStr(companyColor),
     }).setOrigin(1, 1).setDepth(depth + 1);
-    this.cardUi[index].push(rewardText);
+    this.cardUi[index].push(repRewardText);
   }
 
   private drawRerollButton(): void {
@@ -822,6 +847,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
+    const repSave = loadCompanyRep();
     const walletCredits = this.saveSystem.getWalletCredits(this.runMode);
     const selectedCost = this.getSelectedFavorCost();
     const selectedCount = this.selectedFavorIds.size;
@@ -841,12 +867,13 @@ export class MissionSelectScene extends Phaser.Scene {
     const cardWidth = briefing.favorCardWidth;
     const denseFavorLayout = briefing.favorCardHeight <= 68 || briefing.narrow;
     const ultraDenseFavorLayout = denseFavorLayout && (briefing.veryCompact || briefing.favorCardHeight <= 60);
-    const favorUnlockRep = REP_THRESHOLDS[1]?.repRequired ?? 3;
 
     for (let i = 0; i < COMPANY_IDS.length; i++) {
       const companyId = COMPANY_IDS[i];
       const company = COMPANIES[companyId];
       const offer = getFavorOffer(companyId);
+      const rep = repSave.rep[companyId] ?? 0;
+      const standing = getRepStanding(rep);
       const selected = this.selectedFavorIds.has(companyId);
       const carried = this.carriedFavorIds.has(companyId);
       const locked = !offer;
@@ -890,8 +917,6 @@ export class MissionSelectScene extends Phaser.Scene {
       const textWidth = Math.max(132, textRight - textLeft);
       const contentTop = cardTop + (ultraDenseFavorLayout ? 4 : denseFavorLayout ? 5 : briefing.compact ? 7 : 9);
       const sectionGap = ultraDenseFavorLayout ? 1 : denseFavorLayout ? 2 : 4;
-      const offerAnchorY = cardTop + Math.round(briefing.favorCardHeight * (ultraDenseFavorLayout ? 0.44 : denseFavorLayout ? 0.48 : 0.54));
-
       const bg = this.add.graphics().setDepth(10);
       bg.fillStyle(COLORS.BG, locked ? 0.82 : 0.92);
       bg.fillRoundedRect(cardLeft, cardTop, cardWidth, briefing.favorCardHeight, 8);
@@ -941,22 +966,40 @@ export class MissionSelectScene extends Phaser.Scene {
       companyText.setLineSpacing(briefing.compact ? -2 : -1);
       this.favorUi.push(companyText);
 
-      const offerLine = carried && offer
-        ? `${offer.label} ${offer.boostValue} // ${ultraDenseFavorLayout ? 'ON' : 'ACTIVE'}`
-        : offer
-          ? `${offer.label} ${offer.boostValue} // ${offer.cost}c`
-          : `${company.boostLabel} // ${ultraDenseFavorLayout ? `${favorUnlockRep} REP` : `KNOWN AT ${favorUnlockRep} REP`}`;
-      const offerText = this.add.text(textLeft, Math.max(companyText.y + companyText.height + sectionGap, offerAnchorY), offerLine, {
+      const standingLine = ultraDenseFavorLayout
+        ? standing.nextRepRequired
+          ? `${rep} REP // NEXT ${standing.nextRepRequired}`
+          : `${rep} REP // MAX`
+        : standing.nextRepRequired
+          ? `${rep} REP // NEXT REP LEVEL: ${standing.nextRepRequired}`
+          : `${rep} REP // MAX`;
+      const standingText = this.add.text(textLeft, companyText.y + companyText.height + sectionGap, standingLine, {
         fontFamily: UI_FONT,
-        fontSize: readableFontSize(ultraDenseFavorLayout ? 7 : denseFavorLayout ? 8 : briefing.compact ? 10 : 11),
-        fontStyle: 'bold',
+        fontSize: readableFontSize(ultraDenseFavorLayout ? 9 : denseFavorLayout ? 10 : briefing.compact ? 12 : 13),
         color: colorStr(locked ? COLORS.HUD : company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
-        wordWrap: { width: textWidth },
-      }).setDepth(11).setAlpha(locked ? 0.76 : 0.94);
-      offerText.setLineSpacing(-1);
-      this.favorUi.push(offerText);
+        wordWrap: { width: textWidth, useAdvancedWrap: true },
+      }).setDepth(11).setAlpha(locked ? 0.66 : 0.82);
+      standingText.setLineSpacing(-1);
+      this.favorUi.push(standingText);
+
+      if (offer) {
+        const offerLine = carried
+          ? `${offer.label} ${offer.boostValue} // ${ultraDenseFavorLayout ? 'ON' : 'ACTIVE'}`
+          : `${offer.label} ${offer.boostValue} // ${offer.cost}c`;
+        const offerText = this.add.text(textLeft, standingText.y + standingText.height + sectionGap, offerLine, {
+          fontFamily: UI_FONT,
+          fontSize: readableFontSize(ultraDenseFavorLayout ? 6 : denseFavorLayout ? 7 : briefing.compact ? 10 : 11),
+          fontStyle: 'bold',
+          color: colorStr(company.color),
+          stroke: colorStr(COLORS.BG),
+          strokeThickness: 2,
+          wordWrap: { width: textWidth },
+        }).setDepth(11).setAlpha(0.94);
+        offerText.setLineSpacing(-1);
+        this.favorUi.push(offerText);
+      }
 
       const hit = this.add.zone(cardLeft, cardTop, cardWidth, briefing.favorCardHeight)
         .setData('cornerRadius', 8)

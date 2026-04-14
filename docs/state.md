@@ -1,50 +1,55 @@
 # State
-_Last updated: 2026-04-13 2352_
+_Last updated: 2026-04-14 0107_
 
 ## Current focus
-Startup load performance and shipped audio footprint, with the current emphasis on validating that compressed browser-ready music assets preserve clean looping and smooth late-phase handoffs.
+Arcade-only polish and clearer corporation progression UI: menu affiliation remains rep-gated, MissionSelect shows rep/standing, and the rep earn rule is now stated before and after runs.
 
 ## What's working
-- Boot still keeps the starfield loader, font-gated title treatment, and softer CRT menu handoff
-- Boot still avoids front-loading the full soundtrack and now also serves the music tracks as compressed `ogg` plus `mp3` fallback assets instead of large WAVs
-- The active music asset set used by the game dropped from about `175.42 MB` of WAVs to about `31.35 MB` of compressed assets
-- Menu, Mission Select, and Game still warm later music in the background, and the late full-phase tracks remain deferred until the run is close to needing them
-- Countdown text, campaign/arcade split, recent compact-phone spacing work, and the Deepcore `BREAK ASTEROIDS` mission change remain intact
+- The main menu remains arcade-only with no accessible campaign entry point
+- The `WORKING WITH` slot in the menu is a corporation selector button instead of read-only text
+- Players can always remain `FREE AGENT`, and the selector only offers corporations where they currently have positive saved rep
+- The chosen affiliation persists locally and drives leaderboard tagging, corporation leaderboard footer copy, and corporation-colored arena/UI presentation
+- MissionSelect contract cards show both credit reward and rep payout
+- MissionSelect now explicitly says accepted contracts pay bonus credits and company rep on extraction
+- Locked favor cards now point players toward completing contracts to unlock company standing
+- Extraction results now show the company rep earned from completed contracts, and death results state that extraction is required to claim rep
 - `npm.cmd run build` passes
 
 ## In progress
-- Cold-refresh validation in a real browser to confirm startup feels faster with the compressed music set in place
-- Long-run validation to confirm compressed loops stay clean through phase 3+ layering and phase 5+ full-track handoffs
-- On-device validation of Menu, Mission Select, HUD, pause, and results around the iPhone 13 mini `375x635` class viewport
+- Browser playtesting to confirm the denser MissionSelect and results copy stays comfortable on narrow mobile screens
+- Browser playtesting to confirm live leaderboard submissions land under the manually selected unlocked corporation
+- Product decision on whether the cycling selector is enough long-term or should later become a richer corporation picker
 
 ## Known issues
-- Local `BEST` score is still shared across campaign and arcade even though leaderboard submission is arcade-only
+- Dormant campaign-specific code and save fields still exist in the codebase even though campaign is no longer player-accessible
+- Supabase `scores` and `losses` still need nullable `company_id` columns server-side for corporation-tagged boards and loss rows to populate fully
+- Local `BEST` score is still shared across the historical campaign/arcade save model even though only arcade is now accessible
 - Background simulation remains duplicated between MenuScene and MissionSelectScene
 - Settings UI remains duplicated across MenuScene, MissionSelectScene, and GameScene pause menu
 - Browser autoplay restrictions still require initial player interaction before audio can become audible
-- Compressed music quality and loop seams still need subjective browser/device verification after the transcode
 - Retry/continue after extraction still bypasses MissionSelect for a direct next run
 - Beam hazards still span full screen width/height, not clipped to arena
 - Boss encounter balance is not tuned yet for all screen sizes or for long post-kill survival windows
 - `node`/`npm` not on PowerShell PATH; use `npm.cmd` or set PATH explicitly
-- Supabase `scores` still needs a nullable `company_id` column added server-side
 
 ## Next actions
-1. Cold-refresh the game and confirm the boot reaches the menu quickly with no loader or audio regressions
-2. Play into phase 3+ and phase 5+ to verify the compressed music still layers and loops cleanly
-3. Tune compression settings further only if audible artifacts or loop seams show up in browser testing
+1. Playtest MissionSelect on a phone-sized viewport and confirm the rep rule text does not crowd the contract stack
+2. Complete and fail a few contracts and confirm the extraction/death results explain the rep outcome clearly
+3. Submit arcade scores under different unlocked corporations and confirm the `CORPS` board groups them as expected
 
 ## Active plan
-docs/plans/2026-04-13 2352 Plan revision - Startup Loading Performance.md
+docs/plans/2026-04-14 0107 Plan - Company Rep Clarity.md
 
 ## How to verify
 1. Run `npm.cmd run build`
-2. Open the game from a cold browser load or hard refresh
-3. Confirm the boot still shows the current starfield, globe/ring, `Securing Connection`, and CRT handoff styling
-4. Confirm the menu appears after the shorter boot delay and no longer depends on shipping large WAV files
-5. Start a run and confirm music plays with the new compressed assets in Menu, Mission Select, and early gameplay
-6. Play into later phases and confirm the phase 3+ layers and phase 5+ full-track loops still transition cleanly
+2. Open MissionSelect and confirm the header says accepted contracts pay bonus credits and rep on extraction
+3. Confirm mission cards show `+REP` and locked favor cards point to completing contracts
+4. Complete accepted contracts, extract, and confirm the results screen shows total company rep gained plus per-mission rep payout
+5. Die after completing progress and confirm the results screen says extraction was required to claim company rep
 
 ## Recent logs
-- docs/log/2026-04-13 2352 Audio Compression.md — replaced the shipped WAV music with compressed ogg/mp3 variants and cut the active music payload by about 144 MB
-- docs/log/2026-04-13 2341 Startup Load Optimization.md — cut boot-time music preload, shortened the boot hold, and deferred later soundtrack loading
+- docs/log/2026-04-14 0107 Company Rep Clarity.md — clarified how company rep is earned and when it is claimed
+- docs/log/2026-04-14 0101 MissionSelect Reputation Visibility.md — restored mission rep payout display and company standing visibility on MissionSelect
+- docs/log/2026-04-14 0056 Rep-Gated Corporation Selector.md — restricted the corporation selector to rep-unlocked corporations while keeping `FREE AGENT`
+- docs/log/2026-04-14 0054 Manual Corporation Selector.md — replaced the read-only affiliation text with a persisted corporation selector button
+- docs/log/2026-04-14 0045 Campaign Access Removal.md — removed campaign from the accessible flow and normalized stale selected mode back to arcade

@@ -4,7 +4,6 @@ import {
   CompanyId,
   RunMode,
   isCompanyId,
-  isRunMode,
   type CampaignSessionSave,
   type SaveData,
 } from '../types';
@@ -117,7 +116,7 @@ export class SaveSystem {
           : 0;
         return {
           bestScore: typeof parsed.bestScore === 'number' ? parsed.bestScore : DEFAULT_SAVE.bestScore,
-          selectedMode: isRunMode(parsed.selectedMode) ? parsed.selectedMode : DEFAULT_SAVE.selectedMode,
+          selectedMode: parsed.selectedMode === RunMode.ARCADE ? parsed.selectedMode : DEFAULT_SAVE.selectedMode,
           arcadeWalletCredits: typeof parsed.arcadeWalletCredits === 'number'
             ? Math.max(0, Math.floor(parsed.arcadeWalletCredits))
             : legacyWalletCredits,
@@ -150,10 +149,11 @@ export class SaveSystem {
   }
 
   setSelectedMode(mode: RunMode): void {
-    if (this.data.selectedMode === mode) {
+    const normalizedMode = mode === RunMode.CAMPAIGN ? RunMode.ARCADE : mode;
+    if (this.data.selectedMode === normalizedMode) {
       return;
     }
-    this.data.selectedMode = mode;
+    this.data.selectedMode = normalizedMode;
     this.save();
   }
 
