@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { getSettings } from './SettingsSystem';
 
-const SFX_NAMES = ['playerDeath', 'asteroidCollision', 'shieldLoss', 'pickup', 'bomb', 'enemyEntrance'] as const;
+const SFX_NAMES = ['playerDeath', 'asteroidCollision', 'shieldLoss', 'pickup', 'bomb', 'enemyEntrance', 'beamFire'] as const;
 
 export type SfxName = typeof SFX_NAMES[number];
 
@@ -12,6 +12,7 @@ const SFX_KEYS: Record<SfxName, string> = {
   pickup: 'sfx-pickup',
   bomb: 'sfx-bomb',
   enemyEntrance: 'sfx-enemy-entrance',
+  beamFire: 'sfx-beam-fire',
 };
 
 const BASE_URL = import.meta.env.BASE_URL;
@@ -23,6 +24,9 @@ const SFX_PATHS: Record<SfxName, string> = {
   pickup: `${BASE_URL}audio/pickup.mp3`,
   bomb: `${BASE_URL}audio/bomb.mp3`,
   enemyEntrance: `${BASE_URL}audio/enemy-first-appearance.mp3`,
+  // Placeholder: bomb pitched up gives a passable laser-zap; swap to a dedicated
+  // beam asset (e.g. audio/beam-fire.mp3) once one is sourced.
+  beamFire: `${BASE_URL}audio/bomb.mp3`,
 };
 
 const SFX_BASE_VOLUME: Record<SfxName, number> = {
@@ -32,6 +36,7 @@ const SFX_BASE_VOLUME: Record<SfxName, number> = {
   pickup: 0.92,
   bomb: 0.92,
   enemyEntrance: 0.88,
+  beamFire: 0.6,
 };
 
 interface PlaySfxOptions {

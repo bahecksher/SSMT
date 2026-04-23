@@ -317,6 +317,8 @@ export class GameScene extends Phaser.Scene {
 
     setGameplayMusicForPhase(this, 1);
 
+    this.installDebugPhaseShortcuts();
+
     this.hud = new Hud(this);
     this.bossStatusText = this.add.text(
       layout.centerX,
@@ -1942,59 +1944,6 @@ export class GameScene extends Phaser.Scene {
     this.resultUi.push(bg, labelText, hit);
   }
 
-  private createPauseChipButton(
-    label: string,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    accentColor: number,
-    onClick: () => void,
-  ): void {
-    const bg = this.add.graphics().setDepth(221);
-    const labelText = this.add.text(x, y, label, {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(Phaser.Math.Clamp(Math.round(height * 0.44), 10, 14)),
-      color: `#${accentColor.toString(16).padStart(6, '0')}`,
-      align: 'center',
-      fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(222).setAlpha(0.9);
-    const hit = this.add.zone(x, y, width, height)
-      .setData('cornerRadius', 8)
-      .setOrigin(0.5)
-      .setDepth(223)
-      .setInteractive({ useHandCursor: true });
-
-    const draw = (hovered: boolean, pressed: boolean): void => {
-      const left = x - width / 2;
-      const top = y - height / 2;
-      bg.clear();
-      bg.fillStyle(COLORS.BG, hovered ? 0.94 : 0.84);
-      bg.lineStyle(1.1, accentColor, pressed ? 0.95 : hovered ? 0.72 : 0.45);
-      bg.fillRoundedRect(left, top, width, height, 8);
-      bg.strokeRoundedRect(left, top, width, height, 8);
-      bg.fillStyle(accentColor, pressed ? 0.16 : hovered ? 0.1 : 0.05);
-      bg.fillRoundedRect(left + 3, top + 3, width - 6, height - 6, 6);
-      labelText.setAlpha(pressed ? 1 : hovered ? 0.98 : 0.88);
-    };
-
-    draw(false, false);
-
-    hit.on('pointerover', () => draw(true, false));
-    hit.on('pointerout', () => draw(false, false));
-    hit.on(
-      'pointerdown',
-      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-        event.stopPropagation();
-        playUiSelectSfx(this);
-        draw(true, true);
-        onClick();
-      },
-    );
-
-    this.pauseUi.push(bg, labelText, hit);
-  }
-
   private createPauseButton(): void {
     const layout = getLayout();
     const compactHud = layout.gameWidth <= 430;
@@ -2108,7 +2057,43 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  // Wires Shift+1..9 / Shift+0 → debugJumpToPhase and exposes the same hook on
+  // window so devtools can trigger it. No visible UI; safe to ship.
+  private installDebugPhaseShortcuts(): void {
+    const keyboard = this.input.keyboard;
+    if (keyboard) {
+      keyboard.on('keydown', (event: KeyboardEvent) => {
+        if (!event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+        const code = event.code;
+        let phase = 0;
+        if (code.startsWith('Digit')) phase = Number(code.slice(5));
+        else if (code.startsWith('Numpad')) phase = Number(code.slice(6));
+        else return;
+        if (!Number.isFinite(phase)) return;
+        const target = phase === 0 ? 10 : phase;
+        if (target < 1 || target > 10) return;
+        event.preventDefault();
+        this.debugJumpToPhase(target);
+      });
+    }
+    if (typeof window !== 'undefined') {
+      (window as unknown as { bitpJumpToPhase?: (n: number) => void }).bitpJumpToPhase = (n: number) => this.debugJumpToPhase(n);
+    }
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (typeof window !== 'undefined') {
+        delete (window as unknown as { bitpJumpToPhase?: (n: number) => void }).bitpJumpToPhase;
+      }
+    });
+  }
+
+  /**
+   * Hidden dev shortcut: jump the live run to a specific phase. No UI surface —
+   * triggered via Shift+1..9 / Shift+0 (phase 10) and `window.bitpJumpToPhase(n)`
+   * in the devtools console. Sets `scoreRecordingBlocked` so jumped runs do not
+   * pollute the leaderboard.
+   */
   private debugJumpToPhase(phase: number): void {
+    if (this.state !== GameState.PLAYING && this.state !== GameState.PAUSED && this.state !== GameState.COUNTDOWN) return;
     const targetPhase = Phaser.Math.Clamp(Math.floor(phase), 1, 10);
 
     this.time.timeScale = 1;
@@ -2444,58 +2429,9 @@ export class GameScene extends Phaser.Scene {
     });
     this.pauseUi.push(...fxVolumeSlider.getObjects());
 
-    const debugDividerY = fxVolumeY + (densePause ? 16 : 22);
-    const debugDivider = this.add.graphics().setDepth(221);
-    debugDivider.lineStyle(1, COLORS.HUD, 0.2);
-    debugDivider.lineBetween(centerX - (densePause ? 88 : 100), debugDividerY, centerX + (densePause ? 88 : 100), debugDividerY);
-    this.pauseUi.push(debugDivider);
-
-    const debugTitle = this.add.text(centerX, debugDividerY + 16, 'DEBUG PHASE', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(densePause ? 14 : 16),
-      color: hudColor,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(221).setAlpha(0.7);
-    this.pauseUi.push(debugTitle);
-
-    const phaseButtonWidth = densePause ? 30 : compactHud ? 34 : 38;
-    const phaseButtonHeight = densePause ? 22 : compactHud ? 24 : 28;
-    const phaseButtonGap = densePause ? 4 : compactHud ? 6 : 8;
-    const phaseRowGap = densePause ? 6 : compactHud ? 8 : 10;
-    const buttonsPerRow = 5;
-    const totalButtonWidth = buttonsPerRow * phaseButtonWidth + (buttonsPerRow - 1) * phaseButtonGap;
-    const buttonStartX = centerX - totalButtonWidth / 2 + phaseButtonWidth / 2;
-    const phaseRowOneY = debugDividerY + (densePause ? 34 : 44);
-    const phaseRowTwoY = phaseRowOneY + phaseButtonHeight + phaseRowGap;
-    const currentPhase = this.extractionSystem.getPhaseCount();
-
-    for (let phase = 1; phase <= 10; phase++) {
-      const column = (phase - 1) % buttonsPerRow;
-      const rowY = phase <= buttonsPerRow ? phaseRowOneY : phaseRowTwoY;
-      this.createPauseChipButton(
-        `${phase}`,
-        buttonStartX + column * (phaseButtonWidth + phaseButtonGap),
-        rowY,
-        phaseButtonWidth,
-        phaseButtonHeight,
-        phase === currentPhase ? COLORS.GATE : COLORS.HUD,
-        () => this.debugJumpToPhase(phase),
-      );
-    }
-
-    const debugStatusText = this.add.text(centerX, phaseRowTwoY + phaseButtonHeight / 2 + 10, this.scoreRecordingBlocked ? 'SCORES BLOCKED' : (densePause ? 'DEBUG JUMPS BLOCK SCORES' : 'USING DEBUG PHASE JUMP BLOCKS SCORE RECORDING'), {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(compactHud ? 9 : 10),
-      color: `#${(this.scoreRecordingBlocked ? COLORS.HAZARD : COLORS.HUD).toString(16).padStart(6, '0')}`,
-      align: 'center',
-      wordWrap: { width: panelWidth - 24 },
-    }).setOrigin(0.5, 0).setDepth(221).setAlpha(this.scoreRecordingBlocked ? 0.9 : 0.66);
-    this.pauseUi.push(debugStatusText);
-
-    // Active missions section
     const activeMissions = this.missionSystem.getActiveMissions();
     if (activeMissions.length > 0) {
-      const missionDividerY = phaseRowTwoY + phaseButtonHeight / 2 + (densePause ? 24 : compactHud ? 34 : 38);
+      const missionDividerY = fxVolumeY + (densePause ? 16 : 22);
       const mDivider = this.add.graphics().setDepth(221);
       mDivider.lineStyle(1, COLORS.HUD, 0.2);
       mDivider.lineBetween(centerX - (densePause ? 88 : 100), missionDividerY, centerX + (densePause ? 88 : 100), missionDividerY);

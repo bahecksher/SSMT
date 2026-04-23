@@ -374,6 +374,21 @@ export class MissionSelectScene extends Phaser.Scene {
       wordWrap: { width: cardWidth - rewardColumnWidth - 28, useAdvancedWrap: true },
     }).setOrigin(0, 1).setDepth(depth + 1).setAlpha(0.82);
     missionBrief.setLineSpacing(briefing.veryCompact ? -3 : -2);
+    // Clamp brief to whatever vertical space is left below the (possibly multi-line)
+    // label so the bottom-anchored brief never overruns into the title area.
+    const labelBottom = label.y + label.displayHeight;
+    const briefAvailableHeight = footerY - labelBottom - 2;
+    if (missionBrief.height > briefAvailableHeight && briefAvailableHeight > 0) {
+      const wrapped = missionBrief.getWrappedText(missionBrief.text);
+      const lineHeight = missionBrief.height / Math.max(1, wrapped.length);
+      const maxLines = Math.max(1, Math.floor(briefAvailableHeight / lineHeight));
+      if (wrapped.length > maxLines) {
+        const kept = wrapped.slice(0, maxLines);
+        const last = kept[maxLines - 1].replace(/\s+$/, '');
+        kept[maxLines - 1] = last.length > 1 ? `${last.slice(0, -1)}\u2026` : '\u2026';
+        missionBrief.setText(kept.join('\n'));
+      }
+    }
     this.cardUi[index].push(missionBrief);
 
     const payoutFontSize = readableFontSize(briefing.veryCompact ? 9 : briefing.compact ? 10 : 11);

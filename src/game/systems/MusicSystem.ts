@@ -10,8 +10,12 @@ const LAYERED_TRACKS = [
   'gameSynth',
 ] as const;
 const FULL_TRACKS = ['fullPhase1', 'fullPhase2'] as const;
-const BOOT_TRACKS = ['menuSynth', 'bassOne', 'drumsTwo'] as const;
-const MID_GAME_TRACKS = ['drumsThree', 'bassThree', 'gameSynth'] as const;
+// All layered tracks load at boot so they all start in the same startMusic
+// for-loop iteration with the same delay — required for beat alignment across
+// the phase 3→4 swap, which crossfades from bass-1/drums-2/gameSynth to
+// drums-3/bass-3. Adds ~1-2MB to boot in exchange for guaranteed sync.
+const BOOT_TRACKS = ['menuSynth', 'bassOne', 'drumsTwo', 'drumsThree', 'bassThree', 'gameSynth'] as const;
+const MID_GAME_TRACKS = [] as const;
 const LATE_GAME_TRACKS = [...FULL_TRACKS] as const;
 
 type LayeredTrack = typeof LAYERED_TRACKS[number];
@@ -214,10 +218,25 @@ function ensureLayeredSounds(scene: Phaser.Scene): void {
   for (const track of LAYERED_TRACKS) {
     if (!layeredSounds[track] && isTrackLoaded(scene, track)) {
       const existingSound = scene.sound.get(MUSIC_KEYS[track]);
-      layeredSounds[track] = (existingSound ?? scene.sound.add(MUSIC_KEYS[track], {
+      const sound = (existingSound ?? scene.sound.add(MUSIC_KEYS[track], {
         loop: true,
         volume: 0,
       })) as ManagedSound;
+      layeredSounds[track] = sound;
+      // Late-loaded tracks (drums-3 / bass-3 / gameSynth come in after boot via
+      // warmMusicCache) miss the one-shot startMusic kickoff. Play them at vol
+      // 0 here so phase-4 mix transitions have something to fade in. Note: this
+      // means they are NOT beat-aligned with bass-1 / drums-2, since they start
+      // at whatever absolute time their decode finishes. The 3→4 swap will
+      // sound off-beat until those tracks are moved into BOOT_TRACKS or seeked
+      // into bass-1's current loop position.
+      if (layeredStarted && !scene.sound.locked && !sound.isPlaying) {
+        sound.play({
+          delay: MUSIC_START_DELAY_S,
+          loop: true,
+          volume: 0,
+        });
+      }
     }
   }
 }
@@ -467,7 +486,7 @@ export function setGameplayMusicForPhase(scene: Phaser.Scene, phase: number): vo
 
   if (phase >= FULL_TRACK_START_PHASE) {
     if (!selectedLateGameTrack) {
-      selectedLateGameTrack = Phaser.Utils.Array.GetRandom([...FULL_TRACKS]);
+      selectedLateGameTrack = 'fullPhase2';
     }
 
     setMusicState(scene, {

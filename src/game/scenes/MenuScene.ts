@@ -22,6 +22,7 @@ import {
   fetchCorporationLeaderboard,
   fetchLeaderboard,
   fetchBiggestLoss,
+  isOnline,
   type CorporationLeaderboardEntry,
   type LeaderboardEntry,
 } from '../services/LeaderboardService';
@@ -1245,6 +1246,13 @@ export class MenuScene extends Phaser.Scene {
     for (const t of this.leaderboardTexts) t.destroy();
     this.leaderboardTexts = [];
     if (this.biggestLossText) { this.biggestLossText.destroy(); this.biggestLossText = null; }
+
+    if (!isOnline()) {
+      this.statusText.setText('OFFLINE — GLOBAL BOARDS UNAVAILABLE').setVisible(true);
+      this.positionMenuComm();
+      return;
+    }
+
     this.statusText.setText('LOADING...').setVisible(true);
     this.positionMenuComm();
 

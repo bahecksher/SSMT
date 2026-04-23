@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { COLORS } from '../constants';
 import { BEAM_WARNING_DURATION, BEAM_ACTIVE_DURATION } from '../data/tuning';
 import { getLayout } from '../layout';
+import { playSfx } from '../systems/SfxSystem';
 
 export class BeamHazard {
   graphic: Phaser.GameObjects.Graphics;
@@ -9,6 +10,7 @@ export class BeamHazard {
   private lethal = false;
   private elapsed = 0;
   private totalDuration: number;
+  private scene: Phaser.Scene;
   readonly width: number;
 
   // Line segment endpoints
@@ -19,6 +21,7 @@ export class BeamHazard {
   readonly isHorizontal: boolean;
 
   constructor(scene: Phaser.Scene, width = 20) {
+    this.scene = scene;
     this.width = width;
     const layout = getLayout();
     // Randomly choose horizontal or vertical
@@ -52,7 +55,13 @@ export class BeamHazard {
       return;
     }
 
+    const wasLethal = this.lethal;
     this.lethal = this.elapsed >= BEAM_WARNING_DURATION;
+    if (this.lethal && !wasLethal) {
+      // Pitched up + slight rate bump turns the bomb sample into a passable
+      // laser-zap until a dedicated beam asset replaces it.
+      playSfx(this.scene, 'beamFire', { volumeScale: 0.85, rate: 1.6, detune: 600 });
+    }
     this.draw();
   }
 

@@ -18,6 +18,10 @@ export interface CorporationLeaderboardEntry {
 
 type Period = 'daily' | 'weekly';
 
+export function isOnline(): boolean {
+  return typeof navigator === 'undefined' || navigator.onLine !== false;
+}
+
 function getCutoffDate(period: Period): string {
   const now = new Date();
   if (period === 'daily') {
@@ -29,6 +33,7 @@ function getCutoffDate(period: Period): string {
 }
 
 export async function fetchLeaderboard(period: Period, limit = 10): Promise<LeaderboardEntry[]> {
+  if (!isOnline()) return [];
   const cutoff = getCutoffDate(period);
   const initialResult = await supabase
     .from('scores')
@@ -58,6 +63,7 @@ export async function fetchLeaderboard(period: Period, limit = 10): Promise<Lead
 }
 
 export async function fetchCorporationLeaderboard(period: Period): Promise<CorporationLeaderboardEntry[]> {
+  if (!isOnline()) return [];
   const cutoff = getCutoffDate(period);
   const rows: LeaderboardEntry[] = [];
   const pageSize = 1000;
@@ -120,6 +126,7 @@ export async function fetchCorporationLeaderboard(period: Period): Promise<Corpo
 }
 
 export async function submitScore(playerName: string, score: number, companyId: CompanyId | null): Promise<void> {
+  if (!isOnline()) return;
   let { error } = await supabase
     .from('scores')
     .insert({ player_name: playerName, score: Math.floor(score), company_id: companyId });
@@ -137,6 +144,7 @@ export async function submitScore(playerName: string, score: number, companyId: 
 
 export async function submitLoss(playerName: string, lostScore: number, companyId: CompanyId | null): Promise<void> {
   if (lostScore <= 0) return;
+  if (!isOnline()) return;
   let { error } = await supabase
     .from('losses')
     .insert({ player_name: playerName, score: Math.floor(lostScore), company_id: companyId });
@@ -153,6 +161,7 @@ export async function submitLoss(playerName: string, lostScore: number, companyI
 }
 
 export async function fetchBiggestLoss(period: Period): Promise<LeaderboardEntry | null> {
+  if (!isOnline()) return null;
   const cutoff = getCutoffDate(period);
   const initialResult = await supabase
     .from('losses')
