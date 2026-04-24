@@ -65,21 +65,22 @@ export class BombPickup {
 
     const glow = 0.25 + Math.sin(this.pulse) * 0.12;
     const ringRadius = this.radius + 5 + Math.sin(this.pulse * 1.3) * 3;
+    const powerupColor = COLORS.SALVAGE;
 
     // Outer glow ring
-    g.lineStyle(1, COLORS.BOMB, glow * 0.6);
+    g.lineStyle(1, powerupColor, glow * 0.6);
     g.strokeCircle(0, 0, this.radius * 2.5);
 
     // Filled circle body
-    g.fillStyle(COLORS.BOMB, 0.15);
+    g.fillStyle(powerupColor, 0.15);
     g.fillCircle(0, 0, this.radius);
 
     // Bomb outline — circle with a fuse nub
-    g.lineStyle(1.5, COLORS.BOMB, 0.9);
+    g.lineStyle(1.5, powerupColor, 0.9);
     g.strokeCircle(0, 0, this.radius * 0.8);
 
     // Fuse line on top
-    g.lineStyle(1.5, COLORS.GATE, 0.9);
+    g.lineStyle(1.5, powerupColor, 0.9);
     g.lineBetween(0, -this.radius * 0.8, 2, -this.radius * 1.3);
 
     // Spark at fuse tip (pulsing)
@@ -93,7 +94,7 @@ export class BombPickup {
     g.lineBetween(0, -4, 0, 4);
 
     // Pulsing ring
-    g.lineStyle(1, COLORS.BOMB, glow + 0.2);
+    g.lineStyle(1, powerupColor, glow + 0.2);
     g.strokeCircle(0, 0, ringRadius);
   }
 

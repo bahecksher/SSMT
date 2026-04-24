@@ -55,7 +55,7 @@ const MUSIC_START_DELAY_S = 0.05;
 const MUSIC_FADE_MS = 700;
 const GAMEPLAY_FADE_MS = 900;
 const FULL_TRACK_FADE_MS = 1000;
-const FULL_TRACK_START_PHASE = 5;
+const FULL_TRACK_START_PHASE = 7;
 
 const SILENT_LAYERED_MIX: LayeredMix = {
   menuSynth: 0,
@@ -289,6 +289,46 @@ function tweenSoundVolume(
   });
 }
 
+function stopManagedSound(scene: Phaser.Scene, sound: ManagedSound | null | undefined): void {
+  if (!sound) {
+    return;
+  }
+
+  scene.tweens.killTweensOf(sound);
+  if (sound.isPlaying) {
+    sound.stop();
+  }
+  sound.volume = 0;
+}
+
+function resetMusicTiming(scene: Phaser.Scene): void {
+  ensureSession(scene);
+  ensureLayeredSounds(scene);
+
+  for (const track of LAYERED_TRACKS) {
+    const sound = (layeredSounds[track] ?? scene.sound.get(MUSIC_KEYS[track])) as ManagedSound | null;
+    stopManagedSound(scene, sound);
+    if (sound) {
+      layeredSounds[track] = sound;
+    }
+  }
+
+  for (const track of FULL_TRACKS) {
+    const sound = (fullTrackSounds[track] ?? scene.sound.get(MUSIC_KEYS[track])) as ManagedSound | null;
+    stopManagedSound(scene, sound);
+    if (sound) {
+      fullTrackSounds[track] = sound;
+    }
+  }
+
+  layeredStarted = false;
+  pendingUnlockScene = null;
+  unlockListenerGame = null;
+  activeFullTrack = null;
+  selectedLateGameTrack = null;
+  preserveMutedFullTrack = false;
+}
+
 function applyLayeredMix(scene: Phaser.Scene, fadeMs = MUSIC_FADE_MS): void {
   if (!layeredStarted) {
     return;
@@ -464,6 +504,9 @@ export function setPauseMusic(scene: Phaser.Scene): void {
 }
 
 export function setResultMusic(scene: Phaser.Scene): void {
+  // Results screens intentionally restart the layered clock so the next run does
+  // not inherit a drifted loop position after back-to-back games.
+  resetMusicTiming(scene);
   setMusicState(scene, {
     layeredMix: MENU_LAYERED_MIX,
     clearLateGameTrack: true,

@@ -43,6 +43,7 @@ export class BeamHazard {
 
     this.totalDuration = BEAM_WARNING_DURATION + BEAM_ACTIVE_DURATION;
     this.graphic = scene.add.graphics().setDepth(6);
+    playSfx(this.scene, 'beamCharge', { volumeScale: 0.6, rate: 1.28, detune: 1050 });
   }
 
   update(delta: number): void {
@@ -58,9 +59,9 @@ export class BeamHazard {
     const wasLethal = this.lethal;
     this.lethal = this.elapsed >= BEAM_WARNING_DURATION;
     if (this.lethal && !wasLethal) {
-      // Pitched up + slight rate bump turns the bomb sample into a passable
-      // laser-zap until a dedicated beam asset replaces it.
-      playSfx(this.scene, 'beamFire', { volumeScale: 0.85, rate: 1.6, detune: 600 });
+      // Slowing + pitching down the placeholder gives the beam hit a heavier,
+      // longer bassy thunk until a dedicated beam asset replaces it.
+      playSfx(this.scene, 'beamFire', { volumeScale: 1.05, rate: 0.84, detune: -450 });
     }
     this.draw();
   }

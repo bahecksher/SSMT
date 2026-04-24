@@ -2017,7 +2017,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const s of this.shields) {
-      this.playerDebris.push(new ShipDebris(this, s.x, s.y, s.vx, s.vy, COLORS.SHIELD, s.radius));
+      this.playerDebris.push(new ShipDebris(this, s.x, s.y, s.vx, s.vy, COLORS.SALVAGE, s.radius));
       s.destroy();
     }
     this.shields = [];
@@ -2029,7 +2029,7 @@ export class GameScene extends Phaser.Scene {
     this.bonusPickups = [];
 
     for (const b of this.bombPickups) {
-      this.playerDebris.push(new ShipDebris(this, b.x, b.y, b.vx, b.vy, COLORS.BOMB, b.radius));
+      this.playerDebris.push(new ShipDebris(this, b.x, b.y, b.vx, b.vy, COLORS.SALVAGE, b.radius));
       b.destroy();
     }
     this.bombPickups = [];

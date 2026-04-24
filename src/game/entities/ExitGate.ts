@@ -127,25 +127,40 @@ export class ExitGate {
         g.fillCircle(0, 0, EXIT_GATE_RADIUS * 0.12);
       }
     } else {
-      // Preview phase — large circle closing in toward gate center
-      const previewProgress = this.elapsed / this.previewTime;
+      // Preview phase — establish the exact spawn point early, then collapse the
+      // forecast ring toward it as the gate comes online.
+      const previewProgress = Phaser.Math.Clamp(this.elapsed / this.previewTime, 0, 1);
+      const pulse = 0.22 + (Math.sin(this.elapsed * 0.008) * 0.5 + 0.5) * 0.18;
+      const coreRadius = EXIT_GATE_RADIUS * 0.55;
+      const bracketRadius = EXIT_GATE_RADIUS + 10;
+      const bracketLength = 10 + previewProgress * 8;
 
       // Circle radius shrinks from large (6x) down to the gate radius
       const maxRadius = EXIT_GATE_RADIUS * 6;
-      const minRadius = EXIT_GATE_RADIUS * 0.55;
-      const closingRadius = maxRadius - (maxRadius - minRadius) * previewProgress;
+      const closingRadius = maxRadius - (maxRadius - coreRadius) * previewProgress;
 
       // Alpha grows as the circle closes in
       const alpha = 0.08 + previewProgress * 0.35;
       g.lineStyle(1.5, COLORS.GATE, alpha);
       g.strokeCircle(0, 0, closingRadius);
 
-      // Faint inner marker so the player knows the destination
-      g.lineStyle(1, COLORS.GATE, 0.1 + previewProgress * 0.15);
-      g.strokeCircle(0, 0, minRadius);
+      g.lineStyle(1 + previewProgress * 0.6, COLORS.GATE, 0.12 + previewProgress * 0.22);
+      g.strokeCircle(0, 0, closingRadius * 0.62);
+
+      // Strong center marker so the spawn location reads immediately.
+      g.lineStyle(2, COLORS.GATE, 0.28 + previewProgress * 0.34 + pulse * 0.25);
+      g.strokeCircle(0, 0, coreRadius);
+      g.fillStyle(COLORS.GATE, 0.05 + previewProgress * 0.09 + pulse * 0.04);
+      g.fillCircle(0, 0, coreRadius);
+
+      g.lineStyle(1.4, COLORS.GATE, 0.16 + previewProgress * 0.24);
+      g.lineBetween(-bracketRadius - bracketLength, 0, -bracketRadius, 0);
+      g.lineBetween(bracketRadius, 0, bracketRadius + bracketLength, 0);
+      g.lineBetween(0, -bracketRadius - bracketLength, 0, -bracketRadius);
+      g.lineBetween(0, bracketRadius, 0, bracketRadius + bracketLength);
 
       // Static inner diamond
-      g.lineStyle(1, 0xffffff, 0.08 + previewProgress * 0.12);
+      g.lineStyle(1, 0xffffff, 0.16 + previewProgress * 0.18);
       const s = EXIT_GATE_RADIUS * 0.2;
       g.beginPath();
       g.moveTo(0, -s);

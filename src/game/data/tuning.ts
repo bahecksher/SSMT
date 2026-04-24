@@ -15,7 +15,7 @@ export const SALVAGE_RESPAWN_DELAY = 1500;
 
 // Extraction
 export const PHASE_LENGTH = 30_000;
-export const EXIT_GATE_PREVIEW = 10_000; // ms gate is visible but inactive before opening
+export const EXIT_GATE_PREVIEW = 15_000; // ms gate is visible but inactive before opening
 export const EXIT_GATE_DURATION = 3_000; // ms the gate is extractable
 export const EXIT_GATE_RADIUS = 50;      // visual size
 export const EXIT_GATE_HITBOX = 20;      // collision radius for extraction
@@ -29,7 +29,7 @@ export const DRIFTER_MINING_RADIUS_MULT = 2.8;  // mining zone = radius * this
 export const DRIFTER_MINING_POINTS_MIN = 5;    // pts/sec at outer edge of mining zone
 export const DRIFTER_MINING_POINTS_MAX = 30;   // pts/sec when hugging the asteroid body
 export const ASTEROID_DESTROY_BONUS = 20;      // pts dropped when asteroid destroyed in collision
-export const ASTEROID_DESTROY_DROP_CHANCE = 0.35; // 35% chance to drop
+export const ASTEROID_DESTROY_DROP_CHANCE = 0; // disabled: small asteroid bonus drops felt too inconsequential
 export const DRIFTER_MINEABLE_CHANCE = 0.35;   // share of asteroids that show a mining ring and can be mined
 export const DRIFTER_SPAWN_RATE_BASE = 600;
 
@@ -43,7 +43,7 @@ export const ENEMY_SPEED = 120;
 export const ENEMY_RADIUS = 12;
 export const ENEMY_TURN_RATE = 2.0;  // radians/sec
 export const ENEMY_SPAWN_RATE_BASE = 12000; // ms between spawns
-export const ENEMY_BONUS_POINTS = 120;
+export const ENEMY_BONUS_POINTS = 360;
 
 // Health
 export const SALVAGE_MAX_HP = 15;         // seconds of salvaging to deplete
@@ -59,7 +59,7 @@ export const NPC_SALVAGE_RANGE = 80;     // how close NPC gets before "salvaging
 export const NPC_BUMP_FORCE = 250;       // push speed when player bumps NPC
 export const NPC_BUMP_RADIUS = 18;       // collision radius for player bump
 export const NPC_BONUS_DROP_CHANCE = 0.4;
-export const NPC_BONUS_POINTS = 70;
+export const NPC_BONUS_POINTS = 210;
 
 // Bonus point pickups
 export const BONUS_PICKUP_RADIUS = 12;

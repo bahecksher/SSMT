@@ -55,13 +55,14 @@ export class ShieldPickup {
     g.setAlpha(alpha);
 
     const glow = 0.3 + Math.sin(this.pulse) * 0.15;
+    const powerupColor = COLORS.SALVAGE;
 
     // Outer glow ring
-    g.lineStyle(1, COLORS.SHIELD, glow * 0.2);
+    g.lineStyle(1, powerupColor, glow * 0.2);
     g.strokeCircle(0, 0, SHIELD_PICKUP_RADIUS * 2.5);
 
     // Shield shape — hexagon (stroke-based)
-    g.lineStyle(1.5, COLORS.SHIELD, 0.8);
+    g.lineStyle(1.5, powerupColor, 0.8);
     g.beginPath();
     for (let i = 0; i < 6; i++) {
       const a = (Math.PI / 3) * i - Math.PI / 2;
@@ -74,7 +75,7 @@ export class ShieldPickup {
     g.strokePath();
 
     // Subtle hologram fill
-    g.fillStyle(COLORS.SHIELD, 0.05);
+    g.fillStyle(powerupColor, 0.05);
     g.beginPath();
     for (let i = 0; i < 6; i++) {
       const a = (Math.PI / 3) * i - Math.PI / 2;
@@ -98,7 +99,7 @@ export class ShieldPickup {
     g.strokePath();
 
     // Pulsing ring
-    g.lineStyle(1, COLORS.SHIELD, glow + 0.15);
+    g.lineStyle(1, powerupColor, glow + 0.15);
     g.strokeCircle(0, 0, SHIELD_PICKUP_RADIUS + 4 + Math.sin(this.pulse * 1.5) * 2);
   }
 
