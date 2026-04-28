@@ -11,8 +11,7 @@ const BOOT_STARFIELD_OVERSCAN = 96;
 const BOOT_STARFIELD_COUNT = 170;
 const BOOT_BAR_HEIGHT = 18;
 const BOOT_MESSAGE = 'Securing Connection';
-const BOOT_MIN_DISPLAY_MS = 1500;
-const BOOT_MIN_POST_FONT_MS = 900;
+const BOOT_MIN_DISPLAY_MS = 450;
 
 interface BootStar {
   x: number;
@@ -39,9 +38,6 @@ export class BootScene extends Phaser.Scene {
   private titleText!: Phaser.GameObjects.Text;
   private flavorText!: Phaser.GameObjects.Text;
   private currentProgress = 0;
-  private fontsReady = false;
-  private fontPromise: Promise<void> | null = null;
-  private fontsReadyAt: number | null = null;
 
   constructor() {
     super(SCENE_KEYS.BOOT);
@@ -67,19 +63,7 @@ export class BootScene extends Phaser.Scene {
       this.scene.start(SCENE_KEYS.MENU, { bootTransition: true });
     };
 
-    if (this.fontsReady) {
-      this.scheduleMenuHandoff(startMenu);
-      return;
-    }
-
-    if (this.fontPromise) {
-      void this.fontPromise.then(() => {
-        if (!this.sys.isActive()) return;
-        this.scheduleMenuHandoff(startMenu);
-      });
-    } else {
-      this.scheduleMenuHandoff(startMenu);
-    }
+    this.scheduleMenuHandoff(startMenu);
   }
 
   update(_time: number, delta: number): void {
@@ -169,20 +153,16 @@ export class BootScene extends Phaser.Scene {
 
   private startFontLoad(): void {
     if (typeof document === 'undefined' || !('fonts' in document)) {
-      this.fontsReady = true;
-      this.fontsReadyAt = this.getNow();
       this.titleText?.setAlpha(1);
       this.flavorText?.setAlpha(0.82);
       return;
     }
 
-    this.fontPromise = Promise.allSettled([
+    void Promise.allSettled([
       document.fonts.load('16px "FreePixel"'),
       document.fonts.load('16px "pixel_lcd"'),
     ]).then(() => {
       if (!this.sys.isActive()) return;
-      this.fontsReady = true;
-      this.fontsReadyAt = this.getNow();
       this.titleText?.setStyle({ fontFamily: TITLE_FONT });
       this.titleText?.setAlpha(1);
       this.flavorText?.setAlpha(0.82);
@@ -191,8 +171,7 @@ export class BootScene extends Phaser.Scene {
 
   private scheduleMenuHandoff(startMenu: () => void): void {
     const now = this.getNow();
-    const postFontFloor = this.fontsReadyAt !== null ? this.fontsReadyAt + BOOT_MIN_POST_FONT_MS : now;
-    const handoffAt = Math.max(this.bootDisplayStartedAt + BOOT_MIN_DISPLAY_MS, postFontFloor, now);
+    const handoffAt = Math.max(this.bootDisplayStartedAt + BOOT_MIN_DISPLAY_MS, now);
     this.menuHandoffAt = handoffAt;
     const delay = Math.max(0, handoffAt - this.getNow());
     if (delay <= 0) {

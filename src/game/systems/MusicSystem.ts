@@ -10,15 +10,16 @@ const LAYERED_TRACKS = [
   'gameSynth',
 ] as const;
 const FULL_TRACKS = ['fullPhase1', 'fullPhase2'] as const;
-// All layered tracks load at boot so they all start in the same startMusic
-// for-loop iteration with the same delay — required for beat alignment across
-// the phase 3→4 swap, which crossfades from bass-1/drums-2/gameSynth to
-// drums-3/bass-3. Adds ~1-2MB to boot in exchange for guaranteed sync.
-const BOOT_TRACKS = ['menuSynth', 'bassOne', 'drumsTwo', 'drumsThree', 'bassThree', 'gameSynth'] as const;
-const MID_GAME_TRACKS = [] as const;
+const GAMEPLAY_LAYERED_TRACKS = ['bassOne', 'drumsTwo', 'drumsThree', 'bassThree', 'gameSynth'] as const;
+// Keep boot light on phones: menu music plus the earliest gameplay stems only.
+// Later gameplay stems warm in the menu / mission flow and are seek-aligned to
+// the running gameplay reference stem when they finish loading.
+const BOOT_TRACKS = ['menuSynth', 'bassOne', 'drumsTwo'] as const;
+const MID_GAME_TRACKS = ['drumsThree', 'bassThree', 'gameSynth'] as const;
 const LATE_GAME_TRACKS = [...FULL_TRACKS] as const;
 
 type LayeredTrack = typeof LAYERED_TRACKS[number];
+type GameplayLayeredTrack = typeof GAMEPLAY_LAYERED_TRACKS[number];
 type FullTrack = typeof FULL_TRACKS[number];
 type MusicTrack = LayeredTrack | FullTrack;
 type LayeredMix = Record<LayeredTrack, number>;
@@ -212,8 +213,39 @@ function queueTracksForCurrentState(scene: Phaser.Scene): void {
   queueMusicTracks(scene, tracks);
 }
 
+function isGameplayLayeredTrack(track: LayeredTrack): track is GameplayLayeredTrack {
+  return track !== 'menuSynth';
+}
+
+function getReferenceGameplaySound(): ManagedSound | null {
+  for (const track of GAMEPLAY_LAYERED_TRACKS) {
+    const sound = layeredSounds[track];
+    if (sound?.isPlaying) {
+      return sound;
+    }
+  }
+
+  return null;
+}
+
+function getAlignedSeek(referenceSound: ManagedSound | null): number {
+  if (!referenceSound) {
+    return 0;
+  }
+
+  const duration = referenceSound.duration;
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return 0;
+  }
+
+  const delayedSeek = referenceSound.seek + (MUSIC_START_DELAY_S * referenceSound.totalRate);
+  const wrappedSeek = delayedSeek % duration;
+  return wrappedSeek >= 0 ? wrappedSeek : wrappedSeek + duration;
+}
+
 function ensureLayeredSounds(scene: Phaser.Scene): void {
   ensureSession(scene);
+  const newlyRegistered: LayeredTrack[] = [];
 
   for (const track of LAYERED_TRACKS) {
     if (!layeredSounds[track] && isTrackLoaded(scene, track)) {
@@ -223,21 +255,32 @@ function ensureLayeredSounds(scene: Phaser.Scene): void {
         volume: 0,
       })) as ManagedSound;
       layeredSounds[track] = sound;
-      // Late-loaded tracks (drums-3 / bass-3 / gameSynth come in after boot via
-      // warmMusicCache) miss the one-shot startMusic kickoff. Play them at vol
-      // 0 here so phase-4 mix transitions have something to fade in. Note: this
-      // means they are NOT beat-aligned with bass-1 / drums-2, since they start
-      // at whatever absolute time their decode finishes. The 3→4 swap will
-      // sound off-beat until those tracks are moved into BOOT_TRACKS or seeked
-      // into bass-1's current loop position.
-      if (layeredStarted && !scene.sound.locked && !sound.isPlaying) {
-        sound.play({
-          delay: MUSIC_START_DELAY_S,
-          loop: true,
-          volume: 0,
-        });
-      }
+      newlyRegistered.push(track);
     }
+  }
+
+  if (!layeredStarted || scene.sound.locked || newlyRegistered.length === 0) {
+    return;
+  }
+
+  const referenceSound = getReferenceGameplaySound();
+  const alignedSeek = getAlignedSeek(referenceSound);
+
+  for (const track of newlyRegistered) {
+    const sound = layeredSounds[track];
+    if (!sound || sound.isPlaying) {
+      continue;
+    }
+
+    const config: Phaser.Types.Sound.SoundConfig = {
+      delay: MUSIC_START_DELAY_S,
+      loop: true,
+      volume: 0,
+    };
+    if (isGameplayLayeredTrack(track)) {
+      config.seek = alignedSeek;
+    }
+    sound.play(config);
   }
 }
 
