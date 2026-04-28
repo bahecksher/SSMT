@@ -1,9 +1,11 @@
 export interface SaveData {
   bestScore: number;
+  campaignBestScore: number;
   selectedMode: RunMode;
   arcadeWalletCredits: number;
   campaignWalletCredits: number;
   campaignSession: CampaignSessionSave | null;
+  campaignLeaderboard: LocalCampaignLeaderboardEntry[];
 }
 
 export interface PhaseConfig {
@@ -67,8 +69,15 @@ export function isCompanyId(value: unknown): value is CompanyId {
 
 export interface CampaignSessionSave {
   livesRemaining: number;
-  favorIds: CompanyId[];
   missionsCompleted: number;
+  totalExtracted: number;
+}
+
+export interface LocalCampaignLeaderboardEntry {
+  playerName: string;
+  score: number;
+  missionsCompleted: number;
+  createdAt: string;
 }
 
 // --- Mission System ---
@@ -103,18 +112,10 @@ export interface CompanyRepSave {
 }
 
 export interface RunBoosts {
-  miningYieldMult: number;     // default 1.0
-  salvageYieldMult: number;    // default 1.0
-  npcBonusMult: number;        // default 1.0
-  bonusDropChanceAdd: number;  // default 0.0
-}
-
-export interface CompanyFavorOffer {
-  companyId: CompanyId;
-  level: number;
-  label: string;
-  boostValue: string;
-  cost: number;
+  miningYieldMult: number;     // DEEPCORE — default 1.0
+  salvageYieldMult: number;    // RECLAIM — default 1.0
+  scoreMult: number;           // IRONVEIL — multiplies banked score on extract; default 1.0
+  bonusDropChanceAdd: number;  // FREEPORT — default 0.0
 }
 
 export interface MissionDef {

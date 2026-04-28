@@ -1,20 +1,23 @@
 import { SAVE_KEY, PLAYER_NAME_KEY } from '../constants';
 import { getSlickCut, getWalletPayout } from '../data/companyData';
 import {
-  CompanyId,
   RunMode,
-  isCompanyId,
+  isRunMode,
   type CampaignSessionSave,
+  type LocalCampaignLeaderboardEntry,
   type SaveData,
 } from '../types';
 
 const DEFAULT_CAMPAIGN_LIVES = 2;
+const MAX_CAMPAIGN_LEADERBOARD_ENTRIES = 10;
 const DEFAULT_SAVE: SaveData = {
   bestScore: 0,
+  campaignBestScore: 0,
   selectedMode: RunMode.ARCADE,
   arcadeWalletCredits: 0,
   campaignWalletCredits: 0,
   campaignSession: null,
+  campaignLeaderboard: [],
 };
 const LETTER_COUNT = 3;
 const DIGIT_COUNT = 3;
@@ -80,12 +83,11 @@ function normalizeCampaignSession(value: unknown): CampaignSessionSave | null {
   const livesRemaining = typeof parsed.livesRemaining === 'number'
     ? Math.max(0, Math.floor(parsed.livesRemaining))
     : 0;
-  const rawFavorIds = Array.isArray(parsed.favorIds) ? parsed.favorIds : [];
-  const favorIds = rawFavorIds
-    .filter(isCompanyId)
-    .slice(0, 2) as CompanyId[];
   const missionsCompleted = typeof parsed.missionsCompleted === 'number'
     ? Math.max(0, Math.floor(parsed.missionsCompleted))
+    : 0;
+  const totalExtracted = typeof parsed.totalExtracted === 'number'
+    ? Math.max(0, Math.floor(parsed.totalExtracted))
     : 0;
 
   if (livesRemaining <= 0) {
@@ -94,9 +96,47 @@ function normalizeCampaignSession(value: unknown): CampaignSessionSave | null {
 
   return {
     livesRemaining,
-    favorIds,
     missionsCompleted,
+    totalExtracted,
   };
+}
+
+function normalizeCampaignLeaderboard(value: unknown): LocalCampaignLeaderboardEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const entries: LocalCampaignLeaderboardEntry[] = [];
+  for (const rawEntry of value) {
+    if (!rawEntry || typeof rawEntry !== 'object') {
+      continue;
+    }
+
+    const parsed = rawEntry as Partial<LocalCampaignLeaderboardEntry> & Record<string, unknown>;
+    const playerName = typeof parsed.playerName === 'string' ? parsed.playerName.trim() : '';
+    const score = typeof parsed.score === 'number' ? Math.max(0, Math.floor(parsed.score)) : -1;
+    const missionsCompleted = typeof parsed.missionsCompleted === 'number'
+      ? Math.max(0, Math.floor(parsed.missionsCompleted))
+      : 0;
+    const createdAt = typeof parsed.createdAt === 'string' && parsed.createdAt.length > 0
+      ? parsed.createdAt
+      : new Date(0).toISOString();
+
+    if (!playerName || score < 0) {
+      continue;
+    }
+
+    entries.push({
+      playerName,
+      score,
+      missionsCompleted,
+      createdAt,
+    });
+  }
+
+  return entries
+    .sort((a, b) => b.score - a.score || b.missionsCompleted - a.missionsCompleted || b.createdAt.localeCompare(a.createdAt))
+    .slice(0, MAX_CAMPAIGN_LEADERBOARD_ENTRIES);
 }
 
 export class SaveSystem {
@@ -114,9 +154,14 @@ export class SaveSystem {
         const legacyWalletCredits = typeof parsed.walletCredits === 'number'
           ? Math.max(0, Math.floor(parsed.walletCredits))
           : 0;
+        const campaignLeaderboard = normalizeCampaignLeaderboard(parsed.campaignLeaderboard);
+        const derivedCampaignBest = campaignLeaderboard[0]?.score ?? 0;
         return {
           bestScore: typeof parsed.bestScore === 'number' ? parsed.bestScore : DEFAULT_SAVE.bestScore,
-          selectedMode: parsed.selectedMode === RunMode.ARCADE ? parsed.selectedMode : DEFAULT_SAVE.selectedMode,
+          campaignBestScore: typeof parsed.campaignBestScore === 'number'
+            ? Math.max(derivedCampaignBest, Math.max(0, Math.floor(parsed.campaignBestScore)))
+            : derivedCampaignBest,
+          selectedMode: isRunMode(parsed.selectedMode) ? parsed.selectedMode : DEFAULT_SAVE.selectedMode,
           arcadeWalletCredits: typeof parsed.arcadeWalletCredits === 'number'
             ? Math.max(0, Math.floor(parsed.arcadeWalletCredits))
             : legacyWalletCredits,
@@ -124,6 +169,7 @@ export class SaveSystem {
             ? Math.max(0, Math.floor(parsed.campaignWalletCredits))
             : DEFAULT_SAVE.campaignWalletCredits,
           campaignSession: normalizeCampaignSession(parsed.campaignSession),
+          campaignLeaderboard,
         };
       }
     } catch {
@@ -148,12 +194,15 @@ export class SaveSystem {
     return this.data.selectedMode;
   }
 
+  getCampaignBestScore(): number {
+    return this.data.campaignBestScore;
+  }
+
   setSelectedMode(mode: RunMode): void {
-    const normalizedMode = mode === RunMode.CAMPAIGN ? RunMode.ARCADE : mode;
-    if (this.data.selectedMode === normalizedMode) {
+    if (this.data.selectedMode === mode) {
       return;
     }
-    this.data.selectedMode = normalizedMode;
+    this.data.selectedMode = mode;
     this.save();
   }
 
@@ -168,6 +217,29 @@ export class SaveSystem {
       this.data.bestScore = score;
       this.save();
     }
+  }
+
+  getCampaignLeaderboard(limit = MAX_CAMPAIGN_LEADERBOARD_ENTRIES): LocalCampaignLeaderboardEntry[] {
+    const normalizedLimit = Math.max(0, Math.floor(limit));
+    return this.data.campaignLeaderboard.slice(0, normalizedLimit).map((entry) => ({ ...entry }));
+  }
+
+  recordCampaignLeaderboardEntry(score: number, missionsCompleted: number): LocalCampaignLeaderboardEntry | null {
+    const totalScore = Math.max(0, Math.floor(score));
+    const entry: LocalCampaignLeaderboardEntry = {
+      playerName: this.getPlayerName(),
+      score: totalScore,
+      missionsCompleted: Math.max(0, Math.floor(missionsCompleted)),
+      createdAt: new Date().toISOString(),
+    };
+
+    this.data.campaignBestScore = Math.max(this.data.campaignBestScore, totalScore);
+    this.data.campaignLeaderboard = [...this.data.campaignLeaderboard, entry]
+      .sort((a, b) => b.score - a.score || b.missionsCompleted - a.missionsCompleted || b.createdAt.localeCompare(a.createdAt))
+      .slice(0, MAX_CAMPAIGN_LEADERBOARD_ENTRIES);
+    this.save();
+
+    return { ...entry };
   }
 
   addWalletCredits(amount: number, mode: RunMode = this.data.selectedMode): void {
@@ -218,24 +290,20 @@ export class SaveSystem {
     if (!this.data.campaignSession) {
       this.data.campaignSession = {
         livesRemaining: DEFAULT_CAMPAIGN_LIVES,
-        favorIds: [],
         missionsCompleted: 0,
+        totalExtracted: 0,
       };
       this.save();
     }
 
-    return {
-      livesRemaining: this.data.campaignSession.livesRemaining,
-      favorIds: [...this.data.campaignSession.favorIds],
-      missionsCompleted: this.data.campaignSession.missionsCompleted,
-    };
+    return { ...this.data.campaignSession };
   }
 
   startNewCampaignSession(): CampaignSessionSave {
     this.data.campaignSession = {
       livesRemaining: DEFAULT_CAMPAIGN_LIVES,
-      favorIds: [],
       missionsCompleted: 0,
+      totalExtracted: 0,
     };
     this.save();
     return this.ensureCampaignSession();
@@ -254,11 +322,7 @@ export class SaveSystem {
       return null;
     }
 
-    return {
-      livesRemaining: this.data.campaignSession.livesRemaining,
-      favorIds: [...this.data.campaignSession.favorIds],
-      missionsCompleted: this.data.campaignSession.missionsCompleted,
-    };
+    return { ...this.data.campaignSession };
   }
 
   getCampaignLivesDisplay(): number {
@@ -269,16 +333,8 @@ export class SaveSystem {
     return this.data.campaignSession?.missionsCompleted ?? 0;
   }
 
-  setCampaignFavorIds(favorIds: CompanyId[]): CampaignSessionSave {
-    const session = this.ensureCampaignSession();
-    const normalizedFavorIds = favorIds.filter(isCompanyId).slice(0, 2);
-    this.data.campaignSession = {
-      livesRemaining: session.livesRemaining,
-      favorIds: [...normalizedFavorIds],
-      missionsCompleted: session.missionsCompleted,
-    };
-    this.save();
-    return this.ensureCampaignSession();
+  getCampaignTotalExtractedDisplay(): number {
+    return this.data.campaignSession?.totalExtracted ?? 0;
   }
 
   addCampaignMissionCompletions(amount: number): CampaignSessionSave {
@@ -291,6 +347,21 @@ export class SaveSystem {
     this.data.campaignSession = {
       ...session,
       missionsCompleted: session.missionsCompleted + completedAmount,
+    };
+    this.save();
+    return this.ensureCampaignSession();
+  }
+
+  addCampaignExtractedCredits(amount: number): CampaignSessionSave {
+    const session = this.ensureCampaignSession();
+    const credits = Math.max(0, Math.floor(amount));
+    if (credits <= 0) {
+      return session;
+    }
+
+    this.data.campaignSession = {
+      ...session,
+      totalExtracted: session.totalExtracted + credits,
     };
     this.save();
     return this.ensureCampaignSession();

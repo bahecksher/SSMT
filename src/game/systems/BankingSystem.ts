@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { PLAYER_RADIUS, EXIT_GATE_HITBOX } from '../data/tuning';
 import { getLeaderboardCompanyId, loadCompanyRep } from '../data/companyData';
-import { submitScore } from '../services/LeaderboardService';
+import { runModeToLeaderboardMode, submitScore } from '../services/LeaderboardService';
 import { RunMode } from '../types';
 import type { Player } from '../entities/Player';
 import type { ExitGate } from '../entities/ExitGate';
@@ -43,11 +43,12 @@ export class BankingSystem {
     const banked = this.scoreSystem.getBanked();
     this.saveSystem.saveBestScore(banked);
     if (mode !== RunMode.ARCADE) {
+      // Campaign extracts do not submit per-run; the campaign total is submitted on game over.
       return;
     }
     const playerName = this.saveSystem.getPlayerName();
     const companyId = getLeaderboardCompanyId(loadCompanyRep());
-    submitScore(playerName, banked, companyId);
+    submitScore(playerName, banked, companyId, runModeToLeaderboardMode(mode));
   }
 
   destroy(): void {

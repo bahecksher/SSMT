@@ -2,27 +2,18 @@ import Phaser from 'phaser';
 import {
   applyColorPalette,
   COLORS,
-  getNextPaletteId,
-  PALETTE_LABELS,
   SCENE_KEYS,
   TITLE_FONT,
   UI_FONT,
   readableFontSize,
-  type PaletteId,
 } from '../constants';
-import {
-  COMPANIES,
-  getCompanyAffiliation,
-  getSelectableCompanyIds,
-  loadCompanyRep,
-  saveSelectedCompanyAffiliation,
-} from '../data/companyData';
+import { COMPANIES } from '../data/companyData';
 import { SaveSystem } from '../systems/SaveSystem';
 import {
   fetchCorporationLeaderboard,
   fetchLeaderboard,
-  fetchBiggestLoss,
   isOnline,
+  runModeToLeaderboardMode,
   type CorporationLeaderboardEntry,
   type LeaderboardEntry,
 } from '../services/LeaderboardService';
@@ -33,6 +24,7 @@ import { GeoSphere } from '../entities/GeoSphere';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { SlickComm } from '../ui/SlickComm';
 import { TitlePilotDisplay } from '../ui/TitlePilotDisplay';
+import { CorporationScoreGraph } from '../ui/CorporationScoreGraph';
 import { DRIFTER_SPEED_BASE } from '../data/tuning';
 import { pickAsteroidSize } from '../data/phaseConfig';
 import { getSlickLine } from '../data/slickLines';
@@ -42,9 +34,8 @@ import { refreshMusicForSettings, setMenuMusic, warmMusicCache } from '../system
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { SettingsSlider } from '../ui/SettingsSlider';
-import { RunMode } from '../types';
+import { RunMode, type LocalCampaignLeaderboardEntry } from '../types';
 
-type Period = 'daily' | 'weekly';
 type LeaderboardView = 'pilots' | 'corps';
 interface BackgroundHandoffData {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
@@ -76,21 +67,24 @@ const MENU_STARFIELD_COUNT = 170;
 export class MenuScene extends Phaser.Scene {
   private saveSystem!: SaveSystem;
   private leaderboardTexts: Phaser.GameObjects.Text[] = [];
+  private leaderboardSectionUi: Phaser.GameObjects.GameObject[] = [];
+  private leaderboardSectionHits: Phaser.GameObjects.Zone[] = [];
+  private leaderboardTitle!: Phaser.GameObjects.Text;
   private pilotBoardTabBg!: Phaser.GameObjects.Graphics;
   private pilotBoardTab!: Phaser.GameObjects.Text;
   private pilotBoardTabHit!: Phaser.GameObjects.Zone;
   private corpBoardTabBg!: Phaser.GameObjects.Graphics;
   private corpBoardTab!: Phaser.GameObjects.Text;
   private corpBoardTabHit!: Phaser.GameObjects.Zone;
-  private dailyTabBg!: Phaser.GameObjects.Graphics;
-  private dailyTab!: Phaser.GameObjects.Text;
-  private dailyTabHit!: Phaser.GameObjects.Zone;
-  private weeklyTabBg!: Phaser.GameObjects.Graphics;
-  private weeklyTab!: Phaser.GameObjects.Text;
-  private weeklyTabHit!: Phaser.GameObjects.Zone;
+  private arcadeBoardTabBg!: Phaser.GameObjects.Graphics;
+  private arcadeBoardTab!: Phaser.GameObjects.Text;
+  private arcadeBoardTabHit!: Phaser.GameObjects.Zone;
+  private campaignBoardTabBg!: Phaser.GameObjects.Graphics;
+  private campaignBoardTab!: Phaser.GameObjects.Text;
+  private campaignBoardTabHit!: Phaser.GameObjects.Zone;
   private settingsButton!: MenuButton;
+  private howToPlayButton!: MenuButton;
   private settingsPanelUi: Phaser.GameObjects.GameObject[] = [];
-  private paletteButton!: MenuButton;
   private shakeOnButton!: MenuButton;
   private shakeOffButton!: MenuButton;
   private scanOnButton!: MenuButton;
@@ -100,19 +94,18 @@ export class MenuScene extends Phaser.Scene {
   private musicVolumeSlider!: SettingsSlider;
   private fxVolumeSlider!: SettingsSlider;
   private settingsOpen = false;
-  private activePeriod: Period = 'daily';
   private activeLeaderboardView: LeaderboardView = 'pilots';
   private leaderboardStartY = 0;
+  private campaignLeaderboardStartY = 0;
+  private leaderboardStatusY = 0;
   private leaderboardRowHeight = 22;
+  private modeTabWidth = 136;
   private leaderboardTabWidth = 104;
   private leaderboardTabHeight = 30;
   private leaderboardFontSize = '14px';
-  private biggestLossText: Phaser.GameObjects.Text | null = null;
+  private corpScoreGraph: CorporationScoreGraph | null = null;
   private statusText!: Phaser.GameObjects.Text;
-  private modeStatusText!: Phaser.GameObjects.Text;
   private pilotText!: Phaser.GameObjects.Text;
-  private affiliationLabelText!: Phaser.GameObjects.Text;
-  private affiliationButton!: MenuButton;
 
   // Background simulation
   private bgDebris: SalvageDebris[] = [];
@@ -140,12 +133,8 @@ export class MenuScene extends Phaser.Scene {
     const layout = getLayout();
     const centerX = layout.centerX;
     this.saveSystem = new SaveSystem();
-    this.saveSystem.setSelectedMode(RunMode.ARCADE);
     const best = this.saveSystem.getBestScore();
     const playerName = this.saveSystem.getPlayerName();
-    const affiliationState = getCompanyAffiliation(loadCompanyRep());
-    const affiliatedCompanyId = affiliationState.companyId;
-    const affiliatedCompany = affiliatedCompanyId ? COMPANIES[affiliatedCompanyId] : null;
     const handoff = data ?? {};
     this.bgDebris = [];
     this.bgDrifters = [];
@@ -194,6 +183,7 @@ export class MenuScene extends Phaser.Scene {
     const metaSize = readableFontSize(veryCompactMenu ? 13 : compactMenu ? 15 : 16);
     const hintSize = readableFontSize(veryCompactMenu ? 10 : 12);
     const bestSize = readableFontSize(veryCompactMenu ? 14 : compactMenu ? 16 : 18);
+    this.modeTabWidth = Math.min(layout.gameWidth - 64, veryCompactMenu ? 126 : compactMenu ? 144 : 164);
     this.leaderboardTabWidth = veryCompactMenu ? 96 : compactMenu ? 112 : 122;
     this.leaderboardTabHeight = veryCompactMenu ? 30 : compactMenu ? 34 : 38;
     this.leaderboardRowHeight = veryCompactMenu ? 22 : 28;
@@ -257,52 +247,13 @@ export class MenuScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(uiDepth).setInteractive({ useHandCursor: true });
 
-    this.affiliationLabelText = this.add.text(centerX, this.pilotText.y + this.pilotText.height + 6, compactMenu ? 'AFFILIATION' : 'WORKING WITH', {
-      fontFamily: UI_FONT,
-      fontSize: hintSize,
-      color: affiliatedCompany
-        ? `#${affiliatedCompany.color.toString(16).padStart(6, '0')}`
-        : `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-      align: 'center',
-    }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.84);
-    const affiliationButtonWidth = Math.min(layout.gameWidth - (veryCompactMenu ? 112 : 136), veryCompactMenu ? 172 : compactMenu ? 228 : 280);
-    const affiliationButtonHeight = veryCompactMenu ? 24 : compactMenu ? 28 : 30;
-    this.affiliationButton = this.createMenuButton(
-      centerX,
-      this.affiliationLabelText.y + this.affiliationLabelText.height + affiliationButtonHeight / 2 + 4,
-      affiliationButtonWidth,
-      affiliationButtonHeight,
-      '',
-      uiDepth,
-      readableFontSize(veryCompactMenu ? 9 : compactMenu ? 10 : 11),
-      () => {
-        const repSave = loadCompanyRep();
-        const options = [null, ...getSelectableCompanyIds(repSave)];
-        const currentCompanyId = getCompanyAffiliation(repSave).companyId;
-        const currentIndex = Math.max(0, options.findIndex((companyId) => companyId === currentCompanyId));
-        const nextCompanyId = options[(currentIndex + 1) % options.length] ?? null;
-        saveSelectedCompanyAffiliation(nextCompanyId);
-        this.updateAffiliationSelectorUi();
-        if (this.activeLeaderboardView === 'corps') {
-          this.loadLeaderboard();
-        }
-      },
-    );
-
     const layoutTitleBlock = () => {
       titlePrimary.setPosition(centerX, titlePrimaryY);
       titleSecondary.setPosition(centerX, titlePrimary.y + titlePrimary.height + titleSecondaryGap);
       titleTertiary.setPosition(centerX, titleSecondary.y + titleSecondary.height + titleTertiaryGap);
       this.pilotText.setPosition(centerX, titleTertiary.y + titleTertiary.height + pilotGap);
-      this.affiliationLabelText.setPosition(centerX, this.pilotText.y + this.pilotText.height + 6);
-      this.positionMenuButton(
-        this.affiliationButton,
-        centerX,
-        this.affiliationLabelText.y + this.affiliationLabelText.height + affiliationButtonHeight / 2 + 4,
-      );
     };
     layoutTitleBlock();
-    this.updateAffiliationSelectorUi();
     if (typeof document !== 'undefined' && 'fonts' in document) {
       void document.fonts.load('16px "pixel_lcd"').then(() => {
         if (!this.sys.isActive()) {
@@ -314,7 +265,6 @@ export class MenuScene extends Phaser.Scene {
           titleText.setText(titleText.text);
         });
         layoutTitleBlock();
-        this.updateAffiliationSelectorUi();
       });
     }
 
@@ -329,13 +279,12 @@ export class MenuScene extends Phaser.Scene {
       playUiSelectSfx(this);
       this.pilotText.setText(`PILOT: ${updatedName}`);
       layoutTitleBlock();
-      this.updateAffiliationSelectorUi();
     });
 
     const editHint = this.add.text(
       centerX,
-      this.affiliationButton.label.y + affiliationButtonHeight / 2 + 4,
-      veryCompactMenu ? 'TAP CALLSIGN OR CORP' : 'TAP CALLSIGN TO EDIT // TAP CORP TO SWITCH',
+      this.pilotText.y + this.pilotText.height + 6,
+      veryCompactMenu ? 'TAP CALLSIGN' : 'TAP CALLSIGN TO EDIT',
       {
       fontFamily: UI_FONT,
       fontSize: hintSize,
@@ -357,38 +306,48 @@ export class MenuScene extends Phaser.Scene {
 
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
-    const modeStatusY = leaderboardTitleTop + (veryCompactMenu ? 8 : 10);
-    this.modeStatusText = this.add.text(centerX, modeStatusY, '', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(veryCompactMenu ? 10 : 11),
-      color: hudColor,
-      align: 'center',
-      wordWrap: { width: layout.gameWidth - (veryCompactMenu ? 72 : 96), useAdvancedWrap: true },
-    }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.76);
-    this.updateModeUi();
-    leaderboardTitleTop = this.modeStatusText.y + this.modeStatusText.height + (veryCompactMenu ? 14 : 16);
 
     // Leaderboard section
     const tabGap = veryCompactMenu ? 12 : 16;
     const tabOffset = this.leaderboardTabWidth / 2 + tabGap / 2;
     const corpTabX = centerX - tabOffset;
     const pilotTabX = centerX + tabOffset;
-    const dailyTabX = centerX - tabOffset;
-    const weeklyTabX = centerX + tabOffset;
+    const modeTabX = centerX;
 
-    const leaderboardTitle = this.add.text(centerX, leaderboardTitleTop, 'LEADERBOARD', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(veryCompactMenu ? 12 : 14),
-      color: hudColor,
-      align: 'center',
-    }).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.68);
-    const boardTabY = leaderboardTitle.y + leaderboardTitle.height + (veryCompactMenu ? 10 : 14) + this.leaderboardTabHeight / 2;
-    const periodTabY = boardTabY + this.leaderboardTabHeight + (veryCompactMenu ? 10 : 14);
+    const campaignTabY = leaderboardTitleTop + this.leaderboardTabHeight / 2;
+    const arcadeTabY = campaignTabY + this.leaderboardTabHeight + (veryCompactMenu ? 8 : 10);
 
+    this.arcadeBoardTabBg = this.add.graphics().setDepth(uiDepth);
+    this.campaignBoardTabBg = this.add.graphics().setDepth(uiDepth);
     this.pilotBoardTabBg = this.add.graphics().setDepth(uiDepth);
     this.corpBoardTabBg = this.add.graphics().setDepth(uiDepth);
-    this.dailyTabBg = this.add.graphics().setDepth(uiDepth);
-    this.weeklyTabBg = this.add.graphics().setDepth(uiDepth);
+
+    this.arcadeBoardTab = this.add.text(modeTabX, arcadeTabY, 'ARCADE', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(compactMenu ? 15 : 16),
+      color: gateColor,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(uiDepth + 1);
+
+    this.campaignBoardTab = this.add.text(modeTabX, campaignTabY, 'CAMPAIGN', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(compactMenu ? 15 : 16),
+      color: hudColor,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(uiDepth + 1);
+
+    this.leaderboardTitle = this.add.text(
+      centerX,
+      arcadeTabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 8 : 10),
+      'WEEKLY LEADERBOARD',
+      {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(veryCompactMenu ? 12 : 14),
+        color: hudColor,
+        align: 'center',
+      },
+    ).setOrigin(0.5, 0).setDepth(uiDepth).setAlpha(0.68);
+    const boardTabY = this.leaderboardTitle.y + this.leaderboardTitle.height + (veryCompactMenu ? 10 : 14) + this.leaderboardTabHeight / 2;
 
     this.pilotBoardTab = this.add.text(pilotTabX, boardTabY, 'PILOTS', {
       fontFamily: UI_FONT,
@@ -404,19 +363,18 @@ export class MenuScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth + 1);
 
-    this.dailyTab = this.add.text(dailyTabX, periodTabY, 'DAILY', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(compactMenu ? 15 : 16),
-      color: gateColor,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(uiDepth + 1);
-
-    this.weeklyTab = this.add.text(weeklyTabX, periodTabY, 'WEEKLY', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(compactMenu ? 15 : 16),
-      color: hudColor,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(uiDepth + 1);
+    this.arcadeBoardTabHit = this.add.zone(
+      modeTabX - this.modeTabWidth / 2,
+      arcadeTabY - this.leaderboardTabHeight / 2,
+      this.modeTabWidth,
+      this.leaderboardTabHeight,
+    ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
+    this.campaignBoardTabHit = this.add.zone(
+      modeTabX - this.modeTabWidth / 2,
+      campaignTabY - this.leaderboardTabHeight / 2,
+      this.modeTabWidth,
+      this.leaderboardTabHeight,
+    ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
 
     this.pilotBoardTabHit = this.add.zone(
       pilotTabX - this.leaderboardTabWidth / 2,
@@ -431,18 +389,25 @@ export class MenuScene extends Phaser.Scene {
       this.leaderboardTabHeight,
     ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
 
-    this.dailyTabHit = this.add.zone(
-      dailyTabX - this.leaderboardTabWidth / 2,
-      periodTabY - this.leaderboardTabHeight / 2,
-      this.leaderboardTabWidth,
-      this.leaderboardTabHeight,
-    ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
-    this.weeklyTabHit = this.add.zone(
-      weeklyTabX - this.leaderboardTabWidth / 2,
-      periodTabY - this.leaderboardTabHeight / 2,
-      this.leaderboardTabWidth,
-      this.leaderboardTabHeight,
-    ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
+    this.arcadeBoardTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
+      e.event.stopPropagation();
+      if (this.saveSystem.getSelectedMode() !== RunMode.ARCADE) {
+        playUiSelectSfx(this);
+        this.saveSystem.setSelectedMode(RunMode.ARCADE);
+        this.updateModeTabStyles();
+        this.loadLeaderboard();
+      }
+    });
+
+    this.campaignBoardTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
+      e.event.stopPropagation();
+      if (this.saveSystem.getSelectedMode() !== RunMode.CAMPAIGN) {
+        playUiSelectSfx(this);
+        this.saveSystem.setSelectedMode(RunMode.CAMPAIGN);
+        this.updateModeTabStyles();
+        this.loadLeaderboard();
+      }
+    });
 
     this.pilotBoardTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
@@ -464,34 +429,15 @@ export class MenuScene extends Phaser.Scene {
       }
     });
 
-    this.dailyTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
-      e.event.stopPropagation();
-      if (this.activePeriod !== 'daily') {
-        playUiSelectSfx(this);
-        this.activePeriod = 'daily';
-        this.updateTabStyles();
-        this.loadLeaderboard();
-      }
-    });
-
-    this.weeklyTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
-      e.event.stopPropagation();
-      if (this.activePeriod !== 'weekly') {
-        playUiSelectSfx(this);
-        this.activePeriod = 'weekly';
-        this.updateTabStyles();
-        this.loadLeaderboard();
-      }
-    });
-
+    this.updateModeTabStyles();
     this.updateLeaderboardViewStyles();
-    this.updateTabStyles();
 
     // Divider line under tabs
     const divider = this.add.graphics().setDepth(uiDepth);
     divider.lineStyle(1, COLORS.HUD, 0.3);
-    const dividerY = periodTabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 6 : 10);
+    const dividerY = boardTabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 6 : 10);
     divider.lineBetween(centerX - 120, dividerY, centerX + 120, dividerY);
+    this.campaignLeaderboardStartY = boardTabY;
     this.leaderboardStartY = dividerY + (veryCompactMenu ? 12 : 18);
 
     // Status text (loading / offline)
@@ -501,17 +447,29 @@ export class MenuScene extends Phaser.Scene {
       color: hudColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
+    this.leaderboardStatusY = this.statusText.y;
+    this.leaderboardSectionUi = [
+      this.pilotBoardTabBg,
+      this.pilotBoardTab,
+      this.corpBoardTabBg,
+      this.corpBoardTab,
+    ];
+    this.leaderboardSectionHits = [
+      this.pilotBoardTabHit,
+      this.corpBoardTabHit,
+    ];
+    this.updateLeaderboardSectionVisibility();
 
     // TAP TO START — anchored from bottom
     const tapY = layout.gameHeight - (shortMenu ? 48 : 60);
     const tapText = this.add.text(centerX, tapY, 'TAP TO START', {
-      fontFamily: UI_FONT,
+      fontFamily: TITLE_FONT,
       fontSize: readableFontSize(veryCompactMenu ? 22 : 26),
       color: gateColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
 
-    // How to play — anchored above TAP TO START
+    this.createHowToPlayButton(uiDepth, backingTop, compactMenu, veryCompactMenu);
     this.createSettingsUi(uiDepth, backingTop, compactMenu, veryCompactMenu);
     if (handoff.reopenSettings) {
       this.setSettingsOpen(true);
@@ -549,9 +507,13 @@ export class MenuScene extends Phaser.Scene {
       playUiSelectSfx(this);
       const backgroundHandoff = this.buildBackgroundHandoff();
       this.cleanupBackground();
+      const selectedMode = this.saveSystem.getSelectedMode();
+      if (selectedMode === RunMode.CAMPAIGN) {
+        this.saveSystem.ensureCampaignSession();
+      }
       this.scene.start(SCENE_KEYS.MISSION_SELECT, {
         ...backgroundHandoff,
-        mode: RunMode.ARCADE,
+        mode: selectedMode,
       } satisfies BackgroundHandoffData);
     });
 
@@ -669,6 +631,7 @@ export class MenuScene extends Phaser.Scene {
     this.hologramOverlay.update(delta);
     this.cursor.update(this);
     this.geoSphere.update(delta);
+    this.corpScoreGraph?.update(delta);
     this.titlePilot.update(delta);
   }
 
@@ -679,6 +642,7 @@ export class MenuScene extends Phaser.Scene {
     this.bgDrifters = [];
     for (const npc of this.bgNpcs) npc.destroy();
     this.bgNpcs = [];
+    this.clearCorporationGraph();
     this.hologramOverlay.destroy();
     this.geoSphere.destroy();
   }
@@ -860,6 +824,27 @@ export class MenuScene extends Phaser.Scene {
     });
   }
 
+  private createHowToPlayButton(uiDepth: number, backingTop: number, compactMenu: boolean, veryCompactMenu: boolean): void {
+    const buttonWidth = compactMenu ? 98 : 108;
+    const buttonHeight = 32;
+    const buttonCenterX = compactMenu ? 76 : 82;
+    const buttonCenterY = backingTop + (veryCompactMenu ? 16 : 18);
+    this.howToPlayButton = this.createMenuButton(
+      buttonCenterX,
+      buttonCenterY,
+      buttonWidth,
+      buttonHeight,
+      compactMenu ? 'GUIDE' : 'HOW TO PLAY',
+      uiDepth + 1,
+      readableFontSize(10),
+      () => {
+        this.cleanupBackground();
+        this.scene.start(SCENE_KEYS.TUTORIAL_ARENA);
+      },
+    );
+    this.drawMenuButton(this.howToPlayButton, buttonCenterX, buttonCenterY, false);
+  }
+
   private createSettingsUi(uiDepth: number, backingTop: number, compactMenu: boolean, veryCompactMenu: boolean): void {
     const layout = getLayout();
     const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
@@ -868,11 +853,10 @@ export class MenuScene extends Phaser.Scene {
     const buttonCenterY = backingTop + (veryCompactMenu ? 16 : 18);
     const panelWidth = compactMenu ? 214 : 226;
     const settingsRowGap = veryCompactMenu ? 30 : 34;
-    const panelHeight = veryCompactMenu ? 236 : 264;
+    const panelHeight = veryCompactMenu ? 206 : 230;
     const panelLeft = layout.gameWidth - panelWidth - 24;
     const panelTop = buttonCenterY + 22;
-    const rowPaletteY = panelTop + (veryCompactMenu ? 26 : 30);
-    const rowOneY = rowPaletteY + settingsRowGap;
+    const rowOneY = panelTop + (veryCompactMenu ? 26 : 30);
     const rowTwoY = rowOneY + settingsRowGap;
     const rowThreeY = rowTwoY + settingsRowGap;
     const musicVolumeLabelY = rowThreeY + (veryCompactMenu ? 32 : 38);
@@ -881,7 +865,6 @@ export class MenuScene extends Phaser.Scene {
     const fxVolumeY = fxVolumeLabelY + (veryCompactMenu ? 14 : 18);
     const offX = panelLeft + panelWidth - 30;
     const onX = offX - 52;
-    const paletteButtonX = panelLeft + panelWidth - 63;
     const sliderLeft = panelLeft + 80;
     const sliderWidth = panelWidth - 122;
 
@@ -911,13 +894,6 @@ export class MenuScene extends Phaser.Scene {
     panelHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
     });
-
-    const paletteLabel = this.add.text(panelLeft + 14, rowPaletteY, 'PALETTE', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(10),
-      color: hudColor,
-      align: 'left',
-    }).setOrigin(0, 0.5).setDepth(uiDepth + 3);
 
     const shakeLabel = this.add.text(panelLeft + 14, rowOneY, 'SHAKE', {
       fontFamily: UI_FONT,
@@ -961,16 +937,6 @@ export class MenuScene extends Phaser.Scene {
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(uiDepth + 3).setAlpha(0.72);
 
-    this.paletteButton = this.createMenuButton(
-      paletteButtonX,
-      rowPaletteY,
-      94,
-      24,
-      PALETTE_LABELS[getSettings().paletteId],
-      uiDepth + 3,
-      readableFontSize(10),
-      () => this.applyMenuSettings({ paletteId: getNextPaletteId(getSettings().paletteId) }),
-    );
     this.shakeOnButton = this.createMenuButton(onX, rowOneY, 42, 24, 'ON', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ screenShake: true }));
     this.shakeOffButton = this.createMenuButton(offX, rowOneY, 46, 24, 'OFF', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ screenShake: false }));
     this.scanOnButton = this.createMenuButton(onX, rowTwoY, 42, 24, 'ON', uiDepth + 3, readableFontSize(10), () => this.applyMenuSettings({ scanlines: true }));
@@ -1001,10 +967,6 @@ export class MenuScene extends Phaser.Scene {
     this.settingsPanelUi = [
       panelBg,
       panelHit,
-      paletteLabel,
-      this.paletteButton.bg,
-      this.paletteButton.label,
-      this.paletteButton.hit,
       shakeLabel,
       scanLabel,
       musicLabel,
@@ -1069,11 +1031,6 @@ export class MenuScene extends Phaser.Scene {
     return { bg, label: text, hit, width, height };
   }
 
-  private positionMenuButton(button: MenuButton, centerX: number, centerY: number): void {
-    button.label.setPosition(centerX, centerY);
-    button.hit.setPosition(centerX - button.width / 2, centerY - button.height / 2);
-  }
-
   private drawMenuButton(
     button: MenuButton,
     centerX: number,
@@ -1095,22 +1052,6 @@ export class MenuScene extends Phaser.Scene {
     button.label.setAlpha(active ? 1 : 0.78);
   }
 
-  private drawPaletteMenuButton(button: MenuButton, paletteId: PaletteId): void {
-    const left = button.label.x - button.width / 2;
-    const top = button.label.y - button.height / 2;
-    const buttonAccent = COLORS.HUD;
-    button.bg.clear();
-    button.bg.fillStyle(COLORS.BG, 0.92);
-    button.bg.lineStyle(1.1, buttonAccent, 0.5);
-    button.bg.fillRoundedRect(left, top, button.width, button.height, 8);
-    button.bg.strokeRoundedRect(left, top, button.width, button.height, 8);
-    button.bg.fillStyle(buttonAccent, 0.08);
-    button.bg.fillRoundedRect(left + 4, top + 4, button.width - 8, button.height - 8, 6);
-    button.label.setText(PALETTE_LABELS[paletteId]);
-    button.label.setColor(`#${buttonAccent.toString(16).padStart(6, '0')}`);
-    button.label.setAlpha(0.9);
-  }
-
   private setSettingsPanelVisible(visible: boolean): void {
     for (const obj of this.settingsPanelUi) {
       (obj as Phaser.GameObjects.GameObject & { visible: boolean }).visible = visible;
@@ -1128,14 +1069,6 @@ export class MenuScene extends Phaser.Scene {
 
   private applyMenuSettings(partial: Partial<GameSettings>): void {
     const updated = updateSettings(partial);
-    if (partial.paletteId) {
-      applyColorPalette(updated.paletteId);
-      this.scene.restart({
-        ...this.buildBackgroundHandoff(),
-        reopenSettings: this.settingsOpen,
-      } satisfies BackgroundHandoffData);
-      return;
-    }
     this.hologramOverlay.setEnabled(updated.scanlines);
     refreshMusicForSettings(this);
     this.updateSettingsUi();
@@ -1145,7 +1078,6 @@ export class MenuScene extends Phaser.Scene {
     this.drawMenuButton(this.settingsButton, this.settingsButton.label.x, this.settingsButton.label.y, this.settingsOpen);
 
     const settings = getSettings();
-    this.drawPaletteMenuButton(this.paletteButton, settings.paletteId);
     this.drawMenuButton(this.shakeOnButton, this.shakeOnButton.label.x, this.shakeOnButton.label.y, settings.screenShake);
     this.drawMenuButton(this.shakeOffButton, this.shakeOffButton.label.x, this.shakeOffButton.label.y, !settings.screenShake);
     this.drawMenuButton(this.scanOnButton, this.scanOnButton.label.x, this.scanOnButton.label.y, settings.scanlines);
@@ -1154,54 +1086,6 @@ export class MenuScene extends Phaser.Scene {
     this.drawMenuButton(this.musicOffButton, this.musicOffButton.label.x, this.musicOffButton.label.y, !settings.musicEnabled);
     this.musicVolumeSlider.setValue(settings.musicVolume);
     this.fxVolumeSlider.setValue(settings.fxVolume);
-  }
-
-  private updateModeUi(): void {
-    if (!this.modeStatusText) {
-      return;
-    }
-
-    const layout = getLayout();
-    const compactStatus = isNarrowViewport(layout) || isShortViewport(layout);
-    const walletCredits = this.saveSystem.getWalletCredits(RunMode.ARCADE);
-    this.modeStatusText
-      .setText(`WALLET ${walletCredits}c\n${compactStatus ? 'ARCADE ONLY // LIVE BOARD' : 'ARCADE ONLY // LEADERBOARD LIVE'}`)
-      .setColor(`#${COLORS.GATE.toString(16).padStart(6, '0')}`);
-  }
-
-  private updateAffiliationSelectorUi(): void {
-    if (!this.affiliationLabelText || !this.affiliationButton) {
-      return;
-    }
-
-    const layout = getLayout();
-    const compactMenu = layout.gameHeight <= 720 || layout.gameWidth <= 400;
-    const repSave = loadCompanyRep();
-    const selectableCompanies = getSelectableCompanyIds(repSave);
-    const affiliationState = getCompanyAffiliation(repSave);
-    const affiliatedCompany = affiliationState.companyId ? COMPANIES[affiliationState.companyId] : null;
-    const accent = affiliatedCompany?.color ?? COLORS.HUD;
-    const label = affiliatedCompany
-      ? compactMenu
-        ? affiliatedCompany.leaderboardTag
-        : `${affiliatedCompany.leaderboardTag} // ${affiliatedCompany.name}`
-      : selectableCompanies.length > 0
-        ? 'FREE AGENT'
-        : compactMenu ? 'EARN REP' : 'EARN REP TO UNLOCK';
-
-    this.affiliationLabelText
-      .setText(compactMenu ? 'AFFILIATION' : 'WORKING WITH')
-      .setColor(`#${accent.toString(16).padStart(6, '0')}`);
-    this.affiliationButton.label.setText(label);
-    this.drawMenuButton(
-      this.affiliationButton,
-      this.affiliationButton.label.x,
-      this.affiliationButton.label.y,
-      true,
-      accent,
-    );
-    this.affiliationButton.label.setColor(`#${accent.toString(16).padStart(6, '0')}`);
-    this.affiliationButton.label.setAlpha(0.96);
   }
 
   private updateLeaderboardViewStyles(): void {
@@ -1215,19 +1099,26 @@ export class MenuScene extends Phaser.Scene {
     this.corpBoardTab.setAlpha(this.activeLeaderboardView === 'corps' ? 1 : 0.72);
   }
 
-  private updateTabStyles(): void {
+  private updateModeTabStyles(): void {
     const active = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
-    const inactive = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
-    this.drawTabButton(this.dailyTabBg, this.dailyTab.x, this.dailyTab.y, this.activePeriod === 'daily');
-    this.drawTabButton(this.weeklyTabBg, this.weeklyTab.x, this.weeklyTab.y, this.activePeriod === 'weekly');
-    this.dailyTab.setColor(this.activePeriod === 'daily' ? active : inactive);
-    this.dailyTab.setAlpha(this.activePeriod === 'daily' ? 1 : 0.72);
-    this.weeklyTab.setColor(this.activePeriod === 'weekly' ? active : inactive);
-    this.weeklyTab.setAlpha(this.activePeriod === 'weekly' ? 1 : 0.72);
+    const inactive = active;
+    const mode = this.saveSystem.getSelectedMode();
+    this.drawTabButton(this.arcadeBoardTabBg, this.arcadeBoardTab.x, this.arcadeBoardTab.y, mode === RunMode.ARCADE, this.modeTabWidth);
+    this.drawTabButton(this.campaignBoardTabBg, this.campaignBoardTab.x, this.campaignBoardTab.y, mode === RunMode.CAMPAIGN, this.modeTabWidth);
+    this.arcadeBoardTab.setColor(mode === RunMode.ARCADE ? active : inactive);
+    this.arcadeBoardTab.setAlpha(mode === RunMode.ARCADE ? 1 : 0.72);
+    this.campaignBoardTab.setColor(mode === RunMode.CAMPAIGN ? active : inactive);
+    this.campaignBoardTab.setAlpha(mode === RunMode.CAMPAIGN ? 1 : 0.72);
+    this.updateLeaderboardSectionVisibility();
   }
 
-  private drawTabButton(bg: Phaser.GameObjects.Graphics, centerX: number, centerY: number, active: boolean): void {
-    const width = this.leaderboardTabWidth;
+  private drawTabButton(
+    bg: Phaser.GameObjects.Graphics,
+    centerX: number,
+    centerY: number,
+    active: boolean,
+    width = this.leaderboardTabWidth,
+  ): void {
     const height = this.leaderboardTabHeight;
     const left = centerX - width / 2;
     const top = centerY - height / 2;
@@ -1245,7 +1136,14 @@ export class MenuScene extends Phaser.Scene {
     // Clear existing entries
     for (const t of this.leaderboardTexts) t.destroy();
     this.leaderboardTexts = [];
-    if (this.biggestLossText) { this.biggestLossText.destroy(); this.biggestLossText = null; }
+    this.clearCorporationGraph();
+    this.updateLeaderboardSectionVisibility();
+    this.statusText.setPosition(getLayout().centerX, this.leaderboardStatusY);
+
+    if (this.saveSystem.getSelectedMode() === RunMode.CAMPAIGN) {
+      this.renderCampaignLeaderboard(this.saveSystem.getCampaignLeaderboard());
+      return;
+    }
 
     if (!isOnline()) {
       this.statusText.setText('OFFLINE — GLOBAL BOARDS UNAVAILABLE').setVisible(true);
@@ -1257,7 +1155,7 @@ export class MenuScene extends Phaser.Scene {
     this.positionMenuComm();
 
     if (this.activeLeaderboardView === 'corps') {
-      fetchCorporationLeaderboard(this.activePeriod).then((entries) => {
+      fetchCorporationLeaderboard('weekly', runModeToLeaderboardMode(RunMode.ARCADE)).then((entries) => {
         if (!this.scene.isActive()) return;
 
         this.statusText.setVisible(false);
@@ -1270,16 +1168,10 @@ export class MenuScene extends Phaser.Scene {
       return;
     }
 
-    Promise.all([
-      fetchLeaderboard(this.activePeriod, 10),
-      fetchBiggestLoss(this.activePeriod),
-    ]).then(([entries, biggestLoss]) => {
-      // Scene may have been left while loading
+    fetchLeaderboard('weekly', 10, runModeToLeaderboardMode(RunMode.ARCADE)).then((entries) => {
       if (!this.scene.isActive()) return;
-
       this.statusText.setVisible(false);
       this.renderLeaderboard(entries);
-      this.renderBiggestLoss(biggestLoss);
     }).catch(() => {
       if (!this.scene.isActive()) return;
       this.statusText.setText('OFFLINE').setVisible(true);
@@ -1336,10 +1228,74 @@ export class MenuScene extends Phaser.Scene {
     this.positionMenuComm();
   }
 
+  private renderCampaignLeaderboard(entries: LocalCampaignLeaderboardEntry[]): void {
+    const layout = getLayout();
+    const centerX = layout.centerX;
+    const startY = this.campaignLeaderboardStartY;
+    const rowHeight = this.leaderboardRowHeight;
+    const compactMenu = isNarrowViewport(layout) || isShortViewport(layout);
+    const hudColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
+    const gateColor = `#${COLORS.GATE.toString(16).padStart(6, '0')}`;
+    const salvageColor = `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`;
+    const uiDepth = 10;
+    const bestScore = this.saveSystem.getCampaignBestScore();
+
+    if (entries.length === 0) {
+      this.statusText
+        .setPosition(centerX, startY)
+        .setText('NO LOCAL CAMPAIGN RUNS YET')
+        .setVisible(true);
+      this.positionMenuComm();
+      return;
+    }
+
+    this.statusText.setVisible(false);
+    const highScoreText = this.add.text(
+      centerX,
+      startY,
+      compactMenu ? `HIGH SCORE // ${bestScore}c` : `LOCAL HIGH SCORE // ${bestScore}c`,
+      {
+        fontFamily: UI_FONT,
+        fontSize: this.leaderboardFontSize,
+        color: salvageColor,
+        align: 'center',
+      },
+    ).setOrigin(0.5).setDepth(uiDepth);
+    this.leaderboardTexts.push(highScoreText);
+
+    const tapY = layout.gameHeight - (compactMenu ? 48 : 60);
+    const reservedCommHeight = compactMenu ? 64 : this.slickComm.getPanelHeight();
+    const bottomUiTop = tapY - reservedCommHeight - (compactMenu ? 28 : 44);
+    const rowsStartY = highScoreText.y + highScoreText.height / 2 + (compactMenu ? 14 : 18);
+    const footerReserve = rowHeight * (compactMenu ? 1.1 : 1.4);
+    const maxRows = Math.max(1, Math.min(compactMenu ? 4 : 6, Math.floor((bottomUiTop - rowsStartY - footerReserve) / rowHeight)));
+    const visibleEntries = entries.slice(0, maxRows);
+
+    for (let i = 0; i < visibleEntries.length; i++) {
+      const entry = visibleEntries[i];
+      const y = rowsStartY + i * rowHeight;
+      const line = compactMenu
+        ? `${i + 1}. ${entry.playerName}  ${Math.floor(entry.score)}c`
+        : `${i + 1}. ${entry.playerName}  ${Math.floor(entry.score)}c // ${entry.missionsCompleted} MISS`;
+      const rowColor = i === 0
+        ? gateColor
+        : i < 3 ? salvageColor : hudColor;
+      const text = this.add.text(centerX, y, line, {
+        fontFamily: UI_FONT,
+        fontSize: this.leaderboardFontSize,
+        color: rowColor,
+        align: 'center',
+        wordWrap: { width: layout.gameWidth - 72, useAdvancedWrap: true },
+      }).setOrigin(0.5).setDepth(uiDepth);
+      this.leaderboardTexts.push(text);
+    }
+
+    this.positionMenuComm();
+  }
+
   private renderCorporationLeaderboard(entries: CorporationLeaderboardEntry[]): void {
     const layout = getLayout();
     const centerX = layout.centerX;
-    const startY = this.leaderboardStartY;
     const rowHeight = this.leaderboardRowHeight;
     const uiDepth = 10;
 
@@ -1353,7 +1309,22 @@ export class MenuScene extends Phaser.Scene {
     const tapY = layout.gameHeight - (compactMenu ? 48 : 60);
     const reservedCommHeight = compactMenu ? 64 : this.slickComm.getPanelHeight();
     const bottomUiTop = tapY - reservedCommHeight - (compactMenu ? 28 : 44);
-    const footerReserve = rowHeight * (compactMenu ? 1.4 : 1.7);
+    const graphRadius = Phaser.Math.Clamp(
+      Math.round(Math.min(layout.gameWidth * 0.16, (bottomUiTop - this.leaderboardStartY) * 0.18)),
+      compactMenu ? 42 : 52,
+      compactMenu ? 60 : 74,
+    );
+    const graphCenterY = this.leaderboardStartY + graphRadius + (compactMenu ? 8 : 12);
+    this.corpScoreGraph = new CorporationScoreGraph(this, {
+      x: centerX,
+      y: graphCenterY,
+      radius: graphRadius,
+      depth: uiDepth,
+      entries,
+    });
+
+    const startY = this.corpScoreGraph.getBottomY() + (compactMenu ? 14 : 18);
+    const footerReserve = rowHeight * (compactMenu ? 1.1 : 1.4);
     const maxRows = Math.max(1, Math.min(4, Math.floor((bottomUiTop - startY - footerReserve) / rowHeight)));
     const visibleEntries = entries.slice(0, maxRows);
 
@@ -1361,71 +1332,22 @@ export class MenuScene extends Phaser.Scene {
       const entry = visibleEntries[i];
       const y = startY + i * rowHeight;
       const company = COMPANIES[entry.companyId];
-      const totalScore = Math.floor(entry.totalScore);
+      const rank = `${i + 1}.`.padEnd(4);
+      const tag = company.leaderboardTag.padEnd(4);
+      const score = `${Math.floor(entry.totalScore)}c`.padStart(7);
       const line = compactMenu
-        ? `${i + 1}. ${company.leaderboardTag}  ${totalScore}c // ${entry.runCount} RUNS`
-        : `${i + 1}. ${company.leaderboardTag} ${company.name}  ${totalScore}c // ${entry.runCount} RUNS`;
+        ? `${rank}${tag}${score}`
+        : `${rank}${tag}${company.name.padEnd(16)}${score}`;
 
       const text = this.add.text(centerX, y, line, {
         fontFamily: UI_FONT,
         fontSize: this.leaderboardFontSize,
         color: `#${company.color.toString(16).padStart(6, '0')}`,
         align: 'center',
-        wordWrap: { width: layout.gameWidth - 72, useAdvancedWrap: true },
       }).setOrigin(0.5).setDepth(uiDepth);
 
       this.leaderboardTexts.push(text);
     }
-
-    const affiliationState = getCompanyAffiliation(loadCompanyRep());
-    const affiliatedCompany = affiliationState.companyId ? COMPANIES[affiliationState.companyId] : null;
-    const footerLine = affiliatedCompany
-      ? `${compactMenu ? 'FLYING' : 'CURRENT AFFILIATION'}  ${affiliatedCompany.leaderboardTag} // ${affiliationState.source === 'selected' ? 'SELECTED' : 'HIGHEST REP'}`
-      : `${compactMenu ? 'FLYING' : 'CURRENT AFFILIATION'}  ${affiliationState.source === 'selected' ? 'FREE AGENT // SELECTED' : 'NONE // EARN REP'}`;
-    this.renderLeaderboardFooter(
-      footerLine,
-      affiliatedCompany
-        ? `#${affiliatedCompany.color.toString(16).padStart(6, '0')}`
-        : `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-      uiDepth,
-    );
-    this.positionMenuComm();
-  }
-
-  private renderBiggestLoss(entry: LeaderboardEntry | null): void {
-    if (!entry) return;
-
-    const layout = getLayout();
-    const uiDepth = 10;
-    const deathColor = '#ff3366';
-    const compactMenu = isNarrowViewport(layout) || isShortViewport(layout);
-    const company = entry.company_id ? COMPANIES[entry.company_id] : null;
-    const companyTag = company ? `${company.leaderboardTag} ` : '';
-    const line = `${compactMenu ? 'LOSS' : 'BIGGEST LOSS'}  ${companyTag}${entry.player_name}  ${Math.floor(entry.score)}`;
-    this.renderLeaderboardFooter(line, deathColor, uiDepth);
-  }
-
-  private renderLeaderboardFooter(line: string, color: string, uiDepth = 10): void {
-    const layout = getLayout();
-    const centerX = layout.centerX;
-    const rowHeight = this.leaderboardRowHeight;
-
-    let topY = this.leaderboardStartY;
-    if (this.leaderboardTexts.length > 0) {
-      const last = this.leaderboardTexts[this.leaderboardTexts.length - 1];
-      topY = last.y + rowHeight;
-    } else if (this.statusText?.visible) {
-      topY = this.statusText.y + rowHeight;
-    }
-
-    const y = topY + rowHeight * 0.4;
-    this.biggestLossText = this.add.text(centerX, y, line, {
-      fontFamily: UI_FONT,
-      fontSize: this.leaderboardFontSize,
-      color,
-      align: 'center',
-      wordWrap: { width: layout.gameWidth - 72, useAdvancedWrap: true },
-    }).setOrigin(0.5).setDepth(uiDepth);
 
     this.positionMenuComm();
   }
@@ -1449,11 +1371,12 @@ export class MenuScene extends Phaser.Scene {
       ? this.statusText.y + this.statusText.height / 2
       : this.leaderboardStartY;
 
-    if (this.biggestLossText) {
-      leaderboardBottom = this.biggestLossText.y + this.biggestLossText.height / 2;
-    } else if (this.leaderboardTexts.length > 0) {
+    if (this.leaderboardTexts.length > 0) {
       const lastEntry = this.leaderboardTexts[this.leaderboardTexts.length - 1];
       leaderboardBottom = lastEntry.y + lastEntry.height / 2;
+    }
+    if (this.corpScoreGraph) {
+      leaderboardBottom = Math.max(leaderboardBottom, this.corpScoreGraph.getBottomY());
     }
 
     const availableTop = leaderboardBottom + topGap;
@@ -1469,5 +1392,30 @@ export class MenuScene extends Phaser.Scene {
     } else {
       this.slickComm.setPinnedLayout(commY, 11);
     }
+  }
+
+  private updateLeaderboardSectionVisibility(): void {
+    const visible = this.saveSystem.getSelectedMode() !== RunMode.CAMPAIGN;
+    this.leaderboardTitle.setText(visible ? 'WEEKLY LEADERBOARD' : 'LOCAL CAMPAIGN BOARD');
+    for (const obj of this.leaderboardSectionUi) {
+      (obj as Phaser.GameObjects.Graphics | Phaser.GameObjects.Text).setVisible(visible);
+    }
+    for (const hit of this.leaderboardSectionHits) {
+      hit.setVisible(visible);
+      if (hit.input) {
+        hit.input.enabled = visible;
+      }
+    }
+    for (const text of this.leaderboardTexts) {
+      text.setVisible(visible);
+    }
+    if (!visible) {
+      this.clearCorporationGraph();
+    }
+  }
+
+  private clearCorporationGraph(): void {
+    this.corpScoreGraph?.destroy();
+    this.corpScoreGraph = null;
   }
 }

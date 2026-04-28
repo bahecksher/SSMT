@@ -22,6 +22,13 @@ import { ExtractionSystem } from '../systems/ExtractionSystem';
 import { BankingSystem } from '../systems/BankingSystem';
 import { DifficultySystem } from '../systems/DifficultySystem';
 import { SaveSystem } from '../systems/SaveSystem';
+import {
+  RepFluxTracker,
+  applyRepDeltas,
+  formatRepDeltasOneLine,
+  hasAnyRepDelta,
+  type RepDeltaMap,
+} from '../systems/RepFluxSystem';
 import { Player } from '../entities/Player';
 import { SalvageDebris } from '../entities/SalvageDebris';
 import { DrifterHazard } from '../entities/DrifterHazard';
@@ -39,6 +46,7 @@ import { SlickComm } from '../ui/SlickComm';
 import { LiaisonComm } from '../ui/LiaisonComm';
 import {
   COMPANIES,
+  getCompanyAffiliation,
   getLeaderboardCompanyId,
   getRepLevel,
   REP_PER_TIER,
@@ -46,7 +54,7 @@ import {
   getWalletSharePercent,
   loadCompanyRep,
 } from '../data/companyData';
-import { submitLoss } from '../services/LeaderboardService';
+import { runModeToLeaderboardMode, submitLoss, submitScore } from '../services/LeaderboardService';
 import { getLiaisonLine } from '../data/liaisonLines';
 import { RegentComm } from '../ui/RegentComm';
 import { getSlickLine } from '../data/slickLines';
@@ -97,8 +105,10 @@ interface ResultData {
   walletBalance?: number;
   campaignLivesRemaining?: number;
   campaignMissionsCompleted?: number;
+  campaignTotalExtracted?: number;
   campaignGameOver?: boolean;
   missionProgress?: { label: string; progress: number; target: number; completed: boolean; reward: number; repGain: number }[];
+  repFluxDeltas?: RepDeltaMap;
 }
 
 type DeathCause = 'asteroid' | 'enemy' | 'laser';
@@ -110,8 +120,9 @@ interface GameplayCommOptions {
 }
 
 export class GameScene extends Phaser.Scene {
-  private static readonly COUNTDOWN_PHRASES = ['STAY ALIVE', 'GET OUT', 'GET PAID', 'GO'];
+  private static readonly COUNTDOWN_PHRASES = ['GET IN', 'GET YOURS', 'GET OUT', 'GO'];
   private static readonly START_COUNTDOWN_MS = GameScene.COUNTDOWN_PHRASES.length * 1000;
+  private static readonly CAMPAIGN_RESPAWN_WARP_MS = 1000;
   private static readonly PAUSE_SLOW_SCALE = 0.025;
   private static readonly STARFIELD_OVERSCAN = 96;
   private static readonly STARFIELD_COUNT = 170;
@@ -131,6 +142,7 @@ export class GameScene extends Phaser.Scene {
   private difficultySystem!: DifficultySystem;
   private saveSystem!: SaveSystem;
   private missionSystem!: MissionSystem;
+  private repFluxTracker!: RepFluxTracker;
   private player!: Player;
   private debrisList: SalvageDebris[] = [];
   private shields: ShieldPickup[] = [];
@@ -142,6 +154,7 @@ export class GameScene extends Phaser.Scene {
   private debrisRespawnTimer: Phaser.Time.TimerEvent | null = null;
   private rareSalvageTimer = 0;
   private countdownTimer = 0;
+  private countdownDurationMs = GameScene.START_COUNTDOWN_MS;
   private starfield!: Phaser.GameObjects.Graphics;
   private starfieldStars: StarfieldStar[] = [];
   private geoSphere!: GeoSphere;
@@ -179,7 +192,6 @@ export class GameScene extends Phaser.Scene {
   private cursor!: CustomCursor;
   private scoreRecordingBlocked = false;
   private affiliatedCompanyId: CompanyId | null = null;
-  private affiliationStatusText!: Phaser.GameObjects.Text;
 
   constructor() {
     super(SCENE_KEYS.GAME);
@@ -215,8 +227,11 @@ export class GameScene extends Phaser.Scene {
     this.scoreRecordingBlocked = false;
 
     this.saveSystem = new SaveSystem();
-    this.runMode = RunMode.ARCADE;
+    this.runMode = handoff.mode ?? this.saveSystem.getSelectedMode();
     this.saveSystem.setSelectedMode(this.runMode);
+    if (this.runMode === RunMode.CAMPAIGN) {
+      this.saveSystem.ensureCampaignSession();
+    }
     this.activeRunBoosts = handoff.runBoosts
       ?? null;
     this.inputSystem = new InputSystem(this);
@@ -257,9 +272,6 @@ export class GameScene extends Phaser.Scene {
     const spawnY = layout.arenaTop + layout.arenaHeight * 0.75;
     this.player = new Player(this, spawnX, spawnY);
 
-    // Entry gate — player appears inside a closing gate
-    this.entryGate = new ExitGate(this, { x: spawnX, y: spawnY }, GameScene.START_COUNTDOWN_MS);
-
     this.salvageSystem = new SalvageSystem(this, this.player, this.scoreSystem);
     this.collisionSystem = new CollisionSystem(this.player);
     this.extractionSystem = new ExtractionSystem(this);
@@ -289,24 +301,25 @@ export class GameScene extends Phaser.Scene {
     // Mission system — use selected missions from briefing, or reload from persistence on retry
     const missionList = handoff.selectedMissions ?? loadOrGenerateMissions().filter((m) => m.accepted);
     this.missionSystem = new MissionSystem(missionList);
+    this.repFluxTracker = new RepFluxTracker();
 
-    // Apply per-run boosts from purchased favors
+    // Apply static per-run boosts from selected affiliation.
     if (this.activeRunBoosts) {
       this.salvageSystem.setBoosts(this.activeRunBoosts.salvageYieldMult, this.activeRunBoosts.miningYieldMult);
-      this.difficultySystem.setBoosts(this.activeRunBoosts.npcBonusMult, this.activeRunBoosts.bonusDropChanceAdd);
+      this.difficultySystem.setBoosts(this.activeRunBoosts.bonusDropChanceAdd);
+      this.scoreSystem.setScoreMult(this.activeRunBoosts.scoreMult);
     }
 
-    // Opening comm comes from an active contract liaison when available; otherwise Slick handles run start.
+    // Liaison is locked to the player's selected corp affiliation. No corp = no liaison.
     this.liaisonComm = null;
     this.liaisonCompanyId = null;
     this.liaisonRepLevel = 0;
     const repSave = loadCompanyRep();
-    const activeContractCompanies = Array.from(new Set(missionList.map((m) => m.def.company)));
-    if (activeContractCompanies.length > 0) {
-      const openingCompany = Phaser.Utils.Array.GetRandom(activeContractCompanies);
-      this.liaisonCompanyId = openingCompany;
-      this.liaisonRepLevel = Math.max(1, getRepLevel(repSave.rep[openingCompany] ?? 0));
-      this.liaisonComm = new LiaisonComm(this, COMPANIES[openingCompany], { width: layout.gameWidth });
+    const affiliatedCompanyId = getCompanyAffiliation(repSave).companyId;
+    if (affiliatedCompanyId) {
+      this.liaisonCompanyId = affiliatedCompanyId;
+      this.liaisonRepLevel = Math.max(1, getRepLevel(repSave.rep[affiliatedCompanyId] ?? 0));
+      this.liaisonComm = new LiaisonComm(this, COMPANIES[affiliatedCompanyId], { width: layout.gameWidth });
     }
     this.applyGameplayCommLayout();
 
@@ -333,42 +346,8 @@ export class GameScene extends Phaser.Scene {
         strokeThickness: 3,
       },
     ).setOrigin(0.5).setDepth(101).setAlpha(0.88).setVisible(false);
-    this.affiliationStatusText = this.add.text(
-      layout.centerX,
-      this.bossStatusText.y,
-      '',
-      {
-        fontFamily: UI_FONT,
-        fontSize: readableFontSize(layout.gameWidth <= 430 ? 10 : 11),
-        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-        align: 'center',
-        stroke: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
-        strokeThickness: 3,
-      },
-    ).setOrigin(0.5).setDepth(101).setAlpha(0.76).setVisible(false);
-    this.updateAffiliationStatusUi();
     this.createPauseButton();
-    this.countdownText = this.add.text(
-      layout.centerX,
-      layout.centerY,
-      GameScene.COUNTDOWN_PHRASES[0],
-      {
-        fontFamily: TITLE_FONT,
-        fontSize: readableFontSize(44),
-        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-        stroke: `#${COLORS.GRID.toString(16).padStart(6, '0')}`,
-        strokeThickness: 2,
-        align: 'center',
-        wordWrap: { width: 500 },
-        shadow: {
-          offsetX: 0,
-          offsetY: 0,
-          color: 'transparent',
-          blur: 0,
-          fill: false,
-        },
-      },
-    ).setOrigin(0.5).setDepth(120).setAlpha(0.9);
+    this.startWarpInAt(spawnX, spawnY);
     if (!this.liaisonComm || !this.liaisonCompanyId) {
       const openingLineKey = handoff.retryFromDeath && Math.random() < 0.45 ? 'gameOverRetry' : 'runStart';
       this.showSlickExclusive(getSlickLine(openingLineKey));
@@ -751,6 +730,7 @@ export class GameScene extends Phaser.Scene {
           npc.active = false;
           npc.killedByHazard = false;
           this.missionSystem.trackNpcKill();
+          this.repFluxTracker.trackPlayerKill();
           this.playerDebris.push(new ShipDebris(this, npc.x, npc.y, npc.vx, npc.vy, npc.getHullColor(), npc.radius));
           this.bonusPickups.push(new BonusPickup(this, npc.x, npc.y, NPC_BONUS_POINTS, npc.vx * 0.5, npc.vy * 0.5));
           Overlays.shieldBreakFlash(this);
@@ -790,6 +770,7 @@ export class GameScene extends Phaser.Scene {
         this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
         invulnerable = true;
         this.missionSystem.trackEnemyKill();
+        this.repFluxTracker.trackPlayerKill();
         Overlays.shieldBreakFlash(this);
         Overlays.screenShake(this, 0.012, 280);
       }
@@ -863,6 +844,7 @@ export class GameScene extends Phaser.Scene {
         if (hitEnemy) {
           hitEnemy.active = false;
           this.missionSystem.trackEnemyKill();
+          this.repFluxTracker.trackPlayerKill();
         }
         Overlays.shieldBreakFlash(this);
       } else {
@@ -890,8 +872,14 @@ export class GameScene extends Phaser.Scene {
       const frameSalvage = this.salvageSystem.getLastFrameSalvageIncome();
       const frameMining = this.salvageSystem.getLastFrameMiningIncome();
       const frameAsteroidsBroken = this.salvageSystem.getLastFrameAsteroidsBroken();
-      if (frameSalvage > 0) this.missionSystem.trackSalvageIncome(frameSalvage);
-      if (frameMining > 0) this.missionSystem.trackMiningIncome(frameMining);
+      if (frameSalvage > 0) {
+        this.missionSystem.trackSalvageIncome(frameSalvage);
+        this.repFluxTracker.trackSalvageIncome(frameSalvage);
+      }
+      if (frameMining > 0) {
+        this.missionSystem.trackMiningIncome(frameMining);
+        this.repFluxTracker.trackMiningIncome(frameMining);
+      }
       if (frameAsteroidsBroken > 0) this.missionSystem.trackAsteroidsBroken(frameAsteroidsBroken);
       // Check for mission completions and show pop-ups
       const completions = this.missionSystem.consumeNewCompletions();
@@ -997,30 +985,12 @@ export class GameScene extends Phaser.Scene {
     const boss = this.difficultySystem.getBoss();
     if (!boss || (this.state !== GameState.PLAYING && this.state !== GameState.PAUSED)) {
       this.bossStatusText.setVisible(false);
-      this.updateAffiliationStatusUi();
       return;
     }
 
     this.bossStatusText.setText(boss.getStatusLabel());
     this.bossStatusText.setColor(`#${boss.getStatusColor().toString(16).padStart(6, '0')}`);
     this.bossStatusText.setVisible(true);
-    this.affiliationStatusText.setVisible(false);
-  }
-
-  private updateAffiliationStatusUi(): void {
-    if (!this.affiliationStatusText) {
-      return;
-    }
-
-    const affiliatedCompany = this.affiliatedCompanyId ? COMPANIES[this.affiliatedCompanyId] : null;
-    if (!affiliatedCompany || (this.state !== GameState.PLAYING && this.state !== GameState.PAUSED)) {
-      this.affiliationStatusText.setVisible(false);
-      return;
-    }
-
-    this.affiliationStatusText.setText(`WORKING WITH // ${affiliatedCompany.leaderboardTag}`);
-    this.affiliationStatusText.setColor(`#${affiliatedCompany.color.toString(16).padStart(6, '0')}`);
-    this.affiliationStatusText.setVisible(true);
   }
 
   private spawnRareDebris(phase: number): void {
@@ -1063,19 +1033,40 @@ export class GameScene extends Phaser.Scene {
     this.missionSystem.save();
     let campaignLivesRemaining: number | undefined;
     let campaignMissionsCompleted: number | undefined = campaignSession?.missionsCompleted;
+    let campaignTotalExtracted: number | undefined = campaignSession?.totalExtracted;
     let campaignGameOver = false;
+    let campaignSoftRespawn = false;
     if (this.runMode === RunMode.CAMPAIGN && !this.scoreRecordingBlocked) {
+      const totalExtractedBefore = campaignSession?.totalExtracted ?? this.saveSystem.getCampaignTotalExtractedDisplay();
       const campaignLifeLoss = this.saveSystem.consumeCampaignLife();
       campaignLivesRemaining = campaignLifeLoss.livesRemaining;
       campaignMissionsCompleted = campaignLifeLoss.missionsCompleted;
       campaignGameOver = campaignLifeLoss.gameOver;
+      campaignSoftRespawn = !campaignLifeLoss.gameOver;
+      campaignTotalExtracted = totalExtractedBefore;
+      if (campaignLifeLoss.gameOver) {
+        const playerName = this.saveSystem.getPlayerName();
+        const companyId = getLeaderboardCompanyId(loadCompanyRep());
+        submitScore(playerName, totalExtractedBefore, companyId, runModeToLeaderboardMode(this.runMode));
+        this.saveSystem.recordCampaignLeaderboardEntry(totalExtractedBefore, campaignLifeLoss.missionsCompleted);
+      }
     } else if (this.runMode === RunMode.CAMPAIGN) {
       campaignLivesRemaining = this.saveSystem.getCampaignLivesDisplay();
       campaignMissionsCompleted = this.saveSystem.getCampaignMissionsCompletedDisplay();
+      campaignTotalExtracted = this.saveSystem.getCampaignTotalExtractedDisplay();
     } else if (!this.scoreRecordingBlocked) {
       const playerName = this.saveSystem.getPlayerName();
       const companyId = getLeaderboardCompanyId(loadCompanyRep());
-      submitLoss(playerName, lostScore, companyId);
+      submitLoss(playerName, lostScore, companyId, runModeToLeaderboardMode(this.runMode));
+    }
+    let repFluxDeltas: RepDeltaMap | undefined;
+    // Rep flux only fires when the run actually ends (final death or extract). Soft-respawn defers it.
+    if (!this.scoreRecordingBlocked && !campaignSoftRespawn) {
+      const requested = this.repFluxTracker.computeDeltas('death', this.affiliatedCompanyId);
+      const applied = applyRepDeltas(requested);
+      if (hasAnyRepDelta(applied)) {
+        repFluxDeltas = applied;
+      }
     }
     this.resultData = {
       score: bankedScore,
@@ -1085,8 +1076,10 @@ export class GameScene extends Phaser.Scene {
       scoreRecorded: !this.scoreRecordingBlocked,
       campaignLivesRemaining,
       campaignMissionsCompleted,
+      campaignTotalExtracted,
       campaignGameOver,
       missionProgress,
+      repFluxDeltas,
     };
     this.state = GameState.DEAD;
     this.time.timeScale = 1;
@@ -1094,7 +1087,9 @@ export class GameScene extends Phaser.Scene {
     this.hidePauseMenu();
     this.refreshPauseUi();
     playSfx(this, 'playerDeath');
-    setResultMusic(this);
+    if (!campaignSoftRespawn) {
+      setResultMusic(this);
+    }
     const currentPhase = this.extractionSystem.getPhaseCount();
     if (cause === 'enemy' || cause === 'laser' || currentPhase >= 5) {
       this.slickComm.hide();
@@ -1109,7 +1104,12 @@ export class GameScene extends Phaser.Scene {
       COLORS.PLAYER, 8,
     ));
     this.player.setDestroyedVisual(true);
+    this.player.graphic.setAlpha(0);
     Overlays.screenShake(this, 0.014, 350);
+    if (campaignSoftRespawn) {
+      this.softRespawnForCampaign();
+      return;
+    }
     Overlays.screenWipe(
       this,
       0xff3366,
@@ -1119,6 +1119,29 @@ export class GameScene extends Phaser.Scene {
       },
       { duration: 350, hold: 120 },
     );
+  }
+
+  private softRespawnForCampaign(): void {
+    // Wipe arena (no kill credit — this is the cost of dying, not a clear).
+    this.clearBoard(true, false);
+    for (const b of this.bombPickups) b.destroy();
+    this.bombPickups = [];
+    for (const p of this.bonusPickups) p.destroy();
+    this.bonusPickups = [];
+    this.scoreSystem.clearUnbanked();
+
+    const layout = getLayout();
+    const spawnX = layout.arenaLeft + layout.arenaWidth / 2;
+    const spawnY = layout.arenaTop + layout.arenaHeight * 0.75;
+    this.player.respawn(spawnX, spawnY);
+    this.invulnerableTimer = 2000;
+    this.resultData = null;
+    this.startWarpInAt(spawnX, spawnY, {
+      durationMs: GameScene.CAMPAIGN_RESPAWN_WARP_MS,
+      showText: false,
+    });
+    this.refreshPauseUi();
+    setGameplayMusicForPhase(this, this.extractionSystem.getPhaseCount());
   }
 
   private handleExtraction(): void {
@@ -1161,13 +1184,25 @@ export class GameScene extends Phaser.Scene {
     let campaignMissionsCompleted = this.runMode === RunMode.CAMPAIGN
       ? this.saveSystem.getCampaignMissionsCompletedDisplay()
       : undefined;
+    let campaignTotalExtracted = this.runMode === RunMode.CAMPAIGN
+      ? this.saveSystem.getCampaignTotalExtractedDisplay()
+      : undefined;
+    let repFluxDeltas: RepDeltaMap | undefined;
     if (scoreRecorded) {
       this.missionSystem.claimAndClear();
       if (this.runMode === RunMode.CAMPAIGN && completedMissionCount > 0) {
         campaignMissionsCompleted = this.saveSystem.addCampaignMissionCompletions(completedMissionCount).missionsCompleted;
       }
       walletDeposit = this.saveSystem.depositWalletPayout(score, this.runMode);
+      if (this.runMode === RunMode.CAMPAIGN && score > 0) {
+        campaignTotalExtracted = this.saveSystem.addCampaignExtractedCredits(score).totalExtracted;
+      }
       this.bankingSystem.finalizeExtraction(this.runMode);
+      const requested = this.repFluxTracker.computeDeltas('extract', this.affiliatedCompanyId);
+      const applied = applyRepDeltas(requested);
+      if (hasAnyRepDelta(applied)) {
+        repFluxDeltas = applied;
+      }
     }
     this.resultData = {
       score,
@@ -1181,7 +1216,9 @@ export class GameScene extends Phaser.Scene {
       walletBalance: walletDeposit.walletBalance,
       campaignLivesRemaining: this.runMode === RunMode.CAMPAIGN ? this.saveSystem.getCampaignLivesDisplay() : undefined,
       campaignMissionsCompleted,
+      campaignTotalExtracted,
       missionProgress,
+      repFluxDeltas,
     };
     this.showSlickExclusive(getSlickLine('extraction'), 0);
     this.clearBoard();
@@ -1353,7 +1390,6 @@ export class GameScene extends Phaser.Scene {
     this.clearResultUi();
     this.hud.destroy();
     this.bossStatusText.destroy();
-    this.affiliationStatusText.destroy();
     this.clearCommState();
     this.slickComm.destroy();
     this.regentComm.destroy();
@@ -1389,17 +1425,68 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private startWarpInAt(
+    spawnX: number,
+    spawnY: number,
+    options: { durationMs?: number; showText?: boolean } = {},
+  ): void {
+    const durationMs = options.durationMs ?? GameScene.START_COUNTDOWN_MS;
+    const showText = options.showText ?? true;
+    this.countdownDurationMs = durationMs;
+    this.countdownTimer = durationMs;
+    this.state = GameState.COUNTDOWN;
+    this.pausedFromState = GameState.COUNTDOWN;
+    this.lastGateActive = false;
+    this.inputSystem.clear();
+
+    if (this.entryGate) {
+      this.entryGate.destroy();
+    }
+    this.entryGate = new ExitGate(this, { x: spawnX, y: spawnY }, durationMs);
+
+    if (this.countdownText) {
+      this.countdownText.destroy();
+      this.countdownText = null;
+    }
+    if (!showText) {
+      return;
+    }
+    const layout = getLayout();
+    this.countdownText = this.add.text(
+      layout.centerX,
+      layout.centerY,
+      GameScene.COUNTDOWN_PHRASES[0],
+      {
+        fontFamily: TITLE_FONT,
+        fontSize: readableFontSize(44),
+        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+        stroke: `#${COLORS.GRID.toString(16).padStart(6, '0')}`,
+        strokeThickness: 2,
+        align: 'center',
+        wordWrap: { width: 500 },
+        shadow: {
+          offsetX: 0,
+          offsetY: 0,
+          color: 'transparent',
+          blur: 0,
+          fill: false,
+        },
+      },
+    ).setOrigin(0.5).setDepth(120).setAlpha(0.9);
+  }
+
   private updateCountdown(delta: number, paused = false): void {
     this.countdownTimer = Math.max(0, this.countdownTimer - delta);
-    const elapsed = GameScene.START_COUNTDOWN_MS - this.countdownTimer;
-    const phraseIndex = Math.min(
-      Math.floor(elapsed / 1000),
-      GameScene.COUNTDOWN_PHRASES.length - 1,
-    );
-    this.countdownText?.setText(GameScene.COUNTDOWN_PHRASES[phraseIndex]);
-
-    this.countdownText?.setScale(1);
-    this.countdownText?.setAlpha(0.9);
+    if (this.countdownText) {
+      const elapsed = this.countdownDurationMs - this.countdownTimer;
+      const phraseIndex = Math.min(
+        Math.floor(elapsed / 1000),
+        GameScene.COUNTDOWN_PHRASES.length - 1,
+      );
+      this.countdownText.setText(GameScene.COUNTDOWN_PHRASES[phraseIndex]);
+      this.countdownText.setScale(1);
+      this.countdownText.setAlpha(0.9);
+    }
 
     if (this.countdownTimer <= 0) {
       this.countdownText?.destroy();
@@ -1489,7 +1576,6 @@ export class GameScene extends Phaser.Scene {
     this.redrawArenaBorder();
     this.hud.refreshPalette();
     this.updateBossStatusUi();
-    this.updateAffiliationStatusUi();
     this.refreshCountdownPalette();
     this.refreshPauseUi();
 
@@ -1643,7 +1729,7 @@ export class GameScene extends Phaser.Scene {
       ? (ultraCompactResults ? 'DEBUG RUN // NO PAYOUTS' : 'DEBUG RUN // NO RECORDS OR PAYOUTS')
       : isCampaign
         ? (isCampaignGameOver
-          ? 'CAMPAIGN OVER // FAVORS CLEARED'
+          ? (ultraCompactResults ? 'CAMPAIGN OVER // SCORE LOGGED' : 'CAMPAIGN OVER // SCORE SUBMITTED')
           : `CAMPAIGN // LIVES LEFT ${data.campaignLivesRemaining ?? 0}`)
       : (ultraCompactResults ? 'ARCADE // LIVE BOARD' : 'ARCADE // LEADERBOARD LIVE');
     const modeSummaryColor = !data.scoreRecorded
@@ -1665,10 +1751,13 @@ export class GameScene extends Phaser.Scene {
 
     if (isCampaign) {
       currentY += lineGap;
+      const totalExtractedLabel = ultraCompactResults ? 'EXTRACTED' : 'CAMPAIGN EXTRACTED';
+      const totalExtracted = Math.floor(data.campaignTotalExtracted ?? 0);
+      const missionsCount = Math.floor(data.campaignMissionsCompleted ?? 0);
       const campaignProgressText = this.add.text(
         centerX,
         currentY,
-        `${ultraCompactResults ? 'MISSIONS' : 'MISSIONS COMPLETED'}: ${Math.floor(data.campaignMissionsCompleted ?? 0)}`,
+        `${totalExtractedLabel}: ${totalExtracted}c  //  ${ultraCompactResults ? 'MISS' : 'MISSIONS'}: ${missionsCount}`,
         {
           fontFamily: UI_FONT,
           fontSize: compactResults ? detailSize : metaSize,
@@ -1676,7 +1765,7 @@ export class GameScene extends Phaser.Scene {
           align: 'center',
           wordWrap: { width: textWidth },
         },
-      ).setOrigin(0.5, 0).setDepth(210).setAlpha(0.82);
+      ).setOrigin(0.5, 0).setDepth(210).setAlpha(isCampaignGameOver ? 0.94 : 0.82);
       this.fitTextToWidth(campaignProgressText, textWidth, 10);
       this.resultUi.push(campaignProgressText);
       currentY += campaignProgressText.height;
@@ -1753,6 +1842,21 @@ export class GameScene extends Phaser.Scene {
       currentY += repSummaryText.height + lineGap;
       resultContentBottomY = currentY;
 
+      const repFluxLine = data.repFluxDeltas ? formatRepDeltasOneLine(data.repFluxDeltas) : null;
+      if (repFluxLine) {
+        const fluxText = this.add.text(centerX, currentY, repFluxLine, {
+          fontFamily: UI_FONT,
+          fontSize: compactResults ? detailSize : metaSize,
+          color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+          align: 'center',
+          wordWrap: { width: textWidth },
+        }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.86);
+        this.fitTextToWidth(fluxText, textWidth, 10);
+        this.resultUi.push(fluxText);
+        currentY += fluxText.height + lineGap;
+        resultContentBottomY = currentY;
+      }
+
       for (let i = 0; i < missions.length; i++) {
         const m = missions[i];
         const prog = Math.min(m.progress, m.target);
@@ -1818,7 +1922,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const primaryButtonLabel = isCampaign
-      ? (isCampaignGameOver ? 'NEW CAMPAIGN' : isDeath ? 'NEXT LIFE' : 'NEXT RUN')
+      ? (isCampaignGameOver ? 'NEW CAMPAIGN' : 'NEXT RUN')
       : 'TAP TO RETRY';
     const primaryButtonAction = (): void => {
       if (isCampaignGameOver) {
@@ -1829,14 +1933,20 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
+      if (isCampaign) {
+        // Campaign extract: back to MissionSelect to pick fresh missions, lives unchanged.
+        this.scene.start(SCENE_KEYS.MISSION_SELECT, {
+          mode: RunMode.CAMPAIGN,
+        } satisfies MenuHandoff);
+        return;
+      }
+
       this.scene.start(SCENE_KEYS.GAME, {
         mode: this.runMode,
         retryFromDeath: this.resultData?.cause === 'death',
-        runBoosts: isCampaign
+        runBoosts: this.resultData?.cause === 'death'
           ? this.activeRunBoosts ?? undefined
-          : this.resultData?.cause === 'death'
-            ? this.activeRunBoosts ?? undefined
-            : undefined,
+          : undefined,
       } satisfies MenuHandoff);
     };
 
@@ -1995,6 +2105,7 @@ export class GameScene extends Phaser.Scene {
       this.playerDebris.push(new ShipDebris(this, e.x, e.y, e.getVelocityX(), e.getVelocityY(), COLORS.ENEMY, e.radius));
       if (trackMissionKills) {
         this.missionSystem.trackEnemyKill();
+        this.repFluxTracker.trackPlayerKill();
       }
       e.destroy();
     }
@@ -2180,7 +2291,10 @@ export class GameScene extends Phaser.Scene {
     const panelBottomMargin = densePause ? 12 : 16;
     const panelSideInset = densePause ? 20 : 28;
     const panelWidth = layout.gameWidth - panelSideInset * 2;
-    const panelTop = topMargin + pauseButtonHeight + (densePause ? 8 : compactHud ? 10 : 12);
+    const panelGap = densePause ? 8 : compactHud ? 10 : 12;
+    const hudBottom = this.hud.getTopHudBottom();
+    const pauseButtonBottom = topMargin + pauseButtonHeight;
+    const panelTop = Math.max(hudBottom, pauseButtonBottom) + panelGap;
     const panelHeight = layout.gameHeight - panelTop - panelBottomMargin;
 
     const blocker = this.add.zone(0, 0, layout.gameWidth, layout.gameHeight)

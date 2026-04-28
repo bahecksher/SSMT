@@ -54,7 +54,6 @@ export class DifficultySystem {
   private beamBurstTimer = 0;
   private enemyTimer = 0;
   private npcTimer = 0;
-  private npcBonusMult = 1.0;
   private bonusDropChanceAdd = 0.0;
   private asteroidCollisionSfxCooldownMs = 0;
 
@@ -64,8 +63,7 @@ export class DifficultySystem {
     this.updateDensityScale();
   }
 
-  setBoosts(npcBonusMult: number, bonusDropChanceAdd: number): void {
-    this.npcBonusMult = npcBonusMult;
+  setBoosts(bonusDropChanceAdd: number): void {
     this.bonusDropChanceAdd = bonusDropChanceAdd;
   }
 
@@ -321,7 +319,7 @@ export class DifficultySystem {
             y: enemy.y,
             vx: enemy.getVelocityX() * 0.45,
             vy: enemy.getVelocityY() * 0.45,
-            points: Math.round(ENEMY_BONUS_POINTS * this.npcBonusMult),
+            points: ENEMY_BONUS_POINTS,
           });
           if (Math.random() < BOMB_DROP_CHANCE + this.bonusDropChanceAdd) {
             this.bombDropPositions.push({
@@ -351,7 +349,7 @@ export class DifficultySystem {
               y: npc.y,
               vx: npc.vx * 0.5,
               vy: npc.vy * 0.5,
-              points: Math.round(NPC_BONUS_POINTS * this.npcBonusMult),
+              points: NPC_BONUS_POINTS,
             });
           }
         }
@@ -685,7 +683,7 @@ export class DifficultySystem {
           this.bonusDropPositions.push({
             x: enemy.x, y: enemy.y,
             vx: enemy.getVelocityX() * 0.45, vy: enemy.getVelocityY() * 0.45,
-            points: Math.round(ENEMY_BONUS_POINTS * this.npcBonusMult),
+            points: ENEMY_BONUS_POINTS,
           });
           if (Math.random() < BOMB_DROP_CHANCE + this.bonusDropChanceAdd) {
             this.bombDropPositions.push({
@@ -733,7 +731,7 @@ export class DifficultySystem {
           y: enemy.y,
           vx: enemy.getVelocityX() * 0.45,
           vy: enemy.getVelocityY() * 0.45,
-          points: Math.round(ENEMY_BONUS_POINTS * this.npcBonusMult),
+          points: ENEMY_BONUS_POINTS,
         });
         if (Math.random() < BOMB_DROP_CHANCE + this.bonusDropChanceAdd) {
           this.bombDropPositions.push({

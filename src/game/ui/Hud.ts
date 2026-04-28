@@ -21,10 +21,6 @@ export class Hud {
   private shieldText: Phaser.GameObjects.Text;
   private missionPillRoot: Phaser.GameObjects.Container;
   private missionPills: Phaser.GameObjects.GameObject[] = [];
-  private lastScore = -1;
-  private lastLives: number | null = null;
-
-
   private lastPhase = -1;
   private lastShield = false;
   private lastMissionHash = '';
@@ -32,26 +28,32 @@ export class Hud {
   private missionPillTween: Phaser.Tweens.Tween | null = null;
   private currentMissions: ActiveMission[] = [];
   private readonly topMargin: number;
-  private readonly shieldRowY: number;
+  private readonly compactHud: boolean;
   private readonly narrowHud: boolean;
   private readonly elementGap: number;
-  private readonly topRowMaxX: number;
+  private readonly scoreLeftX: number;
+  private readonly topFontBaseSize: number;
+  private readonly topFontMinSize: number;
+  private currentTopFontSize: number;
+  private topHudBottom = 0;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     const layout = getLayout();
     const compactHud = layout.gameWidth <= 430;
     const narrowHud = isNarrowViewport(layout);
+    this.compactHud = compactHud;
     this.narrowHud = narrowHud;
     this.elementGap = narrowHud ? 6 : 10;
-    const pauseButtonHalfWidth = compactHud ? 29 : 32;
-    this.topRowMaxX = layout.centerX - pauseButtonHalfWidth - 8;
+    this.scoreLeftX = narrowHud ? 10 : 16;
     const topMargin = compactHud ? 12 : 16;
     const scoreFontSize = narrowHud ? 11 : compactHud ? 13 : 16;
     const minorFontSize = compactHud ? 11 : 14;
     const shieldY = topMargin + (compactHud ? 16 : 24);
     this.topMargin = topMargin;
-    this.shieldRowY = shieldY;
+    this.topFontBaseSize = scoreFontSize;
+    this.topFontMinSize = compactHud ? 9 : 10;
+    this.currentTopFontSize = scoreFontSize;
     const titleTextStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: TITLE_FONT,
       fontSize: readableFontSize(scoreFontSize),
@@ -62,7 +64,7 @@ export class Hud {
       fontFamily: UI_FONT,
     };
 
-    this.scoreText = scene.add.text(narrowHud ? 10 : 16, topMargin, narrowHud ? 'CR 0' : 'CREDITS 0', {
+    this.scoreText = scene.add.text(this.scoreLeftX, topMargin, narrowHud ? 'CR 0' : 'CREDITS 0', {
       ...titleTextStyle,
       color: colorStr(COLORS.SALVAGE),
     }).setDepth(100);
@@ -83,6 +85,7 @@ export class Hud {
     }).setDepth(100);
 
     this.missionPillRoot = scene.add.container(0, 0).setDepth(100);
+    this.updateTopHudBottom();
   }
 
   update(
@@ -93,47 +96,23 @@ export class Hud {
     campaignLivesRemaining: number | null = null,
   ): void {
     const roundedScore = Math.floor(score);
-    if (roundedScore !== this.lastScore) {
-      this.scoreText.setText(this.narrowHud ? `CR ${roundedScore}` : `CREDITS ${roundedScore}`);
-      this.lastScore = roundedScore;
-    }
-    if (campaignLivesRemaining !== this.lastLives) {
-      this.livesText.setText(campaignLivesRemaining !== null
-        ? (this.narrowHud ? `// LIV ${campaignLivesRemaining}` : `// LIVES ${campaignLivesRemaining}`)
-        : '');
-      this.lastLives = campaignLivesRemaining;
-    }
-
-    // Position lives: stay on top row if it fits before the pause button,
-    // otherwise flow to the second row so it doesn't overlap it.
-    const scoreRightX = this.scoreText.x + this.scoreText.width + this.elementGap;
-    const livesWidth = this.livesText.text.length > 0 ? this.livesText.width : 0;
-    const fitsOnTopRow = livesWidth === 0 || scoreRightX + livesWidth <= this.topRowMaxX;
-
-    if (fitsOnTopRow) {
-      this.livesText.setPosition(scoreRightX, this.topMargin);
-    } else {
-      const leftX = this.narrowHud ? 10 : 16;
-      this.livesText.setPosition(leftX, this.shieldRowY);
-    }
+    this.updateTopRowLayout(roundedScore, campaignLivesRemaining);
 
     const roundedPhase = Math.max(1, Math.floor(phase));
     if (roundedPhase !== this.lastPhase) {
       this.phaseText.setText(`PHASE ${roundedPhase}`);
       this.lastPhase = roundedPhase;
     }
-
-    const layout = getLayout();
-    const topRowRightEdge = fitsOnTopRow && livesWidth > 0
-      ? this.livesText.x + this.livesText.width
-      : this.scoreText.x + this.scoreText.width;
-    const phaseOnSecondRow = isNarrowViewport(layout) || topRowRightEdge + 14 > layout.gameWidth - 16 - this.phaseText.width;
-    this.phaseText.setPosition(layout.gameWidth - 16, phaseOnSecondRow ? this.shieldRowY : this.topMargin);
+    this.phaseText
+      .setFontSize(readableFontSize(this.currentTopFontSize))
+      .setPosition(getLayout().gameWidth - 16, this.topMargin);
 
     if (hasShield !== this.lastShield) {
       this.shieldText.setText(hasShield ? 'SHIELD' : '');
       this.lastShield = hasShield;
     }
+
+    this.updateTopHudBottom();
   }
 
   updateMissions(missions: ActiveMission[]): void {
@@ -248,6 +227,86 @@ export class Hud {
     this.shieldText.setColor(colorStr(COLORS.SHIELD));
     this.lastMissionHash = '';
     this.updateMissions(this.currentMissions);
+  }
+
+  getTopHudBottom(): number {
+    return this.topHudBottom;
+  }
+
+  private updateTopRowLayout(roundedScore: number, campaignLivesRemaining: number | null): void {
+    const layout = getLayout();
+    const pauseButtonWidth = this.compactHud ? 58 : 64;
+    const pauseSafeGap = this.narrowHud ? 8 : 12;
+    const maxTopRowWidth = Math.max(
+      84,
+      layout.centerX - pauseButtonWidth / 2 - pauseSafeGap - this.scoreLeftX,
+    );
+    const fullScoreLabel = `CREDITS ${roundedScore}`;
+    const compactScoreLabel = `CR ${roundedScore}`;
+    const fullLivesLabel = campaignLivesRemaining !== null ? `// LIVES ${campaignLivesRemaining}` : '';
+    const compactLivesLabel = campaignLivesRemaining !== null ? `// LIV ${campaignLivesRemaining}` : '';
+    const ultraCompactLivesLabel = campaignLivesRemaining !== null ? `// ${campaignLivesRemaining}` : '';
+    const variants = this.narrowHud
+      ? [
+          { score: compactScoreLabel, lives: compactLivesLabel, baseSize: this.topFontBaseSize },
+          { score: compactScoreLabel, lives: ultraCompactLivesLabel, baseSize: this.topFontBaseSize },
+        ]
+      : [
+          { score: fullScoreLabel, lives: fullLivesLabel, baseSize: this.topFontBaseSize },
+          { score: compactScoreLabel, lives: compactLivesLabel, baseSize: Math.max(this.topFontMinSize + 1, this.topFontBaseSize - 1) },
+          { score: compactScoreLabel, lives: ultraCompactLivesLabel, baseSize: Math.max(this.topFontMinSize + 1, this.topFontBaseSize - 1) },
+        ];
+
+    let chosenGap = this.elementGap;
+    for (let i = 0; i < variants.length; i += 1) {
+      const variant = variants[i];
+      let fontSize = variant.baseSize;
+      this.scoreText.setText(variant.score);
+      this.livesText.setText(variant.lives);
+
+      while (fontSize >= this.topFontMinSize) {
+        this.scoreText.setFontSize(readableFontSize(fontSize));
+        this.livesText.setFontSize(readableFontSize(fontSize));
+        const gap = variant.lives.length > 0 && fontSize <= this.topFontMinSize + 1
+          ? Math.max(4, this.elementGap - 2)
+          : this.elementGap;
+        const combinedWidth = this.getTopRowWidth(gap);
+
+        if (combinedWidth <= maxTopRowWidth || fontSize === this.topFontMinSize) {
+          chosenGap = gap;
+          this.currentTopFontSize = fontSize;
+          if (combinedWidth <= maxTopRowWidth || i === variants.length - 1) {
+            this.scoreText.setPosition(this.scoreLeftX, this.topMargin);
+            this.livesText.setPosition(
+              this.scoreText.x + this.scoreText.width + (this.livesText.text.length > 0 ? chosenGap : 0),
+              this.topMargin,
+            );
+            return;
+          }
+          break;
+        }
+
+        fontSize -= 1;
+      }
+    }
+
+    this.scoreText.setPosition(this.scoreLeftX, this.topMargin);
+    this.livesText.setPosition(
+      this.scoreText.x + this.scoreText.width + (this.livesText.text.length > 0 ? chosenGap : 0),
+      this.topMargin,
+    );
+  }
+
+  private getTopRowWidth(gap: number): number {
+    return this.scoreText.width + (this.livesText.text.length > 0 ? gap + this.livesText.width : 0);
+  }
+
+  private updateTopHudBottom(): void {
+    const scoreBottom = this.scoreText.y + this.scoreText.height;
+    const livesBottom = this.livesText.text.length > 0 ? this.livesText.y + this.livesText.height : 0;
+    const phaseBottom = this.phaseText.y + this.phaseText.height;
+    const shieldBottom = this.shieldText.text.length > 0 ? this.shieldText.y + this.shieldText.height : 0;
+    this.topHudBottom = Math.max(scoreBottom, livesBottom, phaseBottom, shieldBottom);
   }
 
   private applyMissionPillVisibility(animate: boolean): void {

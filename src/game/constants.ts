@@ -3,6 +3,8 @@ export const SCENE_KEYS = {
   MENU: 'MenuScene',
   MISSION_SELECT: 'MissionSelectScene',
   GAME: 'GameScene',
+  HOW_TO_PLAY: 'HowToPlayScene',
+  TUTORIAL_ARENA: 'TutorialArenaScene',
 } as const;
 
 export const TITLE_FONT = '"pixel_lcd", Consolas, "Lucida Console", Menlo, Monaco, monospace';
@@ -236,4 +238,8 @@ export function getNextPaletteId(current: PaletteId): PaletteId {
 export function applyColorPalette(paletteId: PaletteId): PaletteColors {
   Object.assign(COLORS, PALETTES[paletteId]);
   return COLORS;
+}
+
+export function getPaletteColors(paletteId: PaletteId): PaletteColors {
+  return PALETTES[paletteId];
 }

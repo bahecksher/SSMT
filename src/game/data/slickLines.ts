@@ -10,7 +10,25 @@ export type SlickLineKey =
   | 'shieldPickup'
   | 'extraction'
   | 'death'
-  | 'gameOverRetry';
+  | 'gameOverRetry'
+  | 'tutMove'
+  | 'tutMoveNudge'
+  | 'tutMoveDone'
+  | 'tutScore'
+  | 'tutScoreNudge'
+  | 'tutScoreDone'
+  | 'tutDanger'
+  | 'tutDangerNudge'
+  | 'tutDangerDone'
+  | 'tutDangerReset'
+  | 'tutShield'
+  | 'tutShieldNudge'
+  | 'tutShieldHit'
+  | 'tutShieldDone'
+  | 'tutExtract'
+  | 'tutExtractLive'
+  | 'tutExtractDone'
+  | 'tutComplete';
 
 const SLICK_LINES: Record<SlickLineKey, string[]> = {
   menuIntro: [
@@ -75,6 +93,60 @@ const SLICK_LINES: Record<SlickLineKey, string[]> = {
     'Good pilots are built out of reruns... and wreckage.',
     "You've still got a point to prove. Get to it.",
     'Get back in the seat, pilot.',
+  ],
+  tutMove: [
+    "Drag or hold the screen to move. Release and your ship will coast.",
+  ],
+  tutMoveNudge: [
+    "Touch and hold anywhere on the arena to fly. Try moving around.",
+  ],
+  tutMoveDone: [
+    "Good. Movement confirmed.",
+  ],
+  tutScore: [
+    "Two ways to score: enter the GREEN ring to collect SALVAGE credits. Skim the YELLOW ring around the asteroid to MINE credits. Don't touch the asteroid itself.",
+  ],
+  tutScoreNudge: [
+    "Fly into the green ring for salvage. Fly close to the asteroid (but not into it) for mining credits.",
+  ],
+  tutScoreDone: [
+    "Both rings tested. Credits stay unbanked until you extract.",
+  ],
+  tutDanger: [
+    "Asteroids and enemy ships will destroy you on contact. You have no shield. Survive.",
+  ],
+  tutDangerNudge: [
+    "Keep moving. Don't let the asteroid or the enemy touch your ship.",
+  ],
+  tutDangerDone: [
+    "You survived. Next: shields.",
+  ],
+  tutDangerReset: [
+    "Your ship was destroyed. Respawning.",
+  ],
+  tutShield: [
+    "Pick up the shield. It absorbs one hit before breaking. Use it on the asteroid to feel how it works.",
+  ],
+  tutShieldNudge: [
+    "Grab the shield, then ram the asteroid. The shield will break instead of your ship.",
+  ],
+  tutShieldHit: [
+    "That's a shield absorbing a hit. Grab the next shield and try again.",
+  ],
+  tutShieldDone: [
+    "Shields buy you one mistake each. Don't rely on having one.",
+  ],
+  tutExtract: [
+    "Credits are unbanked until you extract. The gate is warming up - fly through it once it goes live to bank.",
+  ],
+  tutExtractLive: [
+    "Gate is live. Fly through it to bank your credits.",
+  ],
+  tutExtractDone: [
+    "Banked.",
+  ],
+  tutComplete: [
+    "That's the loop. Move, score, dodge, shield, extract. Go fly a real run when you're ready.",
   ],
 };
 

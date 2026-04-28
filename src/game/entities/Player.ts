@@ -165,4 +165,18 @@ export class Player {
     this.destroyed = destroyed;
     this.draw();
   }
+
+  /** Reset position, velocity, shield, and destroyed visual. Used for campaign soft-respawn. */
+  respawn(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.hasShield = false;
+    this.heading = -Math.PI / 2;
+    this.shieldPulse = 0;
+    this.destroyed = false;
+    this.graphic.setAlpha(1);
+    this.draw();
+  }
 }

@@ -1,12 +1,19 @@
 import { COMPANY_IDS } from '../data/companyData';
-import { CompanyId, isCompanyId } from '../types';
+import { CompanyId, isCompanyId, RunMode } from '../types';
 import { supabase } from './supabase';
+
+export type LeaderboardMode = 'QUICK' | 'CAMPAIGN';
+
+export function runModeToLeaderboardMode(mode: RunMode): LeaderboardMode {
+  return mode === RunMode.CAMPAIGN ? 'CAMPAIGN' : 'QUICK';
+}
 
 export interface LeaderboardEntry {
   player_name: string;
   score: number;
   created_at: string;
   company_id?: CompanyId | null;
+  mode?: LeaderboardMode | null;
 }
 
 export interface CorporationLeaderboardEntry {
@@ -32,37 +39,99 @@ function getCutoffDate(period: Period): string {
   return now.toISOString();
 }
 
-export async function fetchLeaderboard(period: Period, limit = 10): Promise<LeaderboardEntry[]> {
-  if (!isOnline()) return [];
-  const cutoff = getCutoffDate(period);
-  const initialResult = await supabase
-    .from('scores')
-    .select('player_name, score, created_at, company_id')
-    .gte('created_at', cutoff)
-    .order('score', { ascending: false })
-    .limit(limit);
-  let data = initialResult.data as LeaderboardEntry[] | null;
-  let error = initialResult.error;
-
-  if (error && isMissingCompanyColumnError(error.message)) {
-    const fallbackResult = await supabase
-      .from('scores')
-      .select('player_name, score, created_at')
-      .gte('created_at', cutoff)
-      .order('score', { ascending: false })
-      .limit(limit);
-    data = fallbackResult.data as LeaderboardEntry[] | null;
-    error = fallbackResult.error;
+function buildTimedLeaderboardQuery(
+  table: 'scores' | 'losses',
+  cutoff: string,
+  columns: string,
+  mode?: LeaderboardMode,
+) {
+  let query = supabase
+    .from(table)
+    .select(columns)
+    .gte('created_at', cutoff);
+  if (mode) {
+    query = query.eq('mode', mode);
   }
-
-  if (error) {
-    console.warn('Leaderboard fetch failed:', error.message);
-    return [];
-  }
-  return data as LeaderboardEntry[];
+  return query;
 }
 
-export async function fetchCorporationLeaderboard(period: Period): Promise<CorporationLeaderboardEntry[]> {
+export async function fetchLeaderboard(
+  period: Period,
+  limit = 10,
+  mode?: LeaderboardMode,
+): Promise<LeaderboardEntry[]> {
+  if (!isOnline()) return [];
+  const cutoff = getCutoffDate(period);
+  const attempts: Array<{ columns: string; mode?: LeaderboardMode }> = [
+    { columns: 'player_name, score, created_at, company_id, mode', mode },
+    { columns: 'player_name, score, created_at, mode', mode },
+    { columns: 'player_name, score, created_at, company_id' },
+    { columns: 'player_name, score, created_at' },
+  ];
+  let lastError: { message: string } | null = null;
+
+  for (const attempt of attempts) {
+    const result = await buildTimedLeaderboardQuery('scores', cutoff, attempt.columns, attempt.mode)
+      .order('score', { ascending: false })
+      .limit(limit);
+    if (!result.error) {
+      return (result.data as unknown as LeaderboardEntry[] | null) ?? [];
+    }
+
+    lastError = result.error;
+    const canRetryWithoutMode = Boolean(attempt.mode) && isMissingModeColumnError(result.error.message);
+    const canRetryWithoutCompany = attempt.columns.includes('company_id') && isMissingCompanyColumnError(result.error.message);
+    if (!canRetryWithoutMode && !canRetryWithoutCompany) {
+      break;
+    }
+  }
+
+  if (lastError) {
+    console.warn('Leaderboard fetch failed:', lastError.message);
+  }
+  return [];
+}
+
+async function fetchCorporationLeaderboardPage(
+  cutoff: string,
+  from: number,
+  to: number,
+  mode?: LeaderboardMode,
+): Promise<LeaderboardEntry[] | null> {
+  const attempts: Array<{ columns: string; mode?: LeaderboardMode }> = [
+    { columns: 'company_id, score, created_at, mode', mode },
+    { columns: 'company_id, score, created_at' },
+  ];
+  let lastError: { message: string } | null = null;
+
+  for (const attempt of attempts) {
+    const result = await buildTimedLeaderboardQuery('scores', cutoff, attempt.columns, attempt.mode)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+    if (!result.error) {
+      return (result.data as unknown as LeaderboardEntry[] | null) ?? [];
+    }
+
+    lastError = result.error;
+    const canRetryWithoutMode = Boolean(attempt.mode) && isMissingModeColumnError(result.error.message);
+    if (!canRetryWithoutMode && !isMissingCompanyColumnError(result.error.message)) {
+      break;
+    }
+    if (isMissingCompanyColumnError(result.error.message)) {
+      return null;
+    }
+  }
+
+  if (lastError) {
+    console.warn('Corporation leaderboard fetch failed:', lastError.message);
+  }
+  return null;
+}
+
+export async function fetchCorporationLeaderboard(
+  period: Period,
+  mode?: LeaderboardMode,
+): Promise<CorporationLeaderboardEntry[]> {
   if (!isOnline()) return [];
   const cutoff = getCutoffDate(period);
   const rows: LeaderboardEntry[] = [];
@@ -71,21 +140,10 @@ export async function fetchCorporationLeaderboard(period: Period): Promise<Corpo
   for (let page = 0; page < 10; page++) {
     const from = page * pageSize;
     const to = from + pageSize - 1;
-    const result = await supabase
-      .from('scores')
-      .select('company_id, score, created_at')
-      .gte('created_at', cutoff)
-      .order('created_at', { ascending: false })
-      .range(from, to);
-
-    if (result.error) {
-      if (!isMissingCompanyColumnError(result.error.message)) {
-        console.warn('Corporation leaderboard fetch failed:', result.error.message);
-      }
+    const pageRows = await fetchCorporationLeaderboardPage(cutoff, from, to, mode);
+    if (!pageRows) {
       return [];
     }
-
-    const pageRows = result.data as LeaderboardEntry[] | null ?? [];
     rows.push(...pageRows);
     if (pageRows.length < pageSize) {
       break;
@@ -125,39 +183,59 @@ export async function fetchCorporationLeaderboard(period: Period): Promise<Corpo
     .sort((a, b) => b.totalScore - a.totalScore || b.bestScore - a.bestScore || b.runCount - a.runCount);
 }
 
-export async function submitScore(playerName: string, score: number, companyId: CompanyId | null): Promise<void> {
-  if (!isOnline()) return;
-  let { error } = await supabase
-    .from('scores')
-    .insert({ player_name: playerName, score: Math.floor(score), company_id: companyId });
+async function insertScoreRow(
+  table: 'scores' | 'losses',
+  playerName: string,
+  score: number,
+  companyId: CompanyId | null,
+  mode: LeaderboardMode,
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    player_name: playerName,
+    score: Math.floor(score),
+    company_id: companyId,
+    mode,
+  };
+  let { error } = await supabase.from(table).insert(payload);
 
-  if (error && isMissingCompanyColumnError(error.message)) {
-    ({ error } = await supabase
-      .from('scores')
-      .insert({ player_name: playerName, score: Math.floor(score) }));
+  // Progressively strip unknown columns so legacy schemas still accept the row.
+  for (let attempt = 0; attempt < 2 && error; attempt++) {
+    let stripped = false;
+    if (isMissingModeColumnError(error.message) && 'mode' in payload) {
+      delete payload.mode;
+      stripped = true;
+    } else if (isMissingCompanyColumnError(error.message) && 'company_id' in payload) {
+      delete payload.company_id;
+      stripped = true;
+    }
+    if (!stripped) break;
+    ({ error } = await supabase.from(table).insert(payload));
   }
 
   if (error) {
-    console.warn('Score submit failed:', error.message);
+    console.warn(`${table} submit failed:`, error.message);
   }
 }
 
-export async function submitLoss(playerName: string, lostScore: number, companyId: CompanyId | null): Promise<void> {
+export async function submitScore(
+  playerName: string,
+  score: number,
+  companyId: CompanyId | null,
+  mode: LeaderboardMode = 'QUICK',
+): Promise<void> {
+  if (!isOnline()) return;
+  await insertScoreRow('scores', playerName, score, companyId, mode);
+}
+
+export async function submitLoss(
+  playerName: string,
+  lostScore: number,
+  companyId: CompanyId | null,
+  mode: LeaderboardMode = 'QUICK',
+): Promise<void> {
   if (lostScore <= 0) return;
   if (!isOnline()) return;
-  let { error } = await supabase
-    .from('losses')
-    .insert({ player_name: playerName, score: Math.floor(lostScore), company_id: companyId });
-
-  if (error && isMissingCompanyColumnError(error.message)) {
-    ({ error } = await supabase
-      .from('losses')
-      .insert({ player_name: playerName, score: Math.floor(lostScore) }));
-  }
-
-  if (error) {
-    console.warn('Loss submit failed:', error.message);
-  }
+  await insertScoreRow('losses', playerName, lostScore, companyId, mode);
 }
 
 export async function fetchBiggestLoss(period: Period): Promise<LeaderboardEntry | null> {
@@ -192,4 +270,8 @@ export async function fetchBiggestLoss(period: Period): Promise<LeaderboardEntry
 
 function isMissingCompanyColumnError(message: string): boolean {
   return /company_id/i.test(message);
+}
+
+function isMissingModeColumnError(message: string): boolean {
+  return /\bmode\b/i.test(message);
 }

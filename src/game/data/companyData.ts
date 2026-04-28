@@ -1,5 +1,5 @@
 import { CompanyId, isCompanyId } from '../types';
-import type { CompanyFavorOffer, CompanyRepSave, RunBoosts } from '../types';
+import type { CompanyRepSave, RunBoosts } from '../types';
 import { COMPANY_AFFILIATION_KEY, COMPANY_REP_KEY } from '../constants';
 
 export interface CompanyDef {
@@ -55,7 +55,7 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
     accent: 0xff0044,
     liaison: 'KADE',
     liaisonTitle: 'KADE // IRONVEIL',
-    boostLabel: 'NPC BOUNTY',
+    boostLabel: 'SCORE MULT',
     leaderboardTag: 'IRN',
   },
   [CompanyId.FREEPORT]: {
@@ -95,11 +95,10 @@ export const REP_PER_TIER: Record<1 | 2 | 3, number> = { 1: 1, 2: 2, 3: 4 };
 
 // --- Boost multipliers per rep level (index 0 = level 0, etc.) ---
 
-const DEEPCORE_MINING_MULT = [1.0, 1.15, 1.30, 1.50];
-const RECLAIM_SALVAGE_MULT = [1.0, 1.15, 1.30, 1.50];
-const IRONVEIL_NPC_MULT    = [1.0, 1.50, 2.00, 3.00];
-const FREEPORT_DROP_ADD    = [0.0, 0.10, 0.20, 0.30];
-const FAVOR_COST_BY_LEVEL  = [0, 1000, 2000, 3000];
+const DEEPCORE_MINING_MULT  = [1.0, 1.15, 1.30, 1.50];
+const RECLAIM_SALVAGE_MULT  = [1.0, 1.15, 1.30, 1.50];
+const IRONVEIL_SCORE_MULT   = [1.0, 1.15, 1.30, 1.50];
+const FREEPORT_DROP_ADD     = [0.0, 0.10, 0.20, 0.30];
 
 // --- Helpers ---
 
@@ -182,11 +181,11 @@ export function getSelectableCompanyIds(repSave: CompanyRepSave): CompanyId[] {
   return COMPANY_IDS.filter((companyId) => (repSave.rep[companyId] ?? 0) > 0);
 }
 
-function createNeutralRunBoosts(): RunBoosts {
+export function createNeutralRunBoosts(): RunBoosts {
   return {
     miningYieldMult: 1.0,
     salvageYieldMult: 1.0,
-    npcBonusMult: 1.0,
+    scoreMult: 1.0,
     bonusDropChanceAdd: 0.0,
   };
 }
@@ -207,35 +206,31 @@ export function getSlickCutPercent(): number {
   return SLICK_CUT_PERCENT;
 }
 
-export function getFavorOffer(companyId: CompanyId): CompanyFavorOffer | null {
-  const repSave = loadCompanyRep();
+/** Static run boosts driven by the player's selected affiliation (set on the main menu).
+ *  Returns neutral boosts if no affiliation is active or rep is below level 1. */
+export function getRunBoostsFromAffiliation(repSave: CompanyRepSave): RunBoosts {
+  const boosts = createNeutralRunBoosts();
+  const affiliation = getCompanyAffiliation(repSave);
+  const companyId = affiliation.companyId;
+  if (!companyId) {
+    return boosts;
+  }
   const level = getRepLevel(repSave.rep[companyId] ?? 0);
   if (level <= 0) {
-    return null;
+    return boosts;
   }
-
-  return {
-    companyId,
-    level,
-    label: COMPANIES[companyId].boostLabel,
-    boostValue: formatBoost(companyId, level),
-    cost: getFavorCost(companyId, level),
-  };
+  applyCompanyBoost(boosts, companyId, level);
+  return boosts;
 }
 
-export function computeRunBoostsFromFavors(selectedCompanies: CompanyId[]): RunBoosts {
-  const boosts = createNeutralRunBoosts();
-  const repSave = loadCompanyRep();
-
-  for (const companyId of selectedCompanies) {
-    const level = getRepLevel(repSave.rep[companyId] ?? 0);
-    if (level <= 0) {
-      continue;
-    }
-    applyCompanyBoost(boosts, companyId, level);
+/** Display string for the bonus a corp grants at a given rep level (e.g. "+30%"). */
+export function getCompanyBoostDisplay(companyId: CompanyId, level: number): string {
+  switch (companyId) {
+    case CompanyId.DEEPCORE: return formatMultiplierBoost(DEEPCORE_MINING_MULT[level] ?? 1);
+    case CompanyId.RECLAIM:  return formatMultiplierBoost(RECLAIM_SALVAGE_MULT[level] ?? 1);
+    case CompanyId.IRONVEIL: return formatMultiplierBoost(IRONVEIL_SCORE_MULT[level] ?? 1);
+    case CompanyId.FREEPORT: return `+${Math.round((FREEPORT_DROP_ADD[level] ?? 0) * 100)}%`;
   }
-
-  return boosts;
 }
 
 export function getCompanyAffiliation(repSave: CompanyRepSave): CompanyAffiliationState {
@@ -284,37 +279,23 @@ export function getLeaderboardCompanyId(repSave: CompanyRepSave): CompanyId | nu
   return getCompanyAffiliation(repSave).companyId;
 }
 
-/** Format a boost value for display, e.g. "+30%" */
-function formatBoost(companyId: CompanyId, level: number): string {
-  switch (companyId) {
-    case CompanyId.DEEPCORE: return formatMultiplierBoost(DEEPCORE_MINING_MULT[level]);
-    case CompanyId.RECLAIM: return formatMultiplierBoost(RECLAIM_SALVAGE_MULT[level]);
-    case CompanyId.IRONVEIL: return formatMultiplierBoost(IRONVEIL_NPC_MULT[level]);
-    case CompanyId.FREEPORT: return `+${Math.round(FREEPORT_DROP_ADD[level] * 100)}%`;
-  }
-}
-
 function formatMultiplierBoost(multiplier: number): string {
   return `+${Math.round((multiplier - 1) * 100)}%`;
-}
-
-function getFavorCost(_companyId: CompanyId, level: number): number {
-  return FAVOR_COST_BY_LEVEL[level];
 }
 
 function applyCompanyBoost(boosts: RunBoosts, companyId: CompanyId, level: number): void {
   switch (companyId) {
     case CompanyId.DEEPCORE:
-      boosts.miningYieldMult = DEEPCORE_MINING_MULT[level];
+      boosts.miningYieldMult = DEEPCORE_MINING_MULT[level] ?? 1;
       break;
     case CompanyId.RECLAIM:
-      boosts.salvageYieldMult = RECLAIM_SALVAGE_MULT[level];
+      boosts.salvageYieldMult = RECLAIM_SALVAGE_MULT[level] ?? 1;
       break;
     case CompanyId.IRONVEIL:
-      boosts.npcBonusMult = IRONVEIL_NPC_MULT[level];
+      boosts.scoreMult = IRONVEIL_SCORE_MULT[level] ?? 1;
       break;
     case CompanyId.FREEPORT:
-      boosts.bonusDropChanceAdd = FREEPORT_DROP_ADD[level];
+      boosts.bonusDropChanceAdd = FREEPORT_DROP_ADD[level] ?? 0;
       break;
   }
 }

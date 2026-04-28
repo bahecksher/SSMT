@@ -18,21 +18,20 @@ import { generateMission } from '../data/missionCatalog';
 import {
   COMPANIES,
   COMPANY_IDS,
-  computeRunBoostsFromFavors,
-  getFavorOffer,
+  getCompanyAffiliation,
   getRepStanding,
+  getRunBoostsFromAffiliation,
   loadCompanyRep,
   REP_PER_TIER,
+  saveSelectedCompanyAffiliation,
 } from '../data/companyData';
 import { CompanyId, RunMode } from '../types';
 import type { ActiveMission } from '../types';
-import { getMissionBrief } from '../data/missionBriefs';
 import { refreshMusicForSettings, setMissionMusic, warmMusicCache } from '../systems/MusicSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { HologramOverlay } from '../ui/HologramOverlay';
-import { createCompanyLogo } from '../ui/CompanyLogo';
 import { SettingsSlider } from '../ui/SettingsSlider';
 import { SalvageDebris } from '../entities/SalvageDebris';
 import { DrifterHazard } from '../entities/DrifterHazard';
@@ -47,7 +46,6 @@ interface HandoffData {
   npcState?: { x: number; y: number; vx: number; vy: number }[];
   mode?: RunMode;
   reopenSettings?: boolean;
-  selectedFavorIds?: CompanyId[];
   rerollsUsedThisVisit?: number;
 }
 
@@ -65,11 +63,11 @@ interface BriefingLayoutConfig {
   cardGap: number;
   rerollY: number;
   rerollHeight: number;
-  favorHeaderY: number;
-  favorGridTop: number;
-  favorCardWidth: number;
-  favorCardHeight: number;
-  favorCardGap: number;
+  repHeaderY: number;
+  repGridTop: number;
+  repRowWidth: number;
+  repRowHeight: number;
+  repRowGap: number;
   deployY: number;
   deployButtonWidth: number;
   deployButtonHeight: number;
@@ -86,9 +84,8 @@ type MissionButton = {
 const CARD_HEIGHT = 68;
 const CARD_GAP = 8;
 const CARD_MARGIN_X = 32;
-const FAVOR_CARD_GAP = 8;
-const FAVOR_SECTION_GAP = 10;
-const MAX_SELECTED_FAVORS = 2;
+const REP_ROW_GAP = 6;
+const REP_SECTION_GAP = 10;
 const REROLL_BASE_COST = 200;
 const BG_MAX_DEBRIS = 2;
 const BG_MAX_DRIFTERS = 5;
@@ -108,11 +105,9 @@ export class MissionSelectScene extends Phaser.Scene {
   private navUi: Phaser.GameObjects.GameObject[] = [];
   private deployUi: Phaser.GameObjects.GameObject[] = [];
   private rerollUi: Phaser.GameObjects.GameObject[] = [];
-  private favorUi: Phaser.GameObjects.GameObject[] = [];
+  private repPanelUi: Phaser.GameObjects.GameObject[] = [];
   private rerollsRemaining = MAX_REROLLS;
   private rerollsUsedThisVisit = 0;
-  private selectedFavorIds = new Set<CompanyId>();
-  private carriedFavorIds = new Set<CompanyId>();
   private cursor!: CustomCursor;
   private hologramOverlay!: HologramOverlay;
   private settingsButton!: MissionButton;
@@ -151,14 +146,12 @@ export class MissionSelectScene extends Phaser.Scene {
 
     this.saveSystem = new SaveSystem();
     this.handoff = data ?? {};
-    this.runMode = RunMode.ARCADE;
+    this.runMode = this.handoff.mode ?? this.saveSystem.getSelectedMode();
     this.saveSystem.setSelectedMode(this.runMode);
-    this.missions = loadOrGenerateMissions();
-    this.selectedFavorIds.clear();
-    this.carriedFavorIds.clear();
-    if (this.handoff.selectedFavorIds?.length) {
-      this.selectedFavorIds = new Set(this.handoff.selectedFavorIds);
+    if (this.runMode === RunMode.CAMPAIGN) {
+      this.saveSystem.ensureCampaignSession();
     }
+    this.missions = loadOrGenerateMissions();
     this.rerollsUsedThisVisit = this.handoff.rerollsUsedThisVisit ?? 0;
     this.bgDebris = [];
     this.bgDrifters = [];
@@ -208,27 +201,12 @@ export class MissionSelectScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5).setDepth(10).setAlpha(0.72);
 
-    this.add.text(
-      layout.centerX,
-      briefing.instructionY,
-      briefing.veryCompact
-        ? 'ACCEPTED CONTRACTS PAY REP ON EXTRACT'
-        : 'ACCEPTED CONTRACTS PAY BONUS CREDITS + COMPANY REP ON EXTRACTION',
-      {
-        fontFamily: UI_FONT,
-        fontSize: readableFontSize(briefing.veryCompact ? 7 : briefing.compact ? 8 : 9),
-        color: colorStr(COLORS.HUD),
-        align: 'center',
-        wordWrap: { width: briefing.cardWidth, useAdvancedWrap: true },
-      },
-    ).setOrigin(0.5).setDepth(10).setAlpha(0.6);
-
     for (let i = 0; i < 3; i++) {
       this.drawCard(i);
     }
 
     this.drawRerollButton();
-    this.drawFavorSection();
+    this.drawRepPanel();
     this.drawMenuButton();
     this.createSettingsUi();
     this.drawDeployButton();
@@ -255,22 +233,23 @@ export class MissionSelectScene extends Phaser.Scene {
     const missionToRerollGap = veryCompact ? 6 : tight ? 8 : compact ? 12 : 14;
     const rerollHeight = veryCompact ? 26 : compact ? 28 : 32;
     const rerollY = cardTop + cardHeight * 3 + cardGap * 2 + missionToRerollGap;
-    const favorCardGap = veryCompact ? 4 : tight ? 4 : compact ? 6 : FAVOR_CARD_GAP;
-    const rerollToWalletGap = veryCompact ? 8 : tight ? 9 : compact ? 12 : FAVOR_SECTION_GAP + 4;
-    const walletHeaderOffset = veryCompact ? 6 : compact ? 8 : 10;
-    const walletToFavorGap = (veryCompact ? 10 : tight ? 12 : compact ? 16 : 18) + walletHeaderOffset;
-    const favorHeaderY = rerollY + rerollHeight + rerollToWalletGap;
-    const favorGridTop = favorHeaderY + walletToFavorGap;
+    const repRowGap = veryCompact ? 4 : tight ? 4 : compact ? 5 : REP_ROW_GAP;
+    const rerollToHeaderGap = veryCompact ? 8 : tight ? 9 : compact ? 12 : REP_SECTION_GAP + 4;
+    const headerOffset = veryCompact ? 6 : compact ? 8 : 10;
+    const headerToGridGap = (veryCompact ? 10 : tight ? 12 : compact ? 16 : 18) + headerOffset;
+    const repHeaderY = rerollY + rerollHeight + rerollToHeaderGap;
+    const repGridTop = repHeaderY + headerToGridGap;
     const deployButtonWidth = veryCompact ? 170 : compact ? 184 : 200;
     const deployButtonHeight = veryCompact ? 36 : compact ? 40 : 46;
     const deployY = layout.gameHeight - (veryCompact ? 26 : compact ? 34 : 50);
-    const favorCardWidth = cardWidth;
-    const favorToDeployGap = veryCompact ? 8 : tight ? 10 : compact ? 14 : 16;
-    const favorCardsAvailableHeight = Math.floor((deployY - deployButtonHeight / 2) - favorToDeployGap - favorGridTop);
-    const stackedFavorCardHeight = Math.max(56, Math.floor(
-      (favorCardsAvailableHeight - favorCardGap * (COMPANY_IDS.length - 1)) / COMPANY_IDS.length,
+    const repRowWidth = cardWidth;
+    const repToDeployGap = veryCompact ? 8 : tight ? 10 : compact ? 14 : 16;
+    const repRowsAvailableHeight = Math.floor((deployY - deployButtonHeight / 2) - repToDeployGap - repGridTop);
+    const repRowHeightMax = veryCompact ? 44 : compact ? 50 : 56;
+    const repRowHeight = Math.max(28, Math.min(
+      repRowHeightMax,
+      Math.floor((repRowsAvailableHeight - repRowGap * (COMPANY_IDS.length - 1)) / COMPANY_IDS.length),
     ));
-    const favorCardHeight = Math.max(56, Math.min(cardHeight, stackedFavorCardHeight));
 
     return {
       compact,
@@ -286,11 +265,11 @@ export class MissionSelectScene extends Phaser.Scene {
       cardGap,
       rerollY,
       rerollHeight,
-      favorHeaderY,
-      favorGridTop,
-      favorCardWidth,
-      favorCardHeight,
-      favorCardGap,
+      repHeaderY,
+      repGridTop,
+      repRowWidth,
+      repRowHeight,
+      repRowGap,
       deployY,
       deployButtonWidth,
       deployButtonHeight,
@@ -365,31 +344,7 @@ export class MissionSelectScene extends Phaser.Scene {
     label.setLineSpacing(briefing.veryCompact ? -3 : briefing.compact ? -2 : -1);
     this.cardUi[index].push(label);
 
-    const rewardColumnWidth = briefing.veryCompact ? 78 : briefing.compact ? 118 : 132;
     const footerY = cardTop + briefing.cardHeight - (briefing.veryCompact ? 6 : briefing.compact ? 8 : 9);
-    const missionBrief = this.add.text(cardLeft + 14, footerY, getMissionBrief(mission.def), {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(briefing.veryCompact ? 7 : briefing.compact ? 8 : 9),
-      color: colorStr(companyColor),
-      wordWrap: { width: cardWidth - rewardColumnWidth - 28, useAdvancedWrap: true },
-    }).setOrigin(0, 1).setDepth(depth + 1).setAlpha(0.82);
-    missionBrief.setLineSpacing(briefing.veryCompact ? -3 : -2);
-    // Clamp brief to whatever vertical space is left below the (possibly multi-line)
-    // label so the bottom-anchored brief never overruns into the title area.
-    const labelBottom = label.y + label.displayHeight;
-    const briefAvailableHeight = footerY - labelBottom - 2;
-    if (missionBrief.height > briefAvailableHeight && briefAvailableHeight > 0) {
-      const wrapped = missionBrief.getWrappedText(missionBrief.text);
-      const lineHeight = missionBrief.height / Math.max(1, wrapped.length);
-      const maxLines = Math.max(1, Math.floor(briefAvailableHeight / lineHeight));
-      if (wrapped.length > maxLines) {
-        const kept = wrapped.slice(0, maxLines);
-        const last = kept[maxLines - 1].replace(/\s+$/, '');
-        kept[maxLines - 1] = last.length > 1 ? `${last.slice(0, -1)}\u2026` : '\u2026';
-        missionBrief.setText(kept.join('\n'));
-      }
-    }
-    this.cardUi[index].push(missionBrief);
 
     const payoutFontSize = readableFontSize(briefing.veryCompact ? 9 : briefing.compact ? 10 : 11);
     const creditRewardText = this.add.text(cardLeft + cardWidth - 14, footerY - (briefing.veryCompact ? 11 : 12), `+${mission.def.reward}c`, {
@@ -418,7 +373,7 @@ export class MissionSelectScene extends Phaser.Scene {
     const briefing = this.getBriefingLayoutConfig();
     const rerollY = this.getRerollY();
     const rerollCost = this.getCurrentRerollCost();
-    const availableWallet = this.getWalletCreditsAfterSelectedFavors();
+    const availableWallet = this.saveSystem.getWalletCredits(this.runMode);
     const hasRerolls = this.rerollsRemaining > 0;
     const canAfford = availableWallet >= rerollCost;
     const canReroll = hasRerolls && canAfford;
@@ -798,7 +753,7 @@ export class MissionSelectScene extends Phaser.Scene {
     const rerollCost = this.getCurrentRerollCost();
     if (!this.saveSystem.spendWalletCredits(rerollCost, this.runMode)) {
       this.drawRerollButton();
-      this.drawFavorSection();
+      this.drawRepPanel();
       return;
     }
 
@@ -818,7 +773,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     for (let i = 0; i < 3; i++) this.drawCard(i);
     this.drawRerollButton();
-    this.drawFavorSection();
+    this.drawRepPanel();
   }
 
   private getRerollY(): number {
@@ -829,44 +784,25 @@ export class MissionSelectScene extends Phaser.Scene {
     return this.getBriefingLayoutConfig().deployY;
   }
 
-  private getFavorSectionTop(): number {
+  private getRepSectionTop(): number {
     const briefing = this.getBriefingLayoutConfig();
-    return briefing.favorHeaderY + (briefing.compact ? 8 : 10);
+    return briefing.repHeaderY + (briefing.compact ? 8 : 10);
   }
 
   private getCurrentRerollCost(): number {
     return REROLL_BASE_COST * (this.rerollsUsedThisVisit + 1);
   }
 
-  private getWalletCreditsAfterSelectedFavors(): number {
-    return this.saveSystem.getWalletCredits(this.runMode) - this.getSelectedFavorCost();
-  }
-
-  private getSelectedFavorCost(): number {
-    let total = 0;
-    for (const companyId of this.selectedFavorIds) {
-      if (this.carriedFavorIds.has(companyId)) {
-        continue;
-      }
-      const offer = getFavorOffer(companyId);
-      if (offer) {
-        total += offer.cost;
-      }
-    }
-    return total;
-  }
-
-  private drawFavorSection(): void {
-    for (const obj of this.favorUi) obj.destroy();
-    this.favorUi = [];
+  private drawRepPanel(): void {
+    for (const obj of this.repPanelUi) obj.destroy();
+    this.repPanelUi = [];
 
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
     const repSave = loadCompanyRep();
+    const affiliatedCompanyId = getCompanyAffiliation(repSave).companyId;
     const walletCredits = this.saveSystem.getWalletCredits(this.runMode);
-    const selectedCost = this.getSelectedFavorCost();
-    const selectedCount = this.selectedFavorIds.size;
-    const headerY = this.getFavorSectionTop();
+    const headerY = this.getRepSectionTop();
 
     const walletText = this.add.text(layout.centerX, headerY, this.getWalletHeader(walletCredits), {
       fontFamily: UI_FONT,
@@ -876,192 +812,100 @@ export class MissionSelectScene extends Phaser.Scene {
       stroke: colorStr(COLORS.BG),
       strokeThickness: 2,
     }).setOrigin(0.5).setDepth(10).setAlpha(0.92);
-    this.favorUi.push(walletText);
+    this.repPanelUi.push(walletText);
 
-    const gridTop = briefing.favorGridTop;
-    const cardWidth = briefing.favorCardWidth;
-    const denseFavorLayout = briefing.favorCardHeight <= 68 || briefing.narrow;
-    const ultraDenseFavorLayout = denseFavorLayout && (briefing.veryCompact || briefing.favorCardHeight <= 60);
+
+    const gridTop = briefing.repGridTop;
+    const rowWidth = briefing.repRowWidth;
+    const rowHeight = briefing.repRowHeight;
+    const rowLeft = briefing.cardMarginX;
+    const dense = rowHeight <= 40 || briefing.narrow;
 
     for (let i = 0; i < COMPANY_IDS.length; i++) {
       const companyId = COMPANY_IDS[i];
       const company = COMPANIES[companyId];
-      const offer = getFavorOffer(companyId);
       const rep = repSave.rep[companyId] ?? 0;
       const standing = getRepStanding(rep);
-      const selected = this.selectedFavorIds.has(companyId);
-      const carried = this.carriedFavorIds.has(companyId);
-      const locked = !offer;
-      const offerCost = offer?.cost ?? 0;
-      const atFavorLimit = !locked && !selected && selectedCount >= MAX_SELECTED_FAVORS;
-      const cardLeft = briefing.cardMarginX;
-      const cardTop = gridTop + i * (briefing.favorCardHeight + briefing.favorCardGap);
-      const canSelect = selected || (!locked && !atFavorLimit && selectedCost + offerCost <= walletCredits);
-      const borderColor = COLORS.HUD;
-      const statusLabel = carried
-        ? (ultraDenseFavorLayout ? 'CARRY' : 'CARRIED')
-        : selected
-          ? (ultraDenseFavorLayout ? 'ARMED' : 'SELECTED')
-          : locked
-            ? (ultraDenseFavorLayout ? 'LOCK' : 'LOCKED')
-            : atFavorLimit
-              ? (ultraDenseFavorLayout ? 'MAX2' : 'MAX 2')
-              : !canSelect
-                ? 'SHORT'
-                : null;
-      const statusColor = carried ? COLORS.GATE : selected ? COLORS.HUD : locked || atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
-      const statusTextColor = carried ? COLORS.GATE : locked || atFavorLimit ? COLORS.HUD : !canSelect ? COLORS.HAZARD : company.color;
-      const portraitLeftInset = ultraDenseFavorLayout ? 8 : denseFavorLayout ? 10 : 12;
-      const portraitTopClearance = ultraDenseFavorLayout ? 6 : denseFavorLayout ? 8 : 10;
-      const portraitBottomPadding = ultraDenseFavorLayout ? 5 : denseFavorLayout ? 6 : 8;
-      const portraitRadius = Phaser.Math.Clamp(
-        Math.floor((briefing.favorCardHeight - portraitTopClearance - portraitBottomPadding) / 2),
-        ultraDenseFavorLayout ? 14 : denseFavorLayout ? 16 : briefing.compact ? 20 : 24,
-        42,
-      );
-      const portraitCenterX = cardLeft + portraitLeftInset + portraitRadius;
-      const portraitCenterY = cardTop + portraitTopClearance + portraitRadius;
-      const portraitScale = Phaser.Math.Clamp(
-        (portraitRadius * 2 - 8) / 56,
-        ultraDenseFavorLayout ? 0.48 : denseFavorLayout ? 0.56 : 0.68,
-        1.18,
-      );
-      const textLeft = portraitCenterX + portraitRadius + (ultraDenseFavorLayout ? 8 : denseFavorLayout ? 10 : 14);
-      const badgeReserve = statusLabel ? (ultraDenseFavorLayout ? 50 : denseFavorLayout ? 62 : briefing.compact ? 72 : 82) : 14;
-      const textRight = cardLeft + cardWidth - badgeReserve;
-      const textWidth = Math.max(132, textRight - textLeft);
-      const contentTop = cardTop + (ultraDenseFavorLayout ? 4 : denseFavorLayout ? 5 : briefing.compact ? 7 : 9);
-      const sectionGap = ultraDenseFavorLayout ? 1 : denseFavorLayout ? 2 : 4;
+      const isSelected = affiliatedCompanyId === companyId;
+      const rowTop = gridTop + i * (rowHeight + briefing.repRowGap);
+
       const bg = this.add.graphics().setDepth(10);
-      bg.fillStyle(COLORS.BG, locked ? 0.82 : 0.92);
-      bg.fillRoundedRect(cardLeft, cardTop, cardWidth, briefing.favorCardHeight, 8);
-      if (selected) {
-        bg.fillStyle(company.color, 0.24);
-        bg.fillRoundedRect(cardLeft + 1, cardTop + 1, cardWidth - 2, briefing.favorCardHeight - 2, 8);
+      bg.fillStyle(COLORS.BG, 0.9);
+      bg.fillRoundedRect(rowLeft, rowTop, rowWidth, rowHeight, 8);
+      if (isSelected) {
+        bg.fillStyle(company.color, 0.14);
+        bg.fillRoundedRect(rowLeft + 1, rowTop + 1, rowWidth - 2, rowHeight - 2, 8);
       }
-      bg.lineStyle(selected ? 2.1 : 1.35, borderColor, selected ? 1 : locked ? 0.16 : 0.26);
-      bg.strokeRoundedRect(cardLeft, cardTop, cardWidth, briefing.favorCardHeight, 8);
-      bg.fillStyle(company.color, locked ? 0.38 : 0.84);
-      bg.fillRoundedRect(cardLeft + 5, cardTop + 5, selected ? 6 : 4, briefing.favorCardHeight - 10, 2);
-      this.favorUi.push(bg);
+      bg.lineStyle(isSelected ? 2 : 1.35, isSelected ? COLORS.GATE : COLORS.HUD, isSelected ? 0.88 : 0.26);
+      bg.strokeRoundedRect(rowLeft, rowTop, rowWidth, rowHeight, 8);
+      bg.fillStyle(company.color, isSelected ? 0.96 : 0.58);
+      bg.fillRoundedRect(rowLeft + 5, rowTop + 5, 5, rowHeight - 10, 2);
+      this.repPanelUi.push(bg);
 
-      const portraitFrame = this.add.graphics().setDepth(10.5);
-      portraitFrame.fillStyle(COLORS.BG, 0.86);
-      portraitFrame.lineStyle(1.1, company.color, 0.42);
-      portraitFrame.fillCircle(portraitCenterX, portraitCenterY, portraitRadius);
-      portraitFrame.strokeCircle(portraitCenterX, portraitCenterY, portraitRadius);
-      portraitFrame.lineStyle(1, company.accent, 0.22);
-      portraitFrame.strokeCircle(portraitCenterX, portraitCenterY, Math.max(8, portraitRadius - 4));
-      this.favorUi.push(portraitFrame);
 
-      const logo = createCompanyLogo(this, company, { includeBackdrop: false })
-        .setPosition(portraitCenterX, portraitCenterY)
-        .setScale(portraitScale)
-        .setDepth(11)
-        .setAlpha(0.96);
-      this.favorUi.push(logo);
-
-      if (statusLabel) {
-        const badgeTop = cardTop + (ultraDenseFavorLayout ? 4 : denseFavorLayout ? 5 : 7);
-        this.drawFavorBadge(cardLeft + cardWidth - 8, badgeTop, statusLabel, statusColor, statusTextColor, briefing.compact, ultraDenseFavorLayout);
-      }
-
-      const companyLine = ultraDenseFavorLayout
-        ? `${company.name} // ${company.liaison}`
-        : `${company.name} // LIAISON: ${company.liaison}`;
-      const companyText = this.add.text(textLeft, contentTop, companyLine, {
+      const textLeft = rowLeft + (dense ? 16 : 20);
+      const labelY = rowTop + (dense ? 5 : 6);
+      const nameLine = `${company.name} // ${standing.label}`;
+      const nameText = this.add.text(textLeft, labelY, nameLine, {
         fontFamily: TITLE_FONT,
-        fontSize: readableFontSize(ultraDenseFavorLayout ? 11 : denseFavorLayout ? 12 : briefing.compact ? 14 : 16),
+        fontSize: readableFontSize(dense ? 11 : briefing.compact ? 13 : 14),
         fontStyle: 'bold',
-        color: colorStr(locked ? COLORS.HUD : company.color),
+        color: colorStr(company.color),
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
-        wordWrap: { width: textWidth },
-      }).setDepth(11).setAlpha(locked ? 0.72 : 0.96);
-      companyText.setLineSpacing(briefing.compact ? -2 : -1);
-      this.favorUi.push(companyText);
+      }).setDepth(11).setAlpha(0.96);
+      this.repPanelUi.push(nameText);
 
-      const standingLine = ultraDenseFavorLayout
-        ? standing.nextRepRequired
-          ? `${rep} REP // NEXT ${standing.nextRepRequired}`
-          : `${rep} REP // MAX`
-        : standing.nextRepRequired
-          ? `${rep} REP // NEXT REP LEVEL: ${standing.nextRepRequired}`
-          : `${rep} REP // MAX`;
-      const standingText = this.add.text(textLeft, companyText.y + companyText.height + sectionGap, standingLine, {
+      const repValueLine = standing.nextRepRequired
+        ? `${rep}/${standing.nextRepRequired} REP`
+        : `${rep} REP // MAX`;
+      const repValueText = this.add.text(rowLeft + rowWidth - (dense ? 14 : 18), labelY, repValueLine, {
         fontFamily: UI_FONT,
-        fontSize: readableFontSize(ultraDenseFavorLayout ? 9 : denseFavorLayout ? 10 : briefing.compact ? 12 : 13),
-        color: colorStr(locked ? COLORS.HUD : company.color),
+        fontSize: readableFontSize(dense ? 9 : briefing.compact ? 11 : 12),
+        color: colorStr(company.color),
+        align: 'right',
         stroke: colorStr(COLORS.BG),
         strokeThickness: 2,
-        wordWrap: { width: textWidth, useAdvancedWrap: true },
-      }).setDepth(11).setAlpha(locked ? 0.66 : 0.82);
-      standingText.setLineSpacing(-1);
-      this.favorUi.push(standingText);
+      }).setOrigin(1, 0).setDepth(11).setAlpha(0.86);
+      this.repPanelUi.push(repValueText);
 
-      if (offer) {
-        const offerLine = carried
-          ? `${offer.label} ${offer.boostValue} // ${ultraDenseFavorLayout ? 'ON' : 'ACTIVE'}`
-          : `${offer.label} ${offer.boostValue} // ${offer.cost}c`;
-        const offerText = this.add.text(textLeft, standingText.y + standingText.height + sectionGap, offerLine, {
-          fontFamily: UI_FONT,
-          fontSize: readableFontSize(ultraDenseFavorLayout ? 6 : denseFavorLayout ? 7 : briefing.compact ? 10 : 11),
-          fontStyle: 'bold',
-          color: colorStr(company.color),
-          stroke: colorStr(COLORS.BG),
-          strokeThickness: 2,
-          wordWrap: { width: textWidth },
-        }).setDepth(11).setAlpha(0.94);
-        offerText.setLineSpacing(-1);
-        this.favorUi.push(offerText);
+      const barTop = nameText.y + nameText.height + (dense ? 2 : 4);
+      const barHeight = dense ? 5 : 6;
+      const barLeft = textLeft;
+      const barRight = rowLeft + rowWidth - (dense ? 14 : 18);
+      const barWidth = Math.max(60, barRight - barLeft);
+
+      const bar = this.add.graphics().setDepth(11);
+      bar.fillStyle(COLORS.BG, 0.6);
+      bar.fillRoundedRect(barLeft, barTop, barWidth, barHeight, 3);
+      bar.lineStyle(1, company.color, 0.5);
+      bar.strokeRoundedRect(barLeft, barTop, barWidth, barHeight, 3);
+      const fillWidth = Math.max(0, Math.floor(barWidth * standing.progressToNext));
+      if (fillWidth > 0) {
+        bar.fillStyle(company.color, 0.92);
+        bar.fillRoundedRect(barLeft, barTop, fillWidth, barHeight, 3);
       }
+      this.repPanelUi.push(bar);
 
-      const hit = this.add.zone(cardLeft, cardTop, cardWidth, briefing.favorCardHeight)
-        .setData('cornerRadius', 8)
-        .setOrigin(0, 0)
-        .setDepth(12)
-        .setInteractive({ useHandCursor: true });
-      hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-        event.stopPropagation();
-        if (carried || !offer) {
-          return;
-        }
-        if (selected) {
-          this.selectedFavorIds.delete(companyId);
-        } else if (!atFavorLimit && selectedCost + offer.cost <= walletCredits) {
-          this.selectedFavorIds.add(companyId);
-        } else {
-          return;
-        }
-        playUiSelectSfx(this);
-        this.drawFavorSection();
-        this.drawRerollButton();
-      });
-      this.favorUi.push(hit);
+      const canSelect = rep > 0;
+      if (canSelect || isSelected) {
+        const hit = this.add.zone(rowLeft, rowTop, rowWidth, rowHeight)
+          .setOrigin(0, 0)
+          .setDepth(13)
+          .setInteractive({ useHandCursor: true });
+        hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+          event.stopPropagation();
+          this.toggleAffiliation(companyId, isSelected);
+        });
+        this.repPanelUi.push(hit);
+      }
     }
   }
 
-  private drawFavorBadge(right: number, top: number, label: string, color: number, textColor: number, compact: boolean, condensed = false): void {
-    const badgeWidth = Math.max(condensed ? 40 : compact ? 46 : 52, label.length * (condensed ? 5.2 : compact ? 5.8 : 6.2) + 10);
-    const badgeHeight = condensed ? 13 : compact ? 14 : 16;
-    const badgeLeft = right - badgeWidth;
-    const badge = this.add.graphics().setDepth(11);
-    badge.fillStyle(color, 0.14);
-    badge.lineStyle(1.1, color, 0.88);
-    badge.fillRoundedRect(badgeLeft, top, badgeWidth, badgeHeight, 6);
-    badge.strokeRoundedRect(badgeLeft, top, badgeWidth, badgeHeight, 6);
-    this.favorUi.push(badge);
-
-    const badgeText = this.add.text(badgeLeft + badgeWidth / 2, top + badgeHeight / 2, label, {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(condensed ? 7 : compact ? 8 : 9),
-      fontStyle: 'bold',
-      color: colorStr(textColor),
-      stroke: colorStr(COLORS.BG),
-      strokeThickness: 2,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(12);
-    this.favorUi.push(badgeText);
+  private toggleAffiliation(companyId: CompanyId, currentlySelected: boolean): void {
+    saveSelectedCompanyAffiliation(currentlySelected ? null : companyId);
+    playUiSelectSfx(this);
+    this.drawRepPanel();
   }
 
   private drawDeployButton(): void {
@@ -1114,23 +958,13 @@ export class MissionSelectScene extends Phaser.Scene {
 
   private deploy(): void {
     this.saveMissions();
-    const selectedFavorIds = Array.from(this.selectedFavorIds);
-    const totalFavorCost = this.getSelectedFavorCost();
-    if (!this.saveSystem.spendWalletCredits(totalFavorCost, this.runMode)) {
-      this.drawFavorSection();
-      return;
-    }
-
-    if (this.runMode === RunMode.CAMPAIGN) {
-      this.saveSystem.setCampaignFavorIds(selectedFavorIds);
-    }
-
-    const runBoosts = computeRunBoostsFromFavors(selectedFavorIds);
+    const repSave = loadCompanyRep();
+    const runBoosts = getRunBoostsFromAffiliation(repSave);
     this.scene.start(SCENE_KEYS.GAME, {
       ...this.buildBackgroundHandoff(),
       mode: this.runMode,
       selectedMissions: this.missions.filter((m) => m.accepted),
-      runBoosts: selectedFavorIds.length > 0 ? runBoosts : undefined,
+      runBoosts,
     });
   }
 
@@ -1165,8 +999,8 @@ export class MissionSelectScene extends Phaser.Scene {
     this.rerollUi = [];
     for (const obj of this.deployUi) obj.destroy();
     this.deployUi = [];
-    for (const obj of this.favorUi) obj.destroy();
-    this.favorUi = [];
+    for (const obj of this.repPanelUi) obj.destroy();
+    this.repPanelUi = [];
     for (const obj of this.settingsPanelUi) obj.destroy();
     this.settingsPanelUi = [];
     this.settingsButton?.bg.destroy();
@@ -1245,7 +1079,6 @@ export class MissionSelectScene extends Phaser.Scene {
       ...this.buildBackgroundHandoff(),
       mode: this.runMode,
       reopenSettings: this.settingsOpen,
-      selectedFavorIds: Array.from(this.selectedFavorIds),
       rerollsUsedThisVisit: this.rerollsUsedThisVisit,
     };
   }
