@@ -76,6 +76,8 @@ import {
   NET_EVENT,
   type MirrorSnapshot,
   type MultiplayerHandoff,
+  type MatchExtractPayload,
+  type MatchDeathPayload,
 } from '../systems/NetSystem';
 
 function lerpAngleShortest(from: number, to: number, alpha: number): number {
@@ -123,6 +125,14 @@ interface ResultData {
 }
 
 type DeathCause = 'asteroid' | 'enemy' | 'laser';
+
+interface VersusOutcome {
+  cause: 'extract' | 'death' | 'survived';
+  score: number;
+  time: number;
+  phase: number;
+  deathCause?: DeathCause;
+}
 type CommSpeaker = 'slick' | 'regent' | 'liaison';
 
 interface GameplayCommOptions {
@@ -209,9 +219,18 @@ export class GameScene extends Phaser.Scene {
   // Render this far behind the newest sample so we always have an older sample
   // to lerp from. Matches the sender's tick interval.
   private static readonly MIRROR_INTERP_BUFFER_MS = 100;
-  // Mirror PIP size as fraction of arena dims (bottom-right corner overlay).
-  private static readonly MIRROR_FRAC = 0.28;
-  private static readonly MIRROR_INSET_PX = 8;
+  // Peer mirror fills the arena and renders behind local gameplay.
+  private static readonly MIRROR_BG_DEPTH = -0.25;
+  private static readonly MIRROR_ENTITY_DEPTH = -0.1;
+  private static readonly MIRROR_TEXT_DEPTH = 0.25;
+  private static readonly MIRROR_LABEL_INSET_PX = 12;
+  private static readonly MIRROR_BG_ALPHA = 0.08;
+  private static readonly MIRROR_ENEMY_RADIUS = 4;
+  private static readonly MIRROR_SHIP_RADIUS = 8;
+  // Lone-extractor wait window. See plan revision 2026-04-29 1009.
+  private static readonly VERSUS_PEER_WAIT_MS = 15000;
+  private static readonly RESULT_PULSE_INTERVAL_MS = 1000;
+  private static readonly RESULT_PEER_STALE_MS = 3500;
   private multiplayer: MultiplayerHandoff | null = null;
   private snapshotAccumMs = 0;
   private peerSnapshots: { snap: MirrorSnapshot; arr: number }[] = [];
@@ -221,6 +240,18 @@ export class GameScene extends Phaser.Scene {
   private mirrorEntities: Phaser.GameObjects.Graphics | null = null;
   private mirrorLabel: Phaser.GameObjects.Text | null = null;
   private mirrorWaiting: Phaser.GameObjects.Text | null = null;
+  private localTerminalFired = false;
+  private localOutcome: VersusOutcome | null = null;
+  private peerOutcome: VersusOutcome | null = null;
+  private versusResultRendered = false;
+  private versusPeerWaitTimer: Phaser.Time.TimerEvent | null = null;
+  private localRematch = false;
+  private peerRematch = false;
+  private rematchInFlight = false;
+  private peerLeft = false;
+  private rematchPrimaryRefresh: (() => void) | null = null;
+  private lastPeerSeenAt = 0;
+  private resultPulseAccumMs = 0;
 
   constructor() {
     super(SCENE_KEYS.GAME);
@@ -254,6 +285,18 @@ export class GameScene extends Phaser.Scene {
     this.invulnerableTimer = 2000;
     this.bombPickups = [];
     this.scoreRecordingBlocked = false;
+    this.localTerminalFired = false;
+    this.localOutcome = null;
+    this.peerOutcome = null;
+    this.versusResultRendered = false;
+    this.versusPeerWaitTimer = null;
+    this.localRematch = false;
+    this.peerRematch = false;
+    this.rematchInFlight = false;
+    this.peerLeft = false;
+    this.rematchPrimaryRefresh = null;
+    this.lastPeerSeenAt = 0;
+    this.resultPulseAccumMs = 0;
 
     this.saveSystem = new SaveSystem();
     this.runMode = handoff.multiplayer
@@ -263,8 +306,9 @@ export class GameScene extends Phaser.Scene {
     if (this.runMode === RunMode.CAMPAIGN) {
       this.saveSystem.ensureCampaignSession();
     }
-    this.activeRunBoosts = handoff.runBoosts
-      ?? null;
+    this.activeRunBoosts = this.runMode === RunMode.VERSUS
+      ? null
+      : (handoff.runBoosts ?? null);
     this.inputSystem = new InputSystem(this);
     this.scoreSystem = new ScoreSystem();
     this.scoreSystem.setBest(this.saveSystem.getBestScore());
@@ -334,7 +378,7 @@ export class GameScene extends Phaser.Scene {
     this.missionSystem = new MissionSystem(missionList);
     this.repFluxTracker = new RepFluxTracker();
 
-    // Apply static per-run boosts from selected affiliation.
+    // Company affiliation boosts apply in non-versus runs when handed off from Mission Select.
     if (this.activeRunBoosts) {
       this.salvageSystem.setBoosts(this.activeRunBoosts.salvageYieldMult, this.activeRunBoosts.miningYieldMult);
       this.difficultySystem.setBoosts(this.activeRunBoosts.bonusDropChanceAdd);
@@ -1148,6 +1192,15 @@ export class GameScene extends Phaser.Scene {
       this.softRespawnForCampaign();
       return;
     }
+    if (this.multiplayer) {
+      this.broadcastLocalTerminal({
+        cause: 'death',
+        score: bankedScore + lostScore,
+        time: Date.now() - this.matchClockStartMs,
+        phase: this.extractionSystem.getPhaseCount(),
+        deathCause: cause,
+      });
+    }
     Overlays.screenWipe(
       this,
       0xff3366,
@@ -1258,6 +1311,14 @@ export class GameScene extends Phaser.Scene {
       missionProgress,
       repFluxDeltas,
     };
+    if (this.multiplayer) {
+      this.broadcastLocalTerminal({
+        cause: 'extract',
+        score,
+        time: Date.now() - this.matchClockStartMs,
+        phase: this.extractionSystem.getPhaseCount(),
+      });
+    }
     this.showSlickExclusive(getSlickLine('extraction'), 0);
     this.clearBoard();
     Overlays.bombFlash(this);
@@ -1446,29 +1507,211 @@ export class GameScene extends Phaser.Scene {
     this.matchClockStartMs = Date.now();
     this.snapshotAccumMs = 0;
     this.peerSnapshots = [];
+    this.lastPeerSeenAt = Date.now();
+    this.resultPulseAccumMs = 0;
 
     handoff.session.onBroadcast(NET_EVENT.SNAPSHOT, (payload) => {
       const snap = payload as MirrorSnapshot | undefined;
       if (!snap || typeof snap.t !== 'number') return;
+      this.notePeerSeen();
       const last = this.peerSnapshots[this.peerSnapshots.length - 1];
       if (last && snap.t < last.snap.t) return;
       this.peerSnapshots.push({ snap, arr: Date.now() });
       if (this.peerSnapshots.length > 2) this.peerSnapshots.shift();
     });
 
+    handoff.session.onBroadcast(NET_EVENT.MATCH_EXTRACT, (payload) => {
+      const p = payload as MatchExtractPayload | undefined;
+      if (!p || typeof p.score !== 'number') return;
+      this.notePeerSeen();
+      if (this.peerOutcome) return;
+      this.peerOutcome = {
+        cause: 'extract',
+        score: Math.round(p.score),
+        time: typeof p.time === 'number' ? p.time : 0,
+        phase: this.getLatestPeerPhase(),
+      };
+      this.onPeerTerminal();
+    });
+
+    handoff.session.onBroadcast(NET_EVENT.MATCH_REMATCH_READY, () => {
+      this.notePeerSeen();
+      if (this.rematchInFlight) return;
+      this.peerRematch = true;
+      this.refreshRematchUi();
+      this.maybeFireRematch();
+    });
+
+    handoff.session.onBroadcast(NET_EVENT.MATCH_REMATCH_CANCEL, () => {
+      this.notePeerSeen();
+      if (this.rematchInFlight) return;
+      this.peerRematch = false;
+      this.refreshRematchUi();
+    });
+
+    handoff.session.onBroadcast(NET_EVENT.MATCH_RESULT_PULSE, () => {
+      this.notePeerSeen();
+    });
+
+    handoff.session.onPresence((peers) => {
+      if (this.rematchInFlight) return;
+      const peerStillHere = peers.some((p) => p.playerId !== handoff.session.playerId);
+      if (peerStillHere) {
+        this.notePeerSeen();
+      }
+      if (!peerStillHere && this.versusResultRendered) {
+        this.peerLeft = true;
+        this.peerRematch = false;
+        this.refreshRematchUi();
+      }
+    });
+
+    handoff.session.onBroadcast(NET_EVENT.MATCH_DEATH, (payload) => {
+      const p = payload as MatchDeathPayload | undefined;
+      if (!p || typeof p.score !== 'number') return;
+      this.notePeerSeen();
+      if (this.peerOutcome) return;
+      this.peerOutcome = {
+        cause: 'death',
+        score: Math.round(p.score),
+        time: typeof p.time === 'number' ? p.time : 0,
+        phase: this.getLatestPeerPhase(),
+        deathCause: p.cause === 'asteroid' || p.cause === 'enemy' || p.cause === 'laser' ? p.cause : undefined,
+      };
+      this.onPeerTerminal();
+    });
+
     this.createMirrorViewport();
+  }
+
+  private getLatestPeerPhase(): number {
+    const last = this.peerSnapshots[this.peerSnapshots.length - 1];
+    return last ? last.snap.phase : 1;
+  }
+
+  private getLatestPeerScore(): number {
+    const last = this.peerSnapshots[this.peerSnapshots.length - 1];
+    return last ? Math.round(last.snap.score) : 0;
+  }
+
+  private getLocalPilotName(): string {
+    if (this.multiplayer) {
+      return this.multiplayer.session.playerName.trim().toUpperCase();
+    }
+    return this.saveSystem.getPlayerName().trim().toUpperCase();
+  }
+
+  private getPeerPilotName(): string {
+    const peerName = this.multiplayer?.session.getPeer()?.playerName ?? '';
+    const normalized = peerName.trim().toUpperCase();
+    return normalized.length > 0 ? normalized : 'P2';
+  }
+
+  private broadcastLocalTerminal(outcome: VersusOutcome): void {
+    if (!this.multiplayer) return;
+    if (this.localTerminalFired) return;
+    this.localTerminalFired = true;
+    this.localOutcome = outcome;
+    if (outcome.cause === 'extract') {
+      const payload: MatchExtractPayload = { score: outcome.score, time: outcome.time };
+      this.multiplayer.session.broadcast(NET_EVENT.MATCH_EXTRACT, payload).catch((err) => {
+        console.warn('[GameScene] match_extract broadcast failed', err);
+      });
+    } else if (outcome.cause === 'death') {
+      const payload: MatchDeathPayload = {
+        score: outcome.score,
+        time: outcome.time,
+        cause: outcome.deathCause ?? 'asteroid',
+      };
+      this.multiplayer.session.broadcast(NET_EVENT.MATCH_DEATH, payload).catch((err) => {
+        console.warn('[GameScene] match_death broadcast failed', err);
+      });
+    }
+  }
+
+  private onPeerTerminal(): void {
+    // Peer reported terminal state.
+    // If local hasn't fired yet, peerOutcome is stashed and picked up
+    // when local terminal triggers enterVersusResultFlow.
+    if (!this.localTerminalFired) return;
+    // If local fired but the death/extract screen wipe hasn't reached
+    // enterResultsState yet, defer — enterVersusResultFlow will see peerOutcome.
+    if (this.state !== GameState.RESULTS) return;
+    this.cancelVersusPeerWait();
+    this.renderVersusResult();
+  }
+
+  private cancelVersusPeerWait(): void {
+    if (this.versusPeerWaitTimer) {
+      this.versusPeerWaitTimer.remove(false);
+      this.versusPeerWaitTimer = null;
+    }
+  }
+
+  private notePeerSeen(): void {
+    this.lastPeerSeenAt = Date.now();
+  }
+
+  private requestRematch(): void {
+    if (!this.multiplayer || this.rematchInFlight || this.peerLeft) return;
+    if (this.localRematch) return;
+    this.localRematch = true;
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_REMATCH_READY, {}).catch((err) => {
+      console.warn('[GameScene] match_rematch_ready broadcast failed', err);
+    });
+    this.refreshRematchUi();
+    this.maybeFireRematch();
+  }
+
+  private cancelRematch(): void {
+    if (!this.multiplayer || this.rematchInFlight) return;
+    if (!this.localRematch) return;
+    this.localRematch = false;
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_REMATCH_CANCEL, {}).catch((err) => {
+      console.warn('[GameScene] match_rematch_cancel broadcast failed', err);
+    });
+    this.refreshRematchUi();
+  }
+
+  private maybeFireRematch(): void {
+    if (this.rematchInFlight) return;
+    if (!this.localRematch || !this.peerRematch) return;
+    if (this.peerLeft) return;
+    this.fireRematch();
+  }
+
+  private fireRematch(): void {
+    if (!this.multiplayer || this.rematchInFlight) return;
+    this.rematchInFlight = true;
+    const session = this.multiplayer.session;
+    const peer = session.getPeer();
+    const role: 'host' | 'guest' = session.isHost() ? 'host' : 'guest';
+    const matchId = `m_${session.roomCode}_${Date.now().toString(36)}`;
+    const handoff: MultiplayerHandoff = {
+      session,
+      role,
+      matchId,
+      peerId: peer?.playerId ?? this.multiplayer.peerId,
+      startAt: Date.now(),
+    };
+    session.clearListeners();
+    this.scene.start(SCENE_KEYS.GAME, { multiplayer: handoff } satisfies MenuHandoff);
+  }
+
+  private refreshRematchUi(): void {
+    this.rematchPrimaryRefresh?.();
   }
 
   private createMirrorViewport(): void {
     const layout = getLayout();
-    const w = Math.max(80, Math.round(layout.arenaWidth * GameScene.MIRROR_FRAC));
-    const h = Math.max(80, Math.round(layout.arenaHeight * GameScene.MIRROR_FRAC));
-    const x = layout.arenaRight - w - GameScene.MIRROR_INSET_PX;
-    const y = layout.arenaBottom - h - GameScene.MIRROR_INSET_PX;
+    const w = layout.arenaWidth;
+    const h = layout.arenaHeight;
+    const x = layout.arenaLeft;
+    const y = layout.arenaTop;
     this.mirrorRect = { x, y, w, h };
 
-    this.mirrorBg = this.add.graphics().setDepth(118);
-    this.mirrorEntities = this.add.graphics().setDepth(119);
+    this.mirrorBg = this.add.graphics().setDepth(GameScene.MIRROR_BG_DEPTH);
+    this.mirrorEntities = this.add.graphics().setDepth(GameScene.MIRROR_ENTITY_DEPTH);
 
     const labelColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
     const bgColor = `#${COLORS.BG.toString(16).padStart(6, '0')}`;
@@ -1488,7 +1731,17 @@ export class GameScene extends Phaser.Scene {
       strokeThickness: 2,
     }).setOrigin(0.5, 0.5).setDepth(120).setAlpha(0.5);
 
-    this.drawMirrorBg();
+    this.mirrorLabel
+      .setPosition(x + GameScene.MIRROR_LABEL_INSET_PX, y + GameScene.MIRROR_LABEL_INSET_PX - 1)
+      .setFontSize(readableFontSize(11))
+      .setDepth(GameScene.MIRROR_TEXT_DEPTH)
+      .setAlpha(0.72)
+      .setText(`${this.getPeerPilotName()} // WAITING`);
+    this.mirrorWaiting
+      .setFontSize(readableFontSize(20))
+      .setDepth(GameScene.MIRROR_TEXT_DEPTH)
+      .setAlpha(0.28);
+    this.refreshMirrorPalette();
   }
 
   private drawMirrorBg(): void {
@@ -1496,23 +1749,46 @@ export class GameScene extends Phaser.Scene {
     const g = this.mirrorBg;
     if (!r || !g) return;
     g.clear();
-    g.fillStyle(COLORS.BG, 0.55);
-    g.fillRect(r.x, r.y, r.w, r.h);
-    g.lineStyle(1, COLORS.HUD, 0.5);
-    g.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    const inset = 2;
+    g.fillStyle(COLORS.BG, GameScene.MIRROR_BG_ALPHA);
+    g.fillRect(r.x + inset, r.y + inset, r.w - inset * 2, r.h - inset * 2);
+  }
+
+  private refreshMirrorPalette(): void {
+    const labelColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
+    const strokeColor = `#${COLORS.BG.toString(16).padStart(6, '0')}`;
+    this.drawMirrorBg();
+    this.mirrorLabel?.setColor(labelColor);
+    this.mirrorLabel?.setStroke(strokeColor, 2);
+    this.mirrorWaiting?.setColor(labelColor);
+    this.mirrorWaiting?.setStroke(strokeColor, 2);
   }
 
   private teardownMultiplayer(): void {
+    this.cancelVersusPeerWait();
     this.mirrorBg?.destroy(); this.mirrorBg = null;
     this.mirrorEntities?.destroy(); this.mirrorEntities = null;
     this.mirrorLabel?.destroy(); this.mirrorLabel = null;
     this.mirrorWaiting?.destroy(); this.mirrorWaiting = null;
     this.mirrorRect = null;
     if (this.multiplayer) {
-      this.multiplayer.session.leave().catch(() => { /* ignore */ });
+      // On rematch, the successor scene reuses this session — keep it alive.
+      // Listeners were already cleared in fireRematch() before scene.start.
+      if (!this.rematchInFlight) {
+        this.multiplayer.session.leave().catch(() => { /* ignore */ });
+      }
       this.multiplayer = null;
     }
     this.peerSnapshots = [];
+  }
+
+  private setMirrorVisible(visible: boolean): void {
+    this.mirrorBg?.setVisible(visible);
+    this.mirrorEntities?.setVisible(visible);
+    this.mirrorLabel?.setVisible(visible);
+    if (!visible) {
+      this.mirrorWaiting?.setVisible(false);
+    }
   }
 
   private tickMultiplayer(delta: number): void {
@@ -1522,7 +1798,34 @@ export class GameScene extends Phaser.Scene {
       this.snapshotAccumMs = 0;
       this.sendSnapshot();
     }
+    this.tickResultPeerHeartbeat(delta);
     this.updateMirrorViewport();
+  }
+
+  private tickResultPeerHeartbeat(delta: number): void {
+    if (!this.multiplayer || this.rematchInFlight || this.peerLeft) {
+      this.resultPulseAccumMs = 0;
+      return;
+    }
+    const onVersusResult = this.state === GameState.RESULTS && this.versusResultRendered;
+    if (!onVersusResult) {
+      this.resultPulseAccumMs = 0;
+      return;
+    }
+
+    this.resultPulseAccumMs += delta;
+    if (this.resultPulseAccumMs >= GameScene.RESULT_PULSE_INTERVAL_MS) {
+      this.resultPulseAccumMs = 0;
+      this.multiplayer.session.broadcast(NET_EVENT.MATCH_RESULT_PULSE, {}).catch((err) => {
+        console.warn('[GameScene] match_result_pulse broadcast failed', err);
+      });
+    }
+
+    if (Date.now() - this.lastPeerSeenAt >= GameScene.RESULT_PEER_STALE_MS) {
+      this.peerLeft = true;
+      this.peerRematch = false;
+      this.refreshRematchUi();
+    }
   }
 
   private sendSnapshot(): void {
@@ -1558,13 +1861,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateMirrorViewport(): void {
-    const rect = this.mirrorRect;
-    const g = this.mirrorEntities;
+    this.updateMirrorBackdrop();
+    return;
+    const rect = this.mirrorRect!;
+    const g = this.mirrorEntities!;
     if (!rect || !g) return;
+    if (this.state === GameState.RESULTS) return;
     g.clear();
 
     if (this.peerSnapshots.length === 0) {
       this.mirrorWaiting?.setVisible(true);
+      this.mirrorLabel?.setText(`${this.getPeerPilotName()} // WAITING`);
       this.mirrorLabel?.setText('P2 …');
       return;
     }
@@ -1588,20 +1895,23 @@ export class GameScene extends Phaser.Scene {
       return rect.y + c * rect.h;
     };
 
-    const ENEMY_ALPHA = 0.45;
-    g.fillStyle(COLORS.ENEMY, ENEMY_ALPHA);
-    g.lineStyle(1, COLORS.ENEMY, ENEMY_ALPHA + 0.2);
+    const enemyFillAlpha = 0.18;
+    const enemyStrokeAlpha = 0.38;
+    g.fillStyle(COLORS.ENEMY, enemyFillAlpha);
+    g.lineStyle(1, COLORS.ENEMY, enemyStrokeAlpha);
     const paired = Math.min(older.snap.enemies.length, newest.snap.enemies.length);
     for (let i = 0; i < paired; i++) {
       const oe = older.snap.enemies[i];
       const ne = newest.snap.enemies[i];
       const fx = oe.x + (ne.x - oe.x) * alpha;
       const fy = oe.y + (ne.y - oe.y) * alpha;
-      g.fillCircle(mapX(fx), mapY(fy), 2.2);
+      g.fillCircle(mapX(fx), mapY(fy), GameScene.MIRROR_ENEMY_RADIUS);
+      g.strokeCircle(mapX(fx), mapY(fy), GameScene.MIRROR_ENEMY_RADIUS);
     }
     for (let i = paired; i < newest.snap.enemies.length; i++) {
       const ne = newest.snap.enemies[i];
-      g.fillCircle(mapX(ne.x), mapY(ne.y), 2.2);
+      g.fillCircle(mapX(ne.x), mapY(ne.y), GameScene.MIRROR_ENEMY_RADIUS);
+      g.strokeCircle(mapX(ne.x), mapY(ne.y), GameScene.MIRROR_ENEMY_RADIUS);
     }
 
     // Ship: lerp position + angle (raw lerp; sub-frame, near-equal angles)
@@ -1612,33 +1922,122 @@ export class GameScene extends Phaser.Scene {
     const sy = mapY(sFy);
 
     if (newest.snap.ship.alive) {
-      const triR = 5;
+      const triR = GameScene.MIRROR_SHIP_RADIUS;
       const x1 = sx + Math.cos(sAngle) * triR;
       const y1 = sy + Math.sin(sAngle) * triR;
       const x2 = sx + Math.cos(sAngle + (Math.PI * 2) / 3) * triR;
       const y2 = sy + Math.sin(sAngle + (Math.PI * 2) / 3) * triR;
       const x3 = sx + Math.cos(sAngle - (Math.PI * 2) / 3) * triR;
       const y3 = sy + Math.sin(sAngle - (Math.PI * 2) / 3) * triR;
-      g.lineStyle(1.25, COLORS.PLAYER, 0.75);
-      g.fillStyle(COLORS.PLAYER, 0.25);
+      g.lineStyle(1.25, COLORS.PLAYER, 0.42);
+      g.fillStyle(COLORS.PLAYER, 0.14);
       g.beginPath();
       g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x3, y3); g.closePath();
       g.fillPath();
       g.strokePath();
       if (newest.snap.ship.shielded) {
-        g.lineStyle(1, COLORS.SHIELD, 0.6);
+        g.lineStyle(1, COLORS.SHIELD, 0.22);
         g.strokeCircle(sx, sy, triR * 1.6);
       }
     } else {
-      g.lineStyle(1.25, COLORS.HAZARD, 0.7);
+      const markR = GameScene.MIRROR_SHIP_RADIUS * 0.7;
+      g.lineStyle(1.15, COLORS.HAZARD, 0.26);
       g.beginPath();
-      g.moveTo(sx - 3, sy - 3); g.lineTo(sx + 3, sy + 3);
-      g.moveTo(sx + 3, sy - 3); g.lineTo(sx - 3, sy + 3);
+      g.moveTo(sx - markR, sy - markR); g.lineTo(sx + markR, sy + markR);
+      g.moveTo(sx + markR, sy - markR); g.lineTo(sx - markR, sy + markR);
       g.strokePath();
     }
 
     const aliveTag = newest.snap.ship.alive ? '' : 'KIA  ';
-    this.mirrorLabel?.setText(`P2  ${aliveTag}${newest.snap.score}  PH ${newest.snap.phase}`);
+    this.mirrorLabel?.setText(`${this.getPeerPilotName()} // ${aliveTag}${newest.snap.score} // PH ${newest.snap.phase}`);
+  }
+
+  private updateMirrorBackdrop(): void {
+    const rect = this.mirrorRect;
+    const g = this.mirrorEntities;
+    if (!rect || !g) return;
+    if (this.state === GameState.RESULTS) return;
+    g.clear();
+
+    if (this.peerSnapshots.length === 0) {
+      this.mirrorWaiting?.setVisible(true);
+      this.mirrorLabel?.setText(`${this.getPeerPilotName()} // WAITING`);
+      return;
+    }
+    this.mirrorWaiting?.setVisible(false);
+
+    const newest = this.peerSnapshots[this.peerSnapshots.length - 1];
+    const older = this.peerSnapshots.length > 1 ? this.peerSnapshots[0] : newest;
+    const dt = Math.max(1, newest.snap.t - older.snap.t);
+    const localElapsed = Date.now() - newest.arr;
+    const renderT = newest.snap.t + localElapsed - GameScene.MIRROR_INTERP_BUFFER_MS;
+    let alpha = (renderT - older.snap.t) / dt;
+    if (alpha < 0) alpha = 0;
+    else if (alpha > 1) alpha = 1;
+
+    const mapX = (fx: number) => {
+      const c = fx < 0 ? 0 : fx > 1 ? 1 : fx;
+      return rect.x + c * rect.w;
+    };
+    const mapY = (fy: number) => {
+      const c = fy < 0 ? 0 : fy > 1 ? 1 : fy;
+      return rect.y + c * rect.h;
+    };
+
+    const enemyFillAlpha = 0.12;
+    const enemyStrokeAlpha = 0.24;
+    g.fillStyle(COLORS.ENEMY, enemyFillAlpha);
+    g.lineStyle(1, COLORS.ENEMY, enemyStrokeAlpha);
+    const paired = Math.min(older.snap.enemies.length, newest.snap.enemies.length);
+    for (let i = 0; i < paired; i++) {
+      const oe = older.snap.enemies[i];
+      const ne = newest.snap.enemies[i];
+      const fx = oe.x + (ne.x - oe.x) * alpha;
+      const fy = oe.y + (ne.y - oe.y) * alpha;
+      g.fillCircle(mapX(fx), mapY(fy), GameScene.MIRROR_ENEMY_RADIUS);
+      g.strokeCircle(mapX(fx), mapY(fy), GameScene.MIRROR_ENEMY_RADIUS);
+    }
+    for (let i = paired; i < newest.snap.enemies.length; i++) {
+      const ne = newest.snap.enemies[i];
+      g.fillCircle(mapX(ne.x), mapY(ne.y), GameScene.MIRROR_ENEMY_RADIUS);
+      g.strokeCircle(mapX(ne.x), mapY(ne.y), GameScene.MIRROR_ENEMY_RADIUS);
+    }
+
+    const sFx = older.snap.ship.x + (newest.snap.ship.x - older.snap.ship.x) * alpha;
+    const sFy = older.snap.ship.y + (newest.snap.ship.y - older.snap.ship.y) * alpha;
+    const sAngle = lerpAngleShortest(older.snap.ship.angle, newest.snap.ship.angle, alpha);
+    const sx = mapX(sFx);
+    const sy = mapY(sFy);
+
+    if (newest.snap.ship.alive) {
+      const triR = GameScene.MIRROR_SHIP_RADIUS;
+      const x1 = sx + Math.cos(sAngle) * triR;
+      const y1 = sy + Math.sin(sAngle) * triR;
+      const x2 = sx + Math.cos(sAngle + (Math.PI * 2) / 3) * triR;
+      const y2 = sy + Math.sin(sAngle + (Math.PI * 2) / 3) * triR;
+      const x3 = sx + Math.cos(sAngle - (Math.PI * 2) / 3) * triR;
+      const y3 = sy + Math.sin(sAngle - (Math.PI * 2) / 3) * triR;
+      g.lineStyle(1.15, COLORS.PLAYER, 0.3);
+      g.fillStyle(COLORS.PLAYER, 0.08);
+      g.beginPath();
+      g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x3, y3); g.closePath();
+      g.fillPath();
+      g.strokePath();
+      if (newest.snap.ship.shielded) {
+        g.lineStyle(1.1, COLORS.SHIELD, 0.32);
+        g.strokeCircle(sx, sy, triR * 1.6);
+      }
+    } else {
+      const markR = GameScene.MIRROR_SHIP_RADIUS * 0.7;
+      g.lineStyle(1.25, COLORS.HAZARD, 0.42);
+      g.beginPath();
+      g.moveTo(sx - markR, sy - markR); g.lineTo(sx + markR, sy + markR);
+      g.moveTo(sx + markR, sy - markR); g.lineTo(sx - markR, sy + markR);
+      g.strokePath();
+    }
+
+    const aliveTag = newest.snap.ship.alive ? '' : 'KIA  ';
+    this.mirrorLabel?.setText(`${this.getPeerPilotName()} // ${aliveTag}${newest.snap.score} // PH ${newest.snap.phase}`);
   }
 
   private updateStarfield(delta: number): void {
@@ -1813,6 +2212,7 @@ export class GameScene extends Phaser.Scene {
 
     this.drawStarfield();
     this.redrawArenaBorder();
+    this.refreshMirrorPalette();
     this.hud.refreshPalette();
     this.updateBossStatusUi();
     this.refreshCountdownPalette();
@@ -1830,9 +2230,34 @@ export class GameScene extends Phaser.Scene {
     this.resultInputLocked = true;
     this.hidePauseMenu();
     this.refreshPauseUi();
-    this.showResultUi(this.resultData);
+    this.setMirrorVisible(false);
+    if (this.multiplayer && this.localOutcome) {
+      this.enterVersusResultFlow();
+    } else {
+      this.showResultUi(this.resultData);
+    }
     this.time.delayedCall(500, () => {
       this.resultInputLocked = false;
+    });
+  }
+
+  private enterVersusResultFlow(): void {
+    if (!this.localOutcome) return;
+    // Both terminal: render now.
+    if (this.peerOutcome) {
+      this.renderVersusResult();
+      return;
+    }
+    // Local death + peer alive: resolve immediately as LOSE — peer outlived us.
+    if (this.localOutcome.cause === 'death') {
+      this.renderVersusResult();
+      return;
+    }
+    // Local extract + peer alive: wait up to VERSUS_PEER_WAIT_MS.
+    this.showVersusWaitingUi();
+    this.versusPeerWaitTimer = this.time.delayedCall(GameScene.VERSUS_PEER_WAIT_MS, () => {
+      this.versusPeerWaitTimer = null;
+      this.renderVersusResult();
     });
   }
 
@@ -2231,6 +2656,325 @@ export class GameScene extends Phaser.Scene {
       obj.destroy();
     }
     this.resultUi = [];
+    this.rematchPrimaryRefresh = null;
+  }
+
+  private decideVersusBanner(local: VersusOutcome, peer: VersusOutcome): 'WIN' | 'LOSE' | 'TIE' {
+    // Extract beats death/survived. Same-kind compare by score, equal = TIE.
+    const localExt = local.cause === 'extract';
+    const peerExt = peer.cause === 'extract';
+    if (localExt && !peerExt) return 'WIN';
+    if (!localExt && peerExt) return 'LOSE';
+    if (local.score > peer.score) return 'WIN';
+    if (local.score < peer.score) return 'LOSE';
+    return 'TIE';
+  }
+
+  private showVersusWaitingUi(): void {
+    this.clearResultUi();
+    const layout = getLayout();
+    const arenaInset = Phaser.Math.Clamp(Math.round(Math.min(layout.arenaWidth, layout.arenaHeight) * 0.04), 16, 30);
+    const panelLeft = layout.arenaLeft + arenaInset;
+    const panelTop = layout.arenaTop + arenaInset;
+    const panelWidth = layout.arenaWidth - arenaInset * 2;
+    const panelHeight = layout.arenaHeight - arenaInset * 2;
+    const centerX = layout.centerX;
+    const accent = COLORS.GATE;
+
+    const backing = this.add.graphics().setDepth(205);
+    backing.fillStyle(COLORS.BG, 0.82);
+    backing.fillRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
+    backing.lineStyle(1.5, accent, 0.4);
+    backing.strokeRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
+    this.resultUi.push(backing);
+
+    const titleBarHeight = Phaser.Math.Clamp(Math.round(panelHeight * 0.06), 30, 48);
+    const titleBarTop = panelTop + 12;
+    const titleBar = this.add.graphics().setDepth(208);
+    titleBar.fillStyle(accent, 0.94);
+    titleBar.fillRect(0, titleBarTop, layout.gameWidth, titleBarHeight);
+    this.resultUi.push(titleBar);
+
+    const title = this.add.text(centerX, titleBarTop + titleBarHeight / 2, 'EXTRACTED', {
+      fontFamily: TITLE_FONT,
+      fontSize: readableFontSize(Phaser.Math.Clamp(Math.round(titleBarHeight * 0.58), 18, 30)),
+      color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5).setDepth(210);
+    this.resultUi.push(title);
+
+    const subY = titleBarTop + titleBarHeight + 32;
+    const peerName = this.getPeerPilotName();
+    const sub = this.add.text(centerX, subY, `WAITING FOR ${peerName}...`, {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(20),
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5, 0).setDepth(210);
+    this.resultUi.push(sub);
+
+    const countdownText = this.add.text(centerX, subY + sub.height + 16, '', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(16),
+      color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.85);
+    this.resultUi.push(countdownText);
+
+    const startMs = Date.now();
+    const tick = (): void => {
+      const elapsed = Date.now() - startMs;
+      const remain = Math.max(0, GameScene.VERSUS_PEER_WAIT_MS - elapsed);
+      const secs = Math.ceil(remain / 1000);
+      countdownText.setText(`AUTO-WIN IN ${secs}s IF ${peerName} STAYS ALIVE`);
+    };
+    tick();
+    const tickEvent = this.time.addEvent({ delay: 250, loop: true, callback: tick });
+    this.resultUi.push({ destroy: () => tickEvent.remove(false) } as unknown as Phaser.GameObjects.GameObject);
+
+    const buttonHeight = 44;
+    const buttonWidth = Math.min(panelWidth - 64, 320);
+    const menuY = panelTop + panelHeight - 32 - buttonHeight / 2;
+    this.createResultButton('MENU', centerX, menuY, buttonWidth, buttonHeight, COLORS.HUD, () => {
+      this.scene.start(SCENE_KEYS.MENU);
+    });
+  }
+
+  private renderVersusResult(): void {
+    if (this.versusResultRendered) return;
+    if (!this.localOutcome) return;
+    this.versusResultRendered = true;
+    this.cancelVersusPeerWait();
+    const peer: VersusOutcome = this.peerOutcome ?? {
+      cause: 'survived',
+      score: this.getLatestPeerScore(),
+      time: 0,
+      phase: this.getLatestPeerPhase(),
+    };
+    this.showVersusResultUi(this.localOutcome, peer);
+  }
+
+  private showVersusResultUi(local: VersusOutcome, peer: VersusOutcome): void {
+    this.clearResultUi();
+    const layout = getLayout();
+    const arenaInset = Phaser.Math.Clamp(Math.round(Math.min(layout.arenaWidth, layout.arenaHeight) * 0.04), 16, 30);
+    const panelLeft = layout.arenaLeft + arenaInset;
+    const panelTop = layout.arenaTop + arenaInset;
+    const panelWidth = layout.arenaWidth - arenaInset * 2;
+    const panelHeight = layout.arenaHeight - arenaInset * 2;
+    const centerX = layout.centerX;
+    const banner = this.decideVersusBanner(local, peer);
+    const bannerColor = banner === 'WIN' ? COLORS.GATE : banner === 'LOSE' ? COLORS.HAZARD : COLORS.HUD;
+    const compact = layout.gameWidth <= 430 || layout.gameHeight <= 760;
+    const localName = this.getLocalPilotName();
+    const peerName = this.getPeerPilotName();
+
+    const backing = this.add.graphics().setDepth(205);
+    backing.fillStyle(COLORS.BG, 0.82);
+    backing.fillRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
+    backing.lineStyle(1.5, bannerColor, 0.4);
+    backing.strokeRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
+    this.resultUi.push(backing);
+
+    const titleBarHeight = Phaser.Math.Clamp(Math.round(panelHeight * (compact ? 0.05 : 0.058)), 32, 48);
+    const titleBarTop = panelTop + 12;
+    const titleBar = this.add.graphics().setDepth(208);
+    titleBar.fillStyle(bannerColor, 0.94);
+    titleBar.fillRect(0, titleBarTop, layout.gameWidth, titleBarHeight);
+    this.resultUi.push(titleBar);
+
+    const title = this.add.text(centerX, titleBarTop + titleBarHeight / 2, banner, {
+      fontFamily: TITLE_FONT,
+      fontSize: readableFontSize(Phaser.Math.Clamp(Math.round(titleBarHeight * 0.6), 20, 32)),
+      color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5).setDepth(210);
+    this.resultUi.push(title);
+
+    const buttonHeight = compact ? 40 : 46;
+    const buttonGap = compact ? 8 : 12;
+    const buttonRowWidth = Math.min(panelWidth - 64, 360);
+    const halfButtonWidth = (buttonRowWidth - buttonGap) / 2;
+    const menuY = panelTop + panelHeight - 28 - buttonHeight / 2;
+
+    const colTop = titleBarTop + titleBarHeight + (compact ? 28 : 40);
+    const colBottom = menuY - buttonHeight / 2 - (compact ? 18 : 24);
+    const colMidX = centerX;
+    const colInset = compact ? 14 : 24;
+    const leftColX = panelLeft + (panelWidth / 4);
+    const rightColX = panelLeft + (panelWidth * 3 / 4);
+    const colWidth = panelWidth / 2 - colInset;
+
+    const divider = this.add.graphics().setDepth(209);
+    divider.lineStyle(1, COLORS.HUD, 0.35);
+    divider.lineBetween(colMidX, colTop, colMidX, colBottom);
+    this.resultUi.push(divider);
+
+    const headerSize = readableFontSize(compact ? 16 : 20);
+    const scoreSize = readableFontSize(compact ? 28 : 36);
+    const outcomeSize = readableFontSize(compact ? 13 : 15);
+    const phaseSize = readableFontSize(compact ? 12 : 14);
+
+    const renderColumn = (x: number, header: string, outcome: VersusOutcome, isLocal: boolean): void => {
+      let y = colTop;
+      const headerText = this.add.text(x, y, header, {
+        fontFamily: UI_FONT,
+        fontSize: headerSize,
+        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+        fontStyle: 'bold',
+      }).setOrigin(0.5, 0).setDepth(210).setAlpha(isLocal ? 0.95 : 0.78);
+      this.resultUi.push(headerText);
+      y += headerText.height + (compact ? 6 : 10);
+
+      const scoreText = this.add.text(x, y, String(Math.floor(outcome.score)), {
+        fontFamily: UI_FONT,
+        fontSize: scoreSize,
+        color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
+      }).setOrigin(0.5, 0).setDepth(210);
+      this.fitTextToWidth(scoreText, colWidth, 16);
+      this.resultUi.push(scoreText);
+      y += scoreText.height + (compact ? 6 : 10);
+
+      let outcomeLabel: string;
+      let outcomeColor: number;
+      if (outcome.cause === 'extract') {
+        outcomeLabel = 'EXTRACTED';
+        outcomeColor = COLORS.GATE;
+      } else if (outcome.cause === 'death') {
+        const causeWord = outcome.deathCause ? ` — ${outcome.deathCause.toUpperCase()}` : '';
+        outcomeLabel = `DESTROYED${causeWord}`;
+        outcomeColor = COLORS.HAZARD;
+      } else {
+        outcomeLabel = 'STILL ALIVE';
+        outcomeColor = COLORS.HUD;
+      }
+      const outcomeText = this.add.text(x, y, outcomeLabel, {
+        fontFamily: UI_FONT,
+        fontSize: outcomeSize,
+        color: `#${outcomeColor.toString(16).padStart(6, '0')}`,
+        align: 'center',
+        wordWrap: { width: colWidth },
+      }).setOrigin(0.5, 0).setDepth(210);
+      this.resultUi.push(outcomeText);
+      y += outcomeText.height + (compact ? 4 : 6);
+
+      const phaseText = this.add.text(x, y, `PHASE ${outcome.phase}`, {
+        fontFamily: UI_FONT,
+        fontSize: phaseSize,
+        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.7);
+      this.resultUi.push(phaseText);
+    };
+
+    renderColumn(leftColX, localName, local, true);
+    renderColumn(rightColX, peerName, peer, false);
+
+    const noteY = menuY - buttonHeight - (compact ? 14 : 22);
+    const noteText = this.add.text(centerX, noteY, 'VERSUS // NO RECORDS OR PAYOUTS', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(compact ? 10 : 12),
+      color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5).setDepth(210).setAlpha(0.7);
+    this.resultUi.push(noteText);
+
+    const rematchX = centerX - halfButtonWidth / 2 - buttonGap / 2;
+    const menuX = centerX + halfButtonWidth / 2 + buttonGap / 2;
+    this.createRematchPrimaryButton(rematchX, menuY, halfButtonWidth, buttonHeight);
+    this.createResultButton('MENU', menuX, menuY, halfButtonWidth, buttonHeight, COLORS.HUD, () => {
+      this.scene.start(SCENE_KEYS.MENU);
+    });
+  }
+
+  private createRematchPrimaryButton(x: number, y: number, width: number, height: number): void {
+    const bg = this.add.graphics().setDepth(210);
+    const labelText = this.add.text(x, y, '', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(Phaser.Math.Clamp(Math.round(height * 0.36), 12, 17)),
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(211);
+    const hit = this.add.zone(x, y, width, height)
+      .setData('cornerRadius', 10)
+      .setOrigin(0.5)
+      .setDepth(212)
+      .setInteractive({ useHandCursor: true });
+
+    let hovered = false;
+    let pressed = false;
+    let currentColor = COLORS.HUD;
+    let currentAction: (() => void) | null = null;
+    let enabled = true;
+
+    const draw = (): void => {
+      const left = x - width / 2;
+      const top = y - height / 2;
+      bg.clear();
+      const fillA = enabled ? (hovered ? 0.92 : 0.82) : 0.5;
+      bg.fillStyle(COLORS.BG, fillA);
+      const strokeA = enabled ? (pressed ? 0.95 : hovered ? 0.72 : 0.45) : 0.25;
+      bg.lineStyle(1.5, currentColor, strokeA);
+      bg.fillRoundedRect(left, top, width, height, 10);
+      bg.strokeRoundedRect(left, top, width, height, 10);
+      const innerA = enabled ? (pressed ? 0.18 : hovered ? 0.1 : 0.06) : 0.03;
+      bg.fillStyle(currentColor, innerA);
+      bg.fillRoundedRect(left + 4, top + 4, width - 8, height - 8, 8);
+      labelText.setColor(`#${currentColor.toString(16).padStart(6, '0')}`);
+      labelText.setAlpha(enabled ? (pressed ? 1 : hovered ? 0.96 : 0.88) : 0.42);
+    };
+
+    const apply = (): void => {
+      const peerName = this.getPeerPilotName();
+      let label: string;
+      let color: number;
+      let action: (() => void) | null;
+      let isEnabled = true;
+      if (this.peerLeft) {
+        label = `${peerName} LEFT`;
+        color = COLORS.HAZARD;
+        action = null;
+        isEnabled = false;
+      } else if (this.rematchInFlight) {
+        label = 'STARTING…';
+        color = COLORS.GATE;
+        action = null;
+        isEnabled = false;
+      } else if (this.localRematch) {
+        label = 'WAITING — CANCEL';
+        color = COLORS.HUD;
+        action = () => this.cancelRematch();
+      } else if (this.peerRematch) {
+        label = `REMATCH (${peerName} READY)`;
+        color = COLORS.GATE;
+        action = () => this.requestRematch();
+      } else {
+        label = 'REMATCH';
+        color = COLORS.HUD;
+        action = () => this.requestRematch();
+      }
+      labelText.setText(label);
+      this.fitTextToWidth(labelText, width - 16, 10);
+      currentColor = color;
+      currentAction = action;
+      enabled = isEnabled;
+      draw();
+    };
+
+    hit.on('pointerover', () => { if (!enabled) return; hovered = true; draw(); });
+    hit.on('pointerout', () => { hovered = false; pressed = false; draw(); });
+    hit.on('pointerdown', (
+      _pointer: Phaser.Input.Pointer,
+      _lx: number,
+      _ly: number,
+      event: Phaser.Types.Input.EventData,
+    ) => {
+      event.stopPropagation();
+      if (this.resultInputLocked || !enabled || !currentAction) return;
+      pressed = true;
+      draw();
+      playUiSelectSfx(this);
+      currentAction();
+    });
+
+    this.resultUi.push(bg, labelText, hit);
+    this.rematchPrimaryRefresh = apply;
+    apply();
   }
 
   private fitTextToWidth(text: Phaser.GameObjects.Text, maxWidth: number, minFontSize: number): void {

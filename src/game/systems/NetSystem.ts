@@ -5,6 +5,7 @@ export type NetStatus = 'idle' | 'joining' | 'subscribed' | 'closed' | 'error';
 
 export interface PeerPresence {
   playerId: string;
+  playerName: string;
   ready: boolean;
   joinedAt: number;
 }
@@ -18,7 +19,26 @@ export const NET_EVENT = {
   MATCH_START: 'match_start',
   MATCH_CANCEL: 'match_cancel',
   SNAPSHOT: 'snapshot',
+  MATCH_EXTRACT: 'match_extract',
+  MATCH_DEATH: 'match_death',
+  MATCH_REMATCH_READY: 'match_rematch_ready',
+  MATCH_REMATCH_CANCEL: 'match_rematch_cancel',
+  MATCH_RESULT_PULSE: 'match_result_pulse',
 } as const;
+
+/** Sender extracted. `time` = ms since match start (same clock as MirrorSnapshot.t). `rep` reserved for future rep-flux summary. */
+export interface MatchExtractPayload {
+  score: number;
+  time: number;
+  rep?: number;
+}
+
+/** Sender died. `time` = ms since match start (same clock as MirrorSnapshot.t). */
+export interface MatchDeathPayload {
+  score: number;
+  time: number;
+  cause: 'asteroid' | 'enemy' | 'laser';
+}
 
 export interface MultiplayerHandoff {
   session: NetSession;
@@ -91,6 +111,7 @@ type StatusListener = (status: NetStatus) => void;
 export class NetSession {
   readonly roomCode: string;
   readonly playerId: string;
+  readonly playerName: string;
   readonly joinedAt: number;
 
   private channel: RealtimeChannel | null = null;
@@ -100,9 +121,10 @@ export class NetSession {
   private presenceListeners: PresenceListener[] = [];
   private statusListeners: StatusListener[] = [];
 
-  constructor(roomCode: string, playerId: string) {
+  constructor(roomCode: string, playerId: string, playerName: string) {
     this.roomCode = roomCode;
     this.playerId = playerId;
+    this.playerName = playerName;
     this.joinedAt = Date.now();
   }
 
@@ -171,6 +193,7 @@ export class NetSession {
           channel
             .track({
               playerId: this.playerId,
+              playerName: this.playerName,
               ready: this.localReady,
               joinedAt: this.joinedAt,
             })
@@ -197,6 +220,7 @@ export class NetSession {
     if (!this.channel || this.status !== 'subscribed') return;
     await this.channel.track({
       playerId: this.playerId,
+      playerName: this.playerName,
       ready,
       joinedAt: this.joinedAt,
     });
@@ -223,6 +247,9 @@ export class NetSession {
       const e = entries[entries.length - 1];
       out.push({
         playerId: typeof e.playerId === 'string' ? e.playerId : key,
+        playerName: typeof e.playerName === 'string' && e.playerName.trim().length > 0
+          ? e.playerName.trim()
+          : (typeof e.playerId === 'string' ? e.playerId : key),
         ready: e.ready === true,
         joinedAt: typeof e.joinedAt === 'number' ? e.joinedAt : 0,
       });
@@ -249,6 +276,21 @@ export class NetSession {
       if (peer.playerId < smallest) smallest = peer.playerId;
     }
     return smallest === this.playerId;
+  }
+
+  /**
+   * Drop all listeners but keep the channel + bindings alive. Used when the
+   * scene is unmounting but a successor scene will reuse the session (e.g.,
+   * versus rematch). Empties the per-event listener arrays in place so existing
+   * `channel.on('broadcast')` callbacks become no-ops; new `onBroadcast` calls
+   * append to the same arrays without triggering a duplicate channel binding.
+   */
+  clearListeners(): void {
+    for (const list of this.broadcastListeners.values()) {
+      list.length = 0;
+    }
+    this.presenceListeners = [];
+    this.statusListeners = [];
   }
 
   async leave(): Promise<void> {

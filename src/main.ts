@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import { gameConfig } from './game/config';
 
+declare global {
+  interface Window {
+    __BITP_GAME__?: Phaser.Game;
+  }
+}
+
 const TEXT_RESOLUTION = (() => {
   if (typeof window === 'undefined') return 1;
   return Math.min(2, Math.max(1, Math.ceil(window.devicePixelRatio || 1)));
@@ -14,4 +20,8 @@ Phaser.GameObjects.GameObjectFactory.prototype.text = function (...args: Paramet
   return text;
 };
 
-new Phaser.Game(gameConfig);
+const game = new Phaser.Game(gameConfig);
+
+if (typeof window !== 'undefined') {
+  window.__BITP_GAME__ = game;
+}

@@ -830,7 +830,7 @@ export class MissionSelectScene extends Phaser.Scene {
       const standing = getRepStanding(rep);
       const isSelected = affiliatedCompanyId === companyId;
       const rowTop = gridTop + i * (rowHeight + briefing.repRowGap);
-      const boostSummary = getCompanyBoostSummary(companyId, standing.level, !showBoostSubline);
+      const boostSummary = this.getAffiliationBoostSummary(companyId, standing.level, !showBoostSubline);
 
       const bg = this.add.graphics().setDepth(10);
       bg.fillStyle(COLORS.BG, 0.9);
@@ -922,6 +922,10 @@ export class MissionSelectScene extends Phaser.Scene {
     saveSelectedCompanyAffiliation(currentlySelected ? null : companyId);
     playUiSelectSfx(this);
     this.drawRepPanel();
+  }
+
+  private getAffiliationBoostSummary(companyId: CompanyId, level: number, compact: boolean): string {
+    return getCompanyBoostSummary(companyId, level, compact);
   }
 
   private drawDeployButton(): void {

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { COLORS, SCENE_KEYS, TITLE_FONT, UI_FONT, applyColorPalette, readableFontSize } from '../constants';
 import { getLayout, isNarrowViewport, isShortViewport, setLayoutSize } from '../layout';
 import { getSettings } from '../systems/SettingsSystem';
+import { SaveSystem } from '../systems/SaveSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { CustomCursor } from '../ui/CustomCursor';
@@ -52,6 +53,7 @@ export class VersusLobbyScene extends Phaser.Scene {
   private countdownTimer: Phaser.Time.TimerEvent | null = null;
   private leaving = false;
   private handingOff = false;
+  private saveSystem!: SaveSystem;
 
   constructor() {
     super(SCENE_KEYS.VERSUS_LOBBY);
@@ -61,6 +63,7 @@ export class VersusLobbyScene extends Phaser.Scene {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
     applyColorPalette(getSettings().paletteId);
+    this.saveSystem = new SaveSystem();
     this.hologramOverlay = new HologramOverlay(this);
     this.cursor = new CustomCursor(this);
 
@@ -240,7 +243,7 @@ export class VersusLobbyScene extends Phaser.Scene {
   }
 
   private async startSession(roomCode: string): Promise<void> {
-    this.session = new NetSession(roomCode, generatePlayerId());
+    this.session = new NetSession(roomCode, generatePlayerId(), this.saveSystem.getPlayerName());
     this.session.onPresence((peers) => this.handlePresence(peers));
     this.session.onBroadcast(NET_EVENT.MATCH_START, (payload) => this.handleMatchStart(payload as MatchStartPayload));
     this.session.onBroadcast(NET_EVENT.MATCH_CANCEL, () => this.handleMatchCancel());
@@ -401,7 +404,7 @@ export class VersusLobbyScene extends Phaser.Scene {
 
   private formatPresence(peer: PeerPresence | null): string {
     if (!peer) return 'NO OPPONENT';
-    const tag = peer.playerId.slice(-4).toUpperCase();
+    const tag = peer.playerName.trim().toUpperCase();
     return peer.ready ? `OPPONENT ${tag} — READY` : `OPPONENT ${tag} — STANDBY`;
   }
 

@@ -181,7 +181,7 @@ export class MenuScene extends Phaser.Scene {
     const metaSize = readableFontSize(veryCompactMenu ? 13 : compactMenu ? 15 : 16);
     const hintSize = readableFontSize(veryCompactMenu ? 10 : 12);
     const bestSize = readableFontSize(veryCompactMenu ? 14 : compactMenu ? 16 : 18);
-    this.modeTabWidth = Math.min(layout.gameWidth - 64, veryCompactMenu ? 126 : compactMenu ? 144 : 164);
+    this.modeTabWidth = Math.min(layout.gameWidth - 64, veryCompactMenu ? 136 : compactMenu ? 156 : 176);
     this.leaderboardTabWidth = veryCompactMenu ? 96 : compactMenu ? 112 : 122;
     this.leaderboardTabHeight = veryCompactMenu ? 30 : compactMenu ? 34 : 38;
     this.leaderboardRowHeight = veryCompactMenu ? 22 : 28;
@@ -327,7 +327,7 @@ export class MenuScene extends Phaser.Scene {
 
     this.leaderboardTitle = this.add.text(
       centerX,
-      modeTabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 8 : 10),
+      modeTabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 8 : 12),
       this.getLeaderboardTitle(this.saveSystem.getSelectedMode()),
       {
         fontFamily: UI_FONT,
@@ -1094,7 +1094,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private getModeToggleLabel(mode: RunMode): string {
-    return mode;
+    return `< ${mode} >`;
   }
 
   private getLeaderboardTitle(mode: RunMode): string {
