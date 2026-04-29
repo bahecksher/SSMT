@@ -1847,7 +1847,7 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Spectate-only: the dead/extracted local taps a lane button to fire one of
-   * their accumulated charges. Charges regen 1 every 15s up to a cap. No
+   * their accumulated charges. Charges regen 1 every 7s up to a cap. No
    * cooldown beyond charge consumption — that's the throttle.
    */
   private fireSpectateLaser(lane: VersusLaserLane): void {

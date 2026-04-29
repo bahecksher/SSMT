@@ -151,7 +151,7 @@ export class MissionSelectScene extends Phaser.Scene {
   private hologramOverlay!: HologramOverlay;
   private settingsButton!: MissionButton;
   private settingsPanelUi: Phaser.GameObjects.GameObject[] = [];
-  private paletteButton!: MissionButton;
+  private paletteButton: MissionButton | null = null;
   private shakeOnButton!: MissionButton;
   private shakeOffButton!: MissionButton;
   private scanOnButton!: MissionButton;
@@ -623,17 +623,20 @@ export class MissionSelectScene extends Phaser.Scene {
   private createSettingsUi(): void {
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
+    const showPaletteSettings = this.runMode !== RunMode.VERSUS;
     const hudColor = colorStr(COLORS.HUD);
     const buttonWidth = briefing.veryCompact ? 86 : briefing.compact ? 92 : 102;
     const buttonCenterX = layout.gameWidth - briefing.cardMarginX - buttonWidth / 2 + 4;
     const buttonCenterY = briefing.veryCompact ? 24 : briefing.compact ? 26 : 30;
     const panelWidth = briefing.veryCompact ? 208 : briefing.compact ? 216 : 228;
-    const panelHeight = briefing.veryCompact ? 236 : 264;
+    const panelHeight = briefing.veryCompact
+      ? (showPaletteSettings ? 236 : 206)
+      : (showPaletteSettings ? 264 : 234);
     const panelLeft = layout.gameWidth - panelWidth - 24;
     const panelTop = buttonCenterY + 22;
     const settingsRowGap = briefing.veryCompact ? 30 : 34;
     const rowPaletteY = panelTop + (briefing.veryCompact ? 26 : 30);
-    const rowOneY = rowPaletteY + settingsRowGap;
+    const rowOneY = showPaletteSettings ? rowPaletteY + settingsRowGap : rowPaletteY;
     const rowTwoY = rowOneY + settingsRowGap;
     const rowThreeY = rowTwoY + settingsRowGap;
     const musicVolumeLabelY = rowThreeY + (briefing.veryCompact ? 32 : 38);
@@ -682,12 +685,16 @@ export class MissionSelectScene extends Phaser.Scene {
       event.stopPropagation();
     });
 
-    const paletteLabel = this.add.text(panelLeft + 14, rowPaletteY, 'PALETTE', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(10),
-      color: hudColor,
-      align: 'left',
-    }).setOrigin(0, 0.5).setDepth(20);
+    let paletteLabel: Phaser.GameObjects.Text | null = null;
+    this.paletteButton = null;
+    if (showPaletteSettings) {
+      paletteLabel = this.add.text(panelLeft + 14, rowPaletteY, 'PALETTE', {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(10),
+        color: hudColor,
+        align: 'left',
+      }).setOrigin(0, 0.5).setDepth(20);
+    }
 
     const shakeLabel = this.add.text(panelLeft + 14, rowOneY, 'SHAKE', {
       fontFamily: UI_FONT,
@@ -731,16 +738,18 @@ export class MissionSelectScene extends Phaser.Scene {
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(20).setAlpha(0.72);
 
-    this.paletteButton = this.createUiButton(
-      paletteButtonX,
-      rowPaletteY,
-      94,
-      24,
-      PALETTE_LABELS[getSettings().paletteId],
-      20,
-      readableFontSize(10),
-      () => this.applySettings({ paletteId: getNextPaletteId(getSettings().paletteId) }),
-    );
+    if (showPaletteSettings) {
+      this.paletteButton = this.createUiButton(
+        paletteButtonX,
+        rowPaletteY,
+        94,
+        24,
+        PALETTE_LABELS[getSettings().paletteId],
+        20,
+        readableFontSize(10),
+        () => this.applySettings({ paletteId: getNextPaletteId(getSettings().paletteId) }),
+      );
+    }
     this.shakeOnButton = this.createUiButton(onX, rowOneY, 42, 24, 'ON', 20, readableFontSize(10), () => this.applySettings({ screenShake: true }));
     this.shakeOffButton = this.createUiButton(offX, rowOneY, 46, 24, 'OFF', 20, readableFontSize(10), () => this.applySettings({ screenShake: false }));
     this.scanOnButton = this.createUiButton(onX, rowTwoY, 42, 24, 'ON', 20, readableFontSize(10), () => this.applySettings({ scanlines: true }));
@@ -772,10 +781,9 @@ export class MissionSelectScene extends Phaser.Scene {
       blocker,
       panelBg,
       panelHit,
-      paletteLabel,
-      this.paletteButton.bg,
-      this.paletteButton.label,
-      this.paletteButton.hit,
+      ...(paletteLabel && this.paletteButton
+        ? [paletteLabel, this.paletteButton.bg, this.paletteButton.label, this.paletteButton.hit]
+        : []),
       shakeLabel,
       scanLabel,
       musicLabel,
@@ -905,7 +913,9 @@ export class MissionSelectScene extends Phaser.Scene {
     this.drawUiButton(this.settingsButton, this.settingsButton.label.x, this.settingsButton.label.y, this.settingsOpen);
 
     const settings = getSettings();
-    this.drawPaletteUiButton(this.paletteButton, settings.paletteId);
+    if (this.paletteButton) {
+      this.drawPaletteUiButton(this.paletteButton, settings.paletteId);
+    }
     this.drawUiButton(this.shakeOnButton, this.shakeOnButton.label.x, this.shakeOnButton.label.y, settings.screenShake);
     this.drawUiButton(this.shakeOffButton, this.shakeOffButton.label.x, this.shakeOffButton.label.y, !settings.screenShake);
     this.drawUiButton(this.scanOnButton, this.scanOnButton.label.x, this.scanOnButton.label.y, settings.scanlines);

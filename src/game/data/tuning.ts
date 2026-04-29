@@ -86,7 +86,7 @@ export const VERSUS_LASER_COLOR = 0xc070ff;          // violet, distinct from cy
 
 // Spectator-side disruption inventory. While dead/extracted but peer is still
 // playing, the spectator can fire sabotage lasers and pings to mess with them.
-export const SPECTATE_LASER_REGEN_MS = 5000;         // 1 charge per 5s
+export const SPECTATE_LASER_REGEN_MS = 7000;         // 1 charge per 7s
 export const SPECTATE_LASER_MAX_CHARGES = 3;
 export const SPECTATE_PING_COOLDOWN_MS = 1000;       // 1 ping per second
 
