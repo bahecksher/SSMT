@@ -35,6 +35,9 @@ import { DrifterHazard } from '../entities/DrifterHazard';
 import { ShieldPickup } from '../entities/ShieldPickup';
 import { BonusPickup } from '../entities/BonusPickup';
 import { BombPickup } from '../entities/BombPickup';
+import { VersusLaserPickup } from '../entities/VersusLaserPickup';
+import { VersusLaserStrike, type VersusLaserLane } from '../entities/VersusLaserStrike';
+import { VersusPingMarker } from '../entities/VersusPingMarker';
 import { ShipDebris } from '../entities/ShipDebris';
 import { ExitGate } from '../entities/ExitGate';
 import { NPCShip } from '../entities/NPCShip';
@@ -78,7 +81,15 @@ import {
   type MultiplayerHandoff,
   type MatchExtractPayload,
   type MatchDeathPayload,
+  type MatchLaserPayload,
+  type MatchPingPayload,
 } from '../systems/NetSystem';
+import {
+  VERSUS_LASER_SEND_COOLDOWN_MS,
+  SPECTATE_LASER_REGEN_MS,
+  SPECTATE_LASER_MAX_CHARGES,
+  SPECTATE_PING_COOLDOWN_MS,
+} from '../data/tuning';
 
 function lerpAngleShortest(from: number, to: number, alpha: number): number {
   const delta = Phaser.Math.Angle.Wrap(to - from);
@@ -93,6 +104,7 @@ interface MenuHandoff {
   selectedMissions?: ActiveMission[];
   runBoosts?: RunBoosts;
   mode?: RunMode;
+  startPhase?: number;
   multiplayer?: MultiplayerHandoff;
 }
 
@@ -169,6 +181,17 @@ export class GameScene extends Phaser.Scene {
   private shields: ShieldPickup[] = [];
   private bonusPickups: BonusPickup[] = [];
   private bombPickups: BombPickup[] = [];
+  private versusLaserPickups: VersusLaserPickup[] = [];
+  private versusLaserStrikes: VersusLaserStrike[] = [];
+  private versusLaserLastSendAt = 0;
+  private versusLaserRecvDedup = new Set<number>();
+  private versusPingMarkers: VersusPingMarker[] = [];
+  private versusPingRecvDedup = new Set<number>();
+  private spectateLaserCharges = 0;
+  private spectateLaserAccumMs = 0;
+  private spectatePingLastSendMs = 0;
+  private spectateInventoryUi: Phaser.GameObjects.GameObject[] = [];
+  private spectateLaserChargesText: Phaser.GameObjects.Text | null = null;
   private hud!: Hud;
   private bossStatusText!: Phaser.GameObjects.Text;
   private state: GameState = GameState.PLAYING;
@@ -223,6 +246,15 @@ export class GameScene extends Phaser.Scene {
   private static readonly MIRROR_BG_DEPTH = -0.25;
   private static readonly MIRROR_ENTITY_DEPTH = -0.1;
   private static readonly MIRROR_TEXT_DEPTH = 0.25;
+  // Spectate-mode mirror depths: above the result-screen backing (205) and
+  // below the title bar (208) / buttons (210) so the peer's arena is the
+  // dominant readable layer while local frozen gameplay objects fade away.
+  private static readonly MIRROR_SPECTATE_BG_DEPTH = 204;
+  private static readonly MIRROR_SPECTATE_ENTITY_DEPTH = 207;
+  private static readonly MIRROR_SPECTATE_TEXT_DEPTH = 211;
+  private static readonly MIRROR_SPECTATE_BG_ALPHA = 0.78;
+  private static readonly MIRROR_SPECTATE_ENEMY_RADIUS = 8;
+  private static readonly MIRROR_SPECTATE_SHIP_RADIUS = 14;
   private static readonly MIRROR_LABEL_INSET_PX = 12;
   private static readonly MIRROR_BG_ALPHA = 0.08;
   private static readonly MIRROR_ENEMY_RADIUS = 4;
@@ -235,6 +267,7 @@ export class GameScene extends Phaser.Scene {
   private snapshotAccumMs = 0;
   private peerSnapshots: { snap: MirrorSnapshot; arr: number }[] = [];
   private matchClockStartMs = 0;
+  private peerEpoch: number | null = null;
   private mirrorRect: { x: number; y: number; w: number; h: number } | null = null;
   private mirrorBg: Phaser.GameObjects.Graphics | null = null;
   private mirrorEntities: Phaser.GameObjects.Graphics | null = null;
@@ -252,6 +285,7 @@ export class GameScene extends Phaser.Scene {
   private rematchPrimaryRefresh: (() => void) | null = null;
   private lastPeerSeenAt = 0;
   private resultPulseAccumMs = 0;
+  private versusSpectating = false;
 
   constructor() {
     super(SCENE_KEYS.GAME);
@@ -284,11 +318,23 @@ export class GameScene extends Phaser.Scene {
     this.enemyEntranceSfxPlayed = false;
     this.invulnerableTimer = 2000;
     this.bombPickups = [];
+    this.versusLaserPickups = [];
+    this.versusLaserStrikes = [];
+    this.versusLaserLastSendAt = 0;
+    this.versusLaserRecvDedup = new Set<number>();
+    this.versusPingMarkers = [];
+    this.versusPingRecvDedup = new Set<number>();
+    this.spectateLaserCharges = 0;
+    this.spectateLaserAccumMs = 0;
+    this.spectatePingLastSendMs = 0;
+    this.spectateInventoryUi = [];
+    this.spectateLaserChargesText = null;
     this.scoreRecordingBlocked = false;
     this.localTerminalFired = false;
     this.localOutcome = null;
     this.peerOutcome = null;
     this.versusResultRendered = false;
+    this.versusSpectating = false;
     this.versusPeerWaitTimer = null;
     this.localRematch = false;
     this.peerRematch = false;
@@ -423,6 +469,9 @@ export class GameScene extends Phaser.Scene {
     ).setOrigin(0.5).setDepth(101).setAlpha(0.88).setVisible(false);
     this.createPauseButton();
     this.startWarpInAt(spawnX, spawnY);
+    if (this.runMode === RunMode.CAMPAIGN && (handoff.startPhase ?? 1) > 1) {
+      this.applyPhaseState(handoff.startPhase ?? 1, false);
+    }
     if (!this.liaisonComm || !this.liaisonCompanyId) {
       const openingLineKey = handoff.retryFromDeath && Math.random() < 0.45 ? 'gameOverRetry' : 'runStart';
       this.showSlickExclusive(getSlickLine(openingLineKey));
@@ -645,6 +694,48 @@ export class GameScene extends Phaser.Scene {
           }
         }
         if (claimedByNpc) return;
+      }
+    }
+
+    // Versus sabotage laser pickups (versus mode only — list stays empty otherwise).
+    for (let i = this.versusLaserPickups.length - 1; i >= 0; i--) {
+      const pickup = this.versusLaserPickups[i];
+      pickup.update(effectiveDelta);
+      if (!pickup.active) {
+        pickup.destroy();
+        this.versusLaserPickups.splice(i, 1);
+        continue;
+      }
+      if (gameplayActive && pickup.isCollectable()) {
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, pickup.x, pickup.y);
+        if (dist < PLAYER_RADIUS + pickup.radius) {
+          pickup.active = false;
+          pickup.destroy();
+          this.versusLaserPickups.splice(i, 1);
+          this.fireVersusLaser();
+        }
+      }
+    }
+
+    // Incoming versus laser strikes (lethal lane sweeps from peer).
+    for (let i = this.versusLaserStrikes.length - 1; i >= 0; i--) {
+      const strike = this.versusLaserStrikes[i];
+      strike.update(effectiveDelta);
+      if (!strike.active) {
+        strike.destroy();
+        this.versusLaserStrikes.splice(i, 1);
+        continue;
+      }
+      if (gameplayActive && strike.isLethal() && !this.player.destroyed) {
+        if (strike.hits(this.player.x, this.player.y, PLAYER_RADIUS)) {
+          // Shield absorbs the strike (matches existing beam-vs-shield contract).
+          if (this.player.hasShield) {
+            this.player.hasShield = false;
+          } else {
+            this.handleDeath('laser');
+            return;
+          }
+        }
       }
     }
 
@@ -1061,6 +1152,13 @@ export class GameScene extends Phaser.Scene {
     for (const drop of bombDrops) {
       this.bombPickups.push(new BombPickup(this, drop.x, drop.y, drop.vx, drop.vy));
     }
+
+    if (this.multiplayer) {
+      const laserDrops = this.difficultySystem.consumeVersusLaserDrops();
+      for (const drop of laserDrops) {
+        this.versusLaserPickups.push(new VersusLaserPickup(this, drop.x, drop.y, drop.vx, drop.vy));
+      }
+    }
   }
 
   private updateBossStatusUi(): void {
@@ -1217,6 +1315,10 @@ export class GameScene extends Phaser.Scene {
     this.clearBoard(true, false);
     for (const b of this.bombPickups) b.destroy();
     this.bombPickups = [];
+    for (const p of this.versusLaserPickups) p.destroy();
+    this.versusLaserPickups = [];
+    for (const s of this.versusLaserStrikes) s.destroy();
+    this.versusLaserStrikes = [];
     for (const p of this.bonusPickups) p.destroy();
     this.bonusPickups = [];
     this.scoreSystem.clearUnbanked();
@@ -1468,6 +1570,13 @@ export class GameScene extends Phaser.Scene {
     this.bonusPickups = [];
     for (const bomb of this.bombPickups) bomb.destroy();
     this.bombPickups = [];
+    for (const p of this.versusLaserPickups) p.destroy();
+    this.versusLaserPickups = [];
+    for (const s of this.versusLaserStrikes) s.destroy();
+    this.versusLaserStrikes = [];
+    for (const m of this.versusPingMarkers) m.destroy();
+    this.versusPingMarkers = [];
+    this.tearDownSpectateInventoryUi();
     for (const pd of this.playerDebris) pd.destroy();
     this.playerDebris = [];
     if (this.debrisRespawnTimer) {
@@ -1505,8 +1614,11 @@ export class GameScene extends Phaser.Scene {
   private setupMultiplayer(handoff: MultiplayerHandoff): void {
     this.multiplayer = handoff;
     this.matchClockStartMs = Date.now();
+    // Versus mode: enable sabotage laser drops on enemy/NPC kills.
+    this.difficultySystem.setVersusLasersEnabled(true);
     this.snapshotAccumMs = 0;
     this.peerSnapshots = [];
+    this.peerEpoch = null;
     this.lastPeerSeenAt = Date.now();
     this.resultPulseAccumMs = 0;
 
@@ -1514,6 +1626,18 @@ export class GameScene extends Phaser.Scene {
       const snap = payload as MirrorSnapshot | undefined;
       if (!snap || typeof snap.t !== 'number') return;
       this.notePeerSeen();
+      // Detect peer-side new round: a different epoch means the peer reset its
+      // matchClockStartMs (rematch). Drop the prior round's buffered snapshots
+      // so the peer's old extract pose cannot keep rendering, and so the
+      // `t < last.t` filter below does not reject the new round's low-t
+      // snapshots as "out of order".
+      const incomingEpoch = typeof snap.epoch === 'number' ? snap.epoch : null;
+      if (incomingEpoch !== null && this.peerEpoch !== null && incomingEpoch !== this.peerEpoch) {
+        this.peerSnapshots = [];
+      }
+      if (incomingEpoch !== null) {
+        this.peerEpoch = incomingEpoch;
+      }
       const last = this.peerSnapshots[this.peerSnapshots.length - 1];
       if (last && snap.t < last.snap.t) return;
       this.peerSnapshots.push({ snap, arr: Date.now() });
@@ -1566,6 +1690,31 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    handoff.session.onBroadcast(NET_EVENT.MATCH_PING, (payload) => {
+      const p = payload as MatchPingPayload | undefined;
+      if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') return;
+      this.notePeerSeen();
+      if (typeof p.t === 'number') {
+        if (this.versusPingRecvDedup.has(p.t)) return;
+        this.versusPingRecvDedup.add(p.t);
+      }
+      this.spawnIncomingPing(p.x, p.y);
+    });
+
+    handoff.session.onBroadcast(NET_EVENT.MATCH_LASER, (payload) => {
+      const p = payload as MatchLaserPayload | undefined;
+      const validLanes: VersusLaserLane[] = ['top', 'middle', 'bottom', 'left', 'center', 'right'];
+      if (!p || !validLanes.includes(p.lane as VersusLaserLane)) return;
+      this.notePeerSeen();
+      // Dedupe by sender timestamp; Supabase broadcast can occasionally
+      // double-deliver, and an exact-match spawn would double the lethal sweep.
+      if (typeof p.t === 'number') {
+        if (this.versusLaserRecvDedup.has(p.t)) return;
+        this.versusLaserRecvDedup.add(p.t);
+      }
+      this.spawnIncomingVersusLaser(p.lane);
+    });
+
     handoff.session.onBroadcast(NET_EVENT.MATCH_DEATH, (payload) => {
       const p = payload as MatchDeathPayload | undefined;
       if (!p || typeof p.score !== 'number') return;
@@ -1605,6 +1754,80 @@ export class GameScene extends Phaser.Scene {
     const peerName = this.multiplayer?.session.getPeer()?.playerName ?? '';
     const normalized = peerName.trim().toUpperCase();
     return normalized.length > 0 ? normalized : 'P2';
+  }
+
+  /**
+   * Local player picked up a sabotage laser charge in versus mode. Fire-and-
+   * forget broadcast to the peer with a randomly chosen lane. A self-imposed
+   * cooldown prevents spam if multiple pickups land back-to-back; the local
+   * collection still consumes the pickup either way (no charge stacking).
+   */
+  private fireVersusLaser(): void {
+    if (!this.multiplayer) return;
+    const now = Date.now();
+    if (now - this.versusLaserLastSendAt < VERSUS_LASER_SEND_COOLDOWN_MS) return;
+    this.versusLaserLastSendAt = now;
+    const lanes: VersusLaserLane[] = ['top', 'middle', 'bottom'];
+    const lane = lanes[Math.floor(Math.random() * lanes.length)];
+    const payload: MatchLaserPayload = {
+      lane,
+      t: now - this.matchClockStartMs,
+    };
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_LASER, payload).catch((err) => {
+      console.warn('[GameScene] match_laser broadcast failed', err);
+    });
+  }
+
+  /** Receiver: spawn the lethal lane sweep that the peer just fired. */
+  private spawnIncomingVersusLaser(lane: VersusLaserLane): void {
+    this.versusLaserStrikes.push(new VersusLaserStrike(this, lane));
+  }
+
+  /**
+   * Spectate-only: the dead/extracted local taps a lane button to fire one of
+   * their accumulated charges. Charges regen 1 every 15s up to a cap. No
+   * cooldown beyond charge consumption — that's the throttle.
+   */
+  private fireSpectateLaser(lane: VersusLaserLane): void {
+    if (!this.multiplayer) return;
+    if (this.spectateLaserCharges <= 0) return;
+    this.spectateLaserCharges -= 1;
+    const payload: MatchLaserPayload = {
+      lane,
+      t: Date.now() - this.matchClockStartMs,
+    };
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_LASER, payload).catch((err) => {
+      console.warn('[GameScene] spectate laser broadcast failed', err);
+    });
+    this.refreshSpectateInventoryUi();
+  }
+
+  /**
+   * Spectate-only: tap anywhere on the peer mirror to send a cosmetic ping
+   * marker that lights up at the same arena coord on the peer's screen. Local
+   * rate-limit only; no charge cost.
+   */
+  private fireSpectatePing(arenaXFraction: number, arenaYFraction: number): void {
+    if (!this.multiplayer) return;
+    const now = Date.now();
+    if (now - this.spectatePingLastSendMs < SPECTATE_PING_COOLDOWN_MS) return;
+    this.spectatePingLastSendMs = now;
+    const payload: MatchPingPayload = {
+      x: Math.max(0, Math.min(1, arenaXFraction)),
+      y: Math.max(0, Math.min(1, arenaYFraction)),
+      t: now - this.matchClockStartMs,
+    };
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_PING, payload).catch((err) => {
+      console.warn('[GameScene] spectate ping broadcast failed', err);
+    });
+  }
+
+  /** Receiver: spawn a cosmetic ping marker at peer-supplied arena coords. */
+  private spawnIncomingPing(arenaXFraction: number, arenaYFraction: number): void {
+    const layout = getLayout();
+    const x = layout.arenaLeft + Math.max(0, Math.min(1, arenaXFraction)) * layout.arenaWidth;
+    const y = layout.arenaTop + Math.max(0, Math.min(1, arenaYFraction)) * layout.arenaHeight;
+    this.versusPingMarkers.push(new VersusPingMarker(this, x, y));
   }
 
   private broadcastLocalTerminal(outcome: VersusOutcome): void {
@@ -1799,7 +2022,20 @@ export class GameScene extends Phaser.Scene {
       this.sendSnapshot();
     }
     this.tickResultPeerHeartbeat(delta);
+    this.tickSpectateInventory(delta);
+    this.tickPingMarkers(delta);
     this.updateMirrorViewport();
+  }
+
+  private tickPingMarkers(delta: number): void {
+    for (let i = this.versusPingMarkers.length - 1; i >= 0; i--) {
+      const m = this.versusPingMarkers[i];
+      m.update(delta);
+      if (!m.active) {
+        m.destroy();
+        this.versusPingMarkers.splice(i, 1);
+      }
+    }
   }
 
   private tickResultPeerHeartbeat(delta: number): void {
@@ -1838,6 +2074,7 @@ export class GameScene extends Phaser.Scene {
     const round4 = (n: number) => Math.round(n * 10000) / 10000;
     const enemies = this.difficultySystem.getEnemies();
     const snapshot: MirrorSnapshot = {
+      epoch: this.matchClockStartMs,
       t: Date.now() - this.matchClockStartMs,
       ship: {
         x: round4((this.player.x - al) / aw),
@@ -1956,7 +2193,9 @@ export class GameScene extends Phaser.Scene {
     const rect = this.mirrorRect;
     const g = this.mirrorEntities;
     if (!rect || !g) return;
-    if (this.state === GameState.RESULTS) return;
+    // RESULTS state suppresses the mirror except during versus spectate, when
+    // we DO want to keep rendering the peer's live arena.
+    if (this.state === GameState.RESULTS && !this.versusSpectating) return;
     g.clear();
 
     if (this.peerSnapshots.length === 0) {
@@ -1984,23 +2223,26 @@ export class GameScene extends Phaser.Scene {
       return rect.y + c * rect.h;
     };
 
-    const enemyFillAlpha = 0.12;
-    const enemyStrokeAlpha = 0.24;
+    const spectate = this.versusSpectating;
+    const enemyR = spectate ? GameScene.MIRROR_SPECTATE_ENEMY_RADIUS : GameScene.MIRROR_ENEMY_RADIUS;
+    const shipR = spectate ? GameScene.MIRROR_SPECTATE_SHIP_RADIUS : GameScene.MIRROR_SHIP_RADIUS;
+    const enemyFillAlpha = spectate ? 0.32 : 0.12;
+    const enemyStrokeAlpha = spectate ? 0.7 : 0.24;
     g.fillStyle(COLORS.ENEMY, enemyFillAlpha);
-    g.lineStyle(1, COLORS.ENEMY, enemyStrokeAlpha);
+    g.lineStyle(spectate ? 1.5 : 1, COLORS.ENEMY, enemyStrokeAlpha);
     const paired = Math.min(older.snap.enemies.length, newest.snap.enemies.length);
     for (let i = 0; i < paired; i++) {
       const oe = older.snap.enemies[i];
       const ne = newest.snap.enemies[i];
       const fx = oe.x + (ne.x - oe.x) * alpha;
       const fy = oe.y + (ne.y - oe.y) * alpha;
-      g.fillCircle(mapX(fx), mapY(fy), GameScene.MIRROR_ENEMY_RADIUS);
-      g.strokeCircle(mapX(fx), mapY(fy), GameScene.MIRROR_ENEMY_RADIUS);
+      g.fillCircle(mapX(fx), mapY(fy), enemyR);
+      g.strokeCircle(mapX(fx), mapY(fy), enemyR);
     }
     for (let i = paired; i < newest.snap.enemies.length; i++) {
       const ne = newest.snap.enemies[i];
-      g.fillCircle(mapX(ne.x), mapY(ne.y), GameScene.MIRROR_ENEMY_RADIUS);
-      g.strokeCircle(mapX(ne.x), mapY(ne.y), GameScene.MIRROR_ENEMY_RADIUS);
+      g.fillCircle(mapX(ne.x), mapY(ne.y), enemyR);
+      g.strokeCircle(mapX(ne.x), mapY(ne.y), enemyR);
     }
 
     const sFx = older.snap.ship.x + (newest.snap.ship.x - older.snap.ship.x) * alpha;
@@ -2010,26 +2252,25 @@ export class GameScene extends Phaser.Scene {
     const sy = mapY(sFy);
 
     if (newest.snap.ship.alive) {
-      const triR = GameScene.MIRROR_SHIP_RADIUS;
-      const x1 = sx + Math.cos(sAngle) * triR;
-      const y1 = sy + Math.sin(sAngle) * triR;
-      const x2 = sx + Math.cos(sAngle + (Math.PI * 2) / 3) * triR;
-      const y2 = sy + Math.sin(sAngle + (Math.PI * 2) / 3) * triR;
-      const x3 = sx + Math.cos(sAngle - (Math.PI * 2) / 3) * triR;
-      const y3 = sy + Math.sin(sAngle - (Math.PI * 2) / 3) * triR;
-      g.lineStyle(1.15, COLORS.PLAYER, 0.3);
-      g.fillStyle(COLORS.PLAYER, 0.08);
+      const x1 = sx + Math.cos(sAngle) * shipR;
+      const y1 = sy + Math.sin(sAngle) * shipR;
+      const x2 = sx + Math.cos(sAngle + (Math.PI * 2) / 3) * shipR;
+      const y2 = sy + Math.sin(sAngle + (Math.PI * 2) / 3) * shipR;
+      const x3 = sx + Math.cos(sAngle - (Math.PI * 2) / 3) * shipR;
+      const y3 = sy + Math.sin(sAngle - (Math.PI * 2) / 3) * shipR;
+      g.lineStyle(spectate ? 2 : 1.15, COLORS.PLAYER, spectate ? 0.85 : 0.3);
+      g.fillStyle(COLORS.PLAYER, spectate ? 0.3 : 0.08);
       g.beginPath();
       g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x3, y3); g.closePath();
       g.fillPath();
       g.strokePath();
       if (newest.snap.ship.shielded) {
-        g.lineStyle(1.1, COLORS.SHIELD, 0.32);
-        g.strokeCircle(sx, sy, triR * 1.6);
+        g.lineStyle(spectate ? 1.6 : 1.1, COLORS.SHIELD, spectate ? 0.6 : 0.32);
+        g.strokeCircle(sx, sy, shipR * 1.6);
       }
     } else {
-      const markR = GameScene.MIRROR_SHIP_RADIUS * 0.7;
-      g.lineStyle(1.25, COLORS.HAZARD, 0.42);
+      const markR = shipR * 0.7;
+      g.lineStyle(spectate ? 2 : 1.25, COLORS.HAZARD, spectate ? 0.85 : 0.42);
       g.beginPath();
       g.moveTo(sx - markR, sy - markR); g.lineTo(sx + markR, sy + markR);
       g.moveTo(sx + markR, sy - markR); g.lineTo(sx - markR, sy + markR);
@@ -2230,10 +2471,13 @@ export class GameScene extends Phaser.Scene {
     this.resultInputLocked = true;
     this.hidePauseMenu();
     this.refreshPauseUi();
-    this.setMirrorVisible(false);
     if (this.multiplayer && this.localOutcome) {
+      // Mirror visibility is decided inside enterVersusResultFlow: hidden if
+      // we go straight to a both-terminal result, kept on (spectate) if we
+      // need to wait for the peer.
       this.enterVersusResultFlow();
     } else {
+      this.setMirrorVisible(false);
       this.showResultUi(this.resultData);
     }
     this.time.delayedCall(500, () => {
@@ -2245,20 +2489,27 @@ export class GameScene extends Phaser.Scene {
     if (!this.localOutcome) return;
     // Both terminal: render now.
     if (this.peerOutcome) {
+      this.setMirrorVisible(false);
       this.renderVersusResult();
       return;
     }
-    // Local death + peer alive: resolve immediately as LOSE — peer outlived us.
-    if (this.localOutcome.cause === 'death') {
-      this.renderVersusResult();
-      return;
-    }
-    // Local extract + peer alive: wait up to VERSUS_PEER_WAIT_MS.
+    // Peer is still going. Enter spectate: take over the screen with the peer
+    // mirror at higher depth + bigger sizes so the local player can watch.
+    this.beginVersusSpectate();
+    // Either-side waiting: peer hasn't terminated yet. Show the spectate panel
+    // until peer extracts, dies, or leaves. Extract-required win rules:
+    // - Local extract + peer alive: 15s auto-WIN safety so a stalling peer
+    //   cannot pin the extractor on the result screen forever.
+    // - Local death + peer alive: no timeout. Wait for peer's terminal event;
+    //   if peer eventually extracts we LOSE, if peer dies it's a DRAW. The
+    //   peer-left heartbeat already covers hard disconnects.
     this.showVersusWaitingUi();
-    this.versusPeerWaitTimer = this.time.delayedCall(GameScene.VERSUS_PEER_WAIT_MS, () => {
-      this.versusPeerWaitTimer = null;
-      this.renderVersusResult();
-    });
+    if (this.localOutcome.cause === 'extract') {
+      this.versusPeerWaitTimer = this.time.delayedCall(GameScene.VERSUS_PEER_WAIT_MS, () => {
+        this.versusPeerWaitTimer = null;
+        this.renderVersusResult();
+      });
+    }
   }
 
   private showResultUi(data: ResultData): void {
@@ -2659,79 +2910,242 @@ export class GameScene extends Phaser.Scene {
     this.rematchPrimaryRefresh = null;
   }
 
-  private decideVersusBanner(local: VersusOutcome, peer: VersusOutcome): 'WIN' | 'LOSE' | 'TIE' {
-    // Extract beats death/survived. Same-kind compare by score, equal = TIE.
+  private decideVersusBanner(local: VersusOutcome, peer: VersusOutcome): 'WIN' | 'LOSE' | 'DRAW' {
+    // Extract is required to win. If neither side extracted (both died, both
+    // timed out, or any mix of non-extract outcomes), the match is a draw
+    // regardless of score. Among extracts, higher score wins; tied scores draw.
     const localExt = local.cause === 'extract';
     const peerExt = peer.cause === 'extract';
     if (localExt && !peerExt) return 'WIN';
     if (!localExt && peerExt) return 'LOSE';
+    if (!localExt && !peerExt) return 'DRAW';
     if (local.score > peer.score) return 'WIN';
     if (local.score < peer.score) return 'LOSE';
-    return 'TIE';
+    return 'DRAW';
+  }
+
+  private beginVersusSpectate(): void {
+    this.versusSpectating = true;
+    this.setMirrorVisible(true);
+    // Promote mirror layers above the result-screen backing so the peer's
+    // arena reads as the dominant view. The waiting overlay only paints thin
+    // top/bottom bars, leaving the middle of the arena open for the mirror.
+    this.mirrorBg?.setDepth(GameScene.MIRROR_SPECTATE_BG_DEPTH);
+    this.mirrorEntities?.setDepth(GameScene.MIRROR_SPECTATE_ENTITY_DEPTH);
+    this.mirrorLabel?.setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH);
+    this.mirrorWaiting?.setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH);
+    // Reset spectate inventory state and start the regen timer.
+    this.spectateLaserCharges = 0;
+    this.spectateLaserAccumMs = 0;
+    this.spectatePingLastSendMs = 0;
+    this.showVersusWaitingUi();
+    this.buildSpectateInventoryUi();
+  }
+
+  private endVersusSpectate(): void {
+    if (!this.versusSpectating) return;
+    this.versusSpectating = false;
+    this.mirrorBg?.setDepth(GameScene.MIRROR_BG_DEPTH);
+    this.mirrorEntities?.setDepth(GameScene.MIRROR_ENTITY_DEPTH);
+    this.mirrorLabel?.setDepth(GameScene.MIRROR_TEXT_DEPTH);
+    this.mirrorWaiting?.setDepth(GameScene.MIRROR_TEXT_DEPTH);
+    this.tearDownSpectateInventoryUi();
+    this.setMirrorVisible(false);
+  }
+
+  private buildSpectateInventoryUi(): void {
+    this.tearDownSpectateInventoryUi();
+    const layout = getLayout();
+    const btnW = 64;
+    const btnH = 36;
+    const arenaTop = layout.arenaTop;
+    const arenaH = layout.arenaHeight;
+    const arenaW = layout.arenaWidth;
+
+    const drawLaneButton = (cx: number, cy: number, label: string, lane: VersusLaserLane): void => {
+      const bg = this.add.graphics().setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH);
+      bg.fillStyle(COLORS.BG, 0.65);
+      bg.fillRoundedRect(cx - btnW / 2, cy - btnH / 2, btnW, btnH, 8);
+      bg.lineStyle(1.5, 0xc070ff, 0.7);
+      bg.strokeRoundedRect(cx - btnW / 2, cy - btnH / 2, btnW, btnH, 8);
+      this.spectateInventoryUi.push(bg);
+      const labelText = this.add.text(cx, cy, label, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(13),
+        color: '#c070ff',
+        align: 'center',
+      }).setOrigin(0.5).setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH + 1);
+      this.spectateInventoryUi.push(labelText);
+      const hit = this.add.zone(cx - btnW / 2, cy - btnH / 2, btnW, btnH)
+        .setOrigin(0, 0)
+        .setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH + 2)
+        .setInteractive({ useHandCursor: true });
+      hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+        event.stopPropagation();
+        if (this.spectateLaserCharges <= 0) return;
+        playUiSelectSfx(this);
+        this.fireSpectateLaser(lane);
+      });
+      this.spectateInventoryUi.push(hit);
+    };
+
+    // Right-edge column: horizontal sweeps (TOP / MID / BOT bands).
+    const horizontalCx = layout.arenaRight - btnW / 2 - 18;
+    const horizontalYs = [arenaTop + arenaH * 0.25, arenaTop + arenaH * 0.5, arenaTop + arenaH * 0.75];
+    const horizontalLanes: { lane: VersusLaserLane; label: string }[] = [
+      { lane: 'top', label: 'TOP' },
+      { lane: 'middle', label: 'MID' },
+      { lane: 'bottom', label: 'BOT' },
+    ];
+    horizontalLanes.forEach((entry, i) => drawLaneButton(horizontalCx, horizontalYs[i], entry.label, entry.lane));
+
+    // Top-edge row: vertical sweeps (LEFT / CTR / RIGHT bands).
+    const verticalCy = arenaTop + btnH / 2 + 18;
+    const verticalXs = [
+      layout.arenaLeft + arenaW * 0.25,
+      layout.arenaLeft + arenaW * 0.5,
+      layout.arenaLeft + arenaW * 0.75,
+    ];
+    const verticalLanes: { lane: VersusLaserLane; label: string }[] = [
+      { lane: 'left', label: 'LEFT' },
+      { lane: 'center', label: 'CTR' },
+      { lane: 'right', label: 'RIGHT' },
+    ];
+    verticalLanes.forEach((entry, i) => drawLaneButton(verticalXs[i], verticalCy, entry.label, entry.lane));
+
+    // Charge counter + regen tick label, anchored low-left of arena where
+    // it doesn't collide with either button strip.
+    const chargesText = this.add.text(layout.arenaLeft + 18, layout.arenaBottom - 26, '', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(12),
+      color: '#c070ff',
+      align: 'left',
+      stroke: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
+      strokeThickness: 3,
+    }).setOrigin(0, 0).setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH + 1);
+    this.spectateInventoryUi.push(chargesText);
+    this.spectateLaserChargesText = chargesText;
+
+    // Mirror tap zone: tap anywhere on the peer arena (except the lane button
+    // strip) to send a ping. Lower depth than the lane buttons so they
+    // intercept their own taps first.
+    const pingZone = this.add.zone(layout.arenaLeft, layout.arenaTop, layout.arenaWidth, layout.arenaHeight)
+      .setOrigin(0, 0)
+      .setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH - 1)
+      .setInteractive({ useHandCursor: true });
+    pingZone.on('pointerdown', (pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      const fx = (pointer.x - layout.arenaLeft) / Math.max(1, layout.arenaWidth);
+      const fy = (pointer.y - layout.arenaTop) / Math.max(1, layout.arenaHeight);
+      this.fireSpectatePing(fx, fy);
+    });
+    this.spectateInventoryUi.push(pingZone);
+
+    this.refreshSpectateInventoryUi();
+  }
+
+  private tearDownSpectateInventoryUi(): void {
+    for (const obj of this.spectateInventoryUi) obj.destroy();
+    this.spectateInventoryUi = [];
+    this.spectateLaserChargesText = null;
+  }
+
+  private refreshSpectateInventoryUi(): void {
+    if (!this.spectateLaserChargesText) return;
+    const charges = this.spectateLaserCharges;
+    if (charges < SPECTATE_LASER_MAX_CHARGES) {
+      const remainMs = Math.max(0, SPECTATE_LASER_REGEN_MS - this.spectateLaserAccumMs);
+      const secs = Math.ceil(remainMs / 1000);
+      this.spectateLaserChargesText.setText(`LASER ×${charges} // +1 IN ${secs}s`);
+    } else {
+      this.spectateLaserChargesText.setText(`LASER ×${charges} // MAX`);
+    }
+  }
+
+  private tickSpectateInventory(delta: number): void {
+    if (!this.versusSpectating) return;
+    if (this.spectateLaserCharges < SPECTATE_LASER_MAX_CHARGES) {
+      this.spectateLaserAccumMs += delta;
+      if (this.spectateLaserAccumMs >= SPECTATE_LASER_REGEN_MS) {
+        this.spectateLaserAccumMs = 0;
+        this.spectateLaserCharges = Math.min(SPECTATE_LASER_MAX_CHARGES, this.spectateLaserCharges + 1);
+      }
+    } else {
+      this.spectateLaserAccumMs = 0;
+    }
+    this.refreshSpectateInventoryUi();
   }
 
   private showVersusWaitingUi(): void {
     this.clearResultUi();
     const layout = getLayout();
-    const arenaInset = Phaser.Math.Clamp(Math.round(Math.min(layout.arenaWidth, layout.arenaHeight) * 0.04), 16, 30);
-    const panelLeft = layout.arenaLeft + arenaInset;
-    const panelTop = layout.arenaTop + arenaInset;
-    const panelWidth = layout.arenaWidth - arenaInset * 2;
-    const panelHeight = layout.arenaHeight - arenaInset * 2;
     const centerX = layout.centerX;
-    const accent = COLORS.GATE;
-
-    const backing = this.add.graphics().setDepth(205);
-    backing.fillStyle(COLORS.BG, 0.82);
-    backing.fillRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
-    backing.lineStyle(1.5, accent, 0.4);
-    backing.strokeRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
-    this.resultUi.push(backing);
-
-    const titleBarHeight = Phaser.Math.Clamp(Math.round(panelHeight * 0.06), 30, 48);
-    const titleBarTop = panelTop + 12;
-    const titleBar = this.add.graphics().setDepth(208);
-    titleBar.fillStyle(accent, 0.94);
-    titleBar.fillRect(0, titleBarTop, layout.gameWidth, titleBarHeight);
-    this.resultUi.push(titleBar);
-
-    const title = this.add.text(centerX, titleBarTop + titleBarHeight / 2, 'EXTRACTED', {
-      fontFamily: TITLE_FONT,
-      fontSize: readableFontSize(Phaser.Math.Clamp(Math.round(titleBarHeight * 0.58), 18, 30)),
-      color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
-    }).setOrigin(0.5).setDepth(210);
-    this.resultUi.push(title);
-
-    const subY = titleBarTop + titleBarHeight + 32;
+    const localExtracted = this.localOutcome?.cause === 'extract';
+    const accent = localExtracted ? COLORS.GATE : COLORS.HAZARD;
+    const titleLabel = localExtracted ? 'EXTRACTED' : 'DESTROYED';
     const peerName = this.getPeerPilotName();
-    const sub = this.add.text(centerX, subY, `WAITING FOR ${peerName}...`, {
-      fontFamily: UI_FONT,
+    const localScore = Math.floor(this.localOutcome?.score ?? 0);
+
+    // Dim the local frozen arena so the peer mirror reads cleanly through it.
+    const dim = this.add.graphics().setDepth(GameScene.MIRROR_SPECTATE_BG_DEPTH - 1);
+    dim.fillStyle(COLORS.BG, GameScene.MIRROR_SPECTATE_BG_ALPHA);
+    dim.fillRect(0, 0, layout.gameWidth, layout.gameHeight);
+    this.resultUi.push(dim);
+
+    // Top header strip: outcome label + score, plus SPECTATING line.
+    const headerHeight = 56;
+    const header = this.add.graphics().setDepth(208);
+    header.fillStyle(accent, 0.92);
+    header.fillRect(0, 0, layout.gameWidth, headerHeight);
+    this.resultUi.push(header);
+
+    const headerTitle = this.add.text(centerX, 14, titleLabel, {
+      fontFamily: TITLE_FONT,
       fontSize: readableFontSize(20),
-      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
     }).setOrigin(0.5, 0).setDepth(210);
-    this.resultUi.push(sub);
+    this.resultUi.push(headerTitle);
 
-    const countdownText = this.add.text(centerX, subY + sub.height + 16, '', {
+    const headerSub = this.add.text(centerX, 38, `${localScore} CR // SPECTATING ${peerName}`, {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(16),
+      fontSize: readableFontSize(13),
+      color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.92);
+    this.resultUi.push(headerSub);
+
+    // Lower status strip: countdown (extract case) or no-win note (death case).
+    const statusY = layout.gameHeight - 96;
+    const statusText = this.add.text(centerX, statusY, '', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
       color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
-    }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.85);
-    this.resultUi.push(countdownText);
+      align: 'center',
+      stroke: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
+      strokeThickness: 3,
+    }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.95);
+    this.resultUi.push(statusText);
 
-    const startMs = Date.now();
-    const tick = (): void => {
-      const elapsed = Date.now() - startMs;
-      const remain = Math.max(0, GameScene.VERSUS_PEER_WAIT_MS - elapsed);
-      const secs = Math.ceil(remain / 1000);
-      countdownText.setText(`AUTO-WIN IN ${secs}s IF ${peerName} STAYS ALIVE`);
-    };
-    tick();
-    const tickEvent = this.time.addEvent({ delay: 250, loop: true, callback: tick });
-    this.resultUi.push({ destroy: () => tickEvent.remove(false) } as unknown as Phaser.GameObjects.GameObject);
+    if (localExtracted) {
+      const startMs = Date.now();
+      const tick = (): void => {
+        const elapsed = Date.now() - startMs;
+        const remain = Math.max(0, GameScene.VERSUS_PEER_WAIT_MS - elapsed);
+        const secs = Math.ceil(remain / 1000);
+        statusText.setText(`AUTO-WIN IN ${secs}s IF ${peerName} STAYS ALIVE`);
+      };
+      tick();
+      const tickEvent = this.time.addEvent({ delay: 250, loop: true, callback: tick });
+      this.resultUi.push({ destroy: () => tickEvent.remove(false) } as unknown as Phaser.GameObjects.GameObject);
+    } else {
+      // Local died and never extracted. We can no longer win — best case is a
+      // DRAW if peer also dies. No auto-resolution timer; wait for peer.
+      statusText.setText(`NO EXTRACT // BEST CASE DRAW IF ${peerName} ALSO FALLS`);
+    }
 
-    const buttonHeight = 44;
-    const buttonWidth = Math.min(panelWidth - 64, 320);
-    const menuY = panelTop + panelHeight - 32 - buttonHeight / 2;
+    // MENU button at bottom (player can bail out instead of watching).
+    const buttonHeight = 40;
+    const buttonWidth = Math.min(layout.gameWidth - 64, 280);
+    const menuY = layout.gameHeight - 28 - buttonHeight / 2;
     this.createResultButton('MENU', centerX, menuY, buttonWidth, buttonHeight, COLORS.HUD, () => {
       this.scene.start(SCENE_KEYS.MENU);
     });
@@ -2742,6 +3156,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.localOutcome) return;
     this.versusResultRendered = true;
     this.cancelVersusPeerWait();
+    this.endVersusSpectate();
     const peer: VersusOutcome = this.peerOutcome ?? {
       cause: 'survived',
       score: this.getLatestPeerScore(),
@@ -3135,6 +3550,11 @@ export class GameScene extends Phaser.Scene {
     }
     this.bombPickups = [];
 
+    for (const p of this.versusLaserPickups) p.destroy();
+    this.versusLaserPickups = [];
+    for (const s of this.versusLaserStrikes) s.destroy();
+    this.versusLaserStrikes = [];
+
     for (const d of this.debrisList) {
       const color = d.isRare ? 0xff44ff : COLORS.SALVAGE;
       this.playerDebris.push(new ShipDebris(this, d.x, d.y, d.driftVx, d.driftVy, color, 20));
@@ -3193,6 +3613,23 @@ export class GameScene extends Phaser.Scene {
    * in the devtools console. Sets `scoreRecordingBlocked` so jumped runs do not
    * pollute the leaderboard.
    */
+  private applyPhaseState(phase: number, blockScoreRecording: boolean): void {
+    const targetPhase = Phaser.Math.Clamp(Math.floor(phase), 1, 10);
+    this.extractionSystem.debugSetPhase(targetPhase);
+    this.difficultySystem.debugSetPhase(targetPhase);
+    this.lastGateActive = false;
+    this.regentIntroduced = targetPhase >= 3;
+    this.regentEnemyAnnounced = targetPhase >= 5;
+    this.regentBeamAnnounced = targetPhase >= 7;
+    this.regentLastPhase = targetPhase;
+    this.enemyEntranceSfxPlayed = targetPhase >= 5;
+    if (blockScoreRecording) {
+      this.scoreRecordingBlocked = true;
+    }
+    this.invulnerableTimer = Math.max(this.invulnerableTimer, 1200);
+    setGameplayMusicForPhase(this, targetPhase);
+  }
+
   private debugJumpToPhase(phase: number): void {
     if (this.state !== GameState.PLAYING && this.state !== GameState.PAUSED && this.state !== GameState.COUNTDOWN) return;
     const targetPhase = Phaser.Math.Clamp(Math.floor(phase), 1, 10);
@@ -3213,20 +3650,10 @@ export class GameScene extends Phaser.Scene {
 
     this.clearBoard(true, false);
     this.spawnPendingDifficultyDrops();
-    this.extractionSystem.debugSetPhase(targetPhase);
-    this.difficultySystem.debugSetPhase(targetPhase);
-    this.lastGateActive = false;
-    this.regentIntroduced = targetPhase >= 3;
-    this.regentEnemyAnnounced = targetPhase >= 5;
-    this.regentBeamAnnounced = targetPhase >= 7;
-    this.regentLastPhase = targetPhase;
-    this.enemyEntranceSfxPlayed = targetPhase >= 5;
-    this.scoreRecordingBlocked = true;
-    this.invulnerableTimer = Math.max(this.invulnerableTimer, 1200);
+    this.applyPhaseState(targetPhase, true);
     this.state = GameState.PLAYING;
     this.pausedFromState = GameState.PLAYING;
     this.spawnDebris();
-    setGameplayMusicForPhase(this, targetPhase);
     Overlays.bombFlash(this);
     this.refreshPauseUi();
     this.updateBossStatusUi();

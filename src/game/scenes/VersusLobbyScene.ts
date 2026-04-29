@@ -17,6 +17,7 @@ import {
   type MultiplayerHandoff,
   type PeerPresence,
 } from '../systems/NetSystem';
+import { RunMode } from '../types';
 
 type LobbyState = 'IDLE' | 'JOINING' | 'WAITING' | 'COUNTDOWN' | 'STARTED' | 'ERROR';
 
@@ -375,7 +376,11 @@ export class VersusLobbyScene extends Phaser.Scene {
     };
     this.handingOff = true;
     this.setState('STARTED');
-    this.scene.start(SCENE_KEYS.GAME, { multiplayer: handoff });
+    // Versus runs through MissionSelect now: each side picks own contracts and
+    // favors, then the host broadcasts MATCH_DEPLOY when both lock in. Pass
+    // mode=VERSUS so MissionSelect knows to hide campaign-only controls and
+    // render the lock-in flow instead of plain DEPLOY.
+    this.scene.start(SCENE_KEYS.MISSION_SELECT, { multiplayer: handoff, mode: RunMode.VERSUS });
   }
 
   private cancelCountdown(): void {

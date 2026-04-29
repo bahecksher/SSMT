@@ -24,7 +24,42 @@ export const NET_EVENT = {
   MATCH_REMATCH_READY: 'match_rematch_ready',
   MATCH_REMATCH_CANCEL: 'match_rematch_cancel',
   MATCH_RESULT_PULSE: 'match_result_pulse',
+  MATCH_LASER: 'match_laser',
+  /** Sent during versus MissionSelect when a peer toggles their LOCK IN state. */
+  MATCH_BRIEFING_READY: 'match_briefing_ready',
+  /** Host broadcast: both peers locked in, start the GameScene countdown now. */
+  MATCH_DEPLOY: 'match_deploy',
+  /** Spectator ping marker on the live player's arena. */
+  MATCH_PING: 'match_ping',
 } as const;
+
+/** Versus MissionSelect lock-in toggle. */
+export interface MatchBriefingReadyPayload {
+  ready: boolean;
+}
+
+/** Spectate ping: dead/extracted peer pokes a coord on the live player's arena. */
+export interface MatchPingPayload {
+  /** Arena-relative fractions (0..1), same convention as MirrorSnapshot.ship. */
+  x: number;
+  y: number;
+  /** Sender's match-clock ms; receiver dedupes by this. */
+  t: number;
+}
+
+/** Host-broadcast deploy event for versus MissionSelect → GameScene. */
+export interface MatchDeployPayload {
+  matchId: string;
+  delayMs: number;
+}
+
+/** Sender fired the versus sabotage laser. Receiver spawns a telegraphed lane sweep. */
+export interface MatchLaserPayload {
+  /** Horizontal sweeps: 'top' | 'middle' | 'bottom'. Vertical sweeps: 'left' | 'center' | 'right'. */
+  lane: 'top' | 'middle' | 'bottom' | 'left' | 'center' | 'right';
+  /** Sender's match-clock ms at the moment of firing. Used to dedupe replays. */
+  t: number;
+}
 
 /** Sender extracted. `time` = ms since match start (same clock as MirrorSnapshot.t). `rep` reserved for future rep-flux summary. */
 export interface MatchExtractPayload {
@@ -49,6 +84,13 @@ export interface MultiplayerHandoff {
 }
 
 export interface MirrorSnapshot {
+  /**
+   * Sender's match-start wall clock in ms (sender's matchClockStartMs). Stable
+   * for all snapshots in the same round; changes on rematch when the sender
+   * resets its clock. Receiver uses this to detect a new round and discard
+   * leftover snapshots from the prior round whose `t` values are still high.
+   */
+  epoch?: number;
   /** ms since match start (sender clock). */
   t: number;
   /**

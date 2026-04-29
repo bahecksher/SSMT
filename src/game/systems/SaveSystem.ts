@@ -364,6 +364,21 @@ export class SaveSystem {
     return this.data.campaignSession?.livesRemaining ?? DEFAULT_CAMPAIGN_LIVES;
   }
 
+  addCampaignLives(amount: number): CampaignSessionSave {
+    const session = this.ensureCampaignSession();
+    const extraLives = Math.max(0, Math.floor(amount));
+    if (extraLives <= 0) {
+      return session;
+    }
+
+    this.data.campaignSession = {
+      ...session,
+      livesRemaining: session.livesRemaining + extraLives,
+    };
+    this.save();
+    return this.ensureCampaignSession();
+  }
+
   getCampaignMissionsCompletedDisplay(): number {
     return this.data.campaignSession?.missionsCompleted ?? 0;
   }

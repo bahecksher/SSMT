@@ -28,6 +28,12 @@ import {
 } from '../data/companyData';
 import { CompanyId, RunMode } from '../types';
 import type { ActiveMission } from '../types';
+import {
+  NET_EVENT,
+  type MultiplayerHandoff,
+  type MatchBriefingReadyPayload,
+  type MatchDeployPayload,
+} from '../systems/NetSystem';
 import { refreshMusicForSettings, setMissionMusic, warmMusicCache } from '../systems/MusicSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { getSettings, updateSettings, type GameSettings } from '../systems/SettingsSystem';
@@ -48,6 +54,8 @@ interface HandoffData {
   mode?: RunMode;
   reopenSettings?: boolean;
   rerollsUsedThisVisit?: number;
+  selectedStartPhase?: number;
+  multiplayer?: MultiplayerHandoff;
 }
 
 interface BriefingLayoutConfig {
@@ -64,6 +72,8 @@ interface BriefingLayoutConfig {
   cardGap: number;
   rerollY: number;
   rerollHeight: number;
+  actionRowGap: number;
+  campaignPhaseY: number;
   repHeaderY: number;
   repGridTop: number;
   repRowWidth: number;
@@ -88,6 +98,9 @@ const CARD_MARGIN_X = 32;
 const REP_ROW_GAP = 6;
 const REP_SECTION_GAP = 10;
 const REROLL_BASE_COST = 200;
+const CAMPAIGN_LIFE_COST = 10000;
+const MIN_CAMPAIGN_START_PHASE = 1;
+const MAX_CAMPAIGN_START_PHASE = 10;
 const BG_MAX_DEBRIS = 2;
 const BG_MAX_DRIFTERS = 5;
 const BG_MAX_NPCS = 2;
@@ -96,6 +109,31 @@ const BG_DEBRIS_SPAWN_MS = 2000;
 const BG_NPC_SPAWN_MS = 2500;
 const BACKGROUND_STARFIELD_OVERSCAN = 96;
 const BACKGROUND_STARFIELD_COUNT = 170;
+
+function clampCampaignStartPhase(phase: number): number {
+  return Phaser.Math.Clamp(Math.floor(phase), MIN_CAMPAIGN_START_PHASE, MAX_CAMPAIGN_START_PHASE);
+}
+
+function getCampaignStartPhaseCost(phase: number): number {
+  const targetPhase = clampCampaignStartPhase(phase);
+  if (targetPhase <= 1) {
+    return 0;
+  }
+  if (targetPhase === 2) {
+    return 1000;
+  }
+  return targetPhase * 1000;
+}
+
+function formatCompactCreditCost(amount: number): string {
+  if (amount <= 0) {
+    return 'FREE';
+  }
+  if (amount >= 1000 && amount % 1000 === 0) {
+    return `${Math.floor(amount / 1000)}k`;
+  }
+  return `${amount}c`;
+}
 
 export class MissionSelectScene extends Phaser.Scene {
   private saveSystem!: SaveSystem;
@@ -130,6 +168,12 @@ export class MissionSelectScene extends Phaser.Scene {
   private drifterTimer = 0;
   private debrisTimer = 0;
   private npcTimer = 0;
+  private selectedStartPhase = MIN_CAMPAIGN_START_PHASE;
+  private multiplayer: MultiplayerHandoff | null = null;
+  private versusLocalLocked = false;
+  private versusPeerLocked = false;
+  private versusDeployFired = false;
+  private versusHandingOff = false;
 
   constructor() {
     super(SCENE_KEYS.MISSION_SELECT);
@@ -142,8 +186,6 @@ export class MissionSelectScene extends Phaser.Scene {
     applyColorPalette(getSettings().paletteId);
     setMissionMusic(this);
     warmMusicCache(this);
-    const layout = getLayout();
-    const briefing = this.getBriefingLayoutConfig();
 
     this.saveSystem = new SaveSystem();
     this.handoff = data ?? {};
@@ -152,8 +194,19 @@ export class MissionSelectScene extends Phaser.Scene {
     if (this.runMode === RunMode.CAMPAIGN) {
       this.saveSystem.ensureCampaignSession();
     }
+    this.multiplayer = this.runMode === RunMode.VERSUS ? (this.handoff.multiplayer ?? null) : null;
+    this.versusLocalLocked = false;
+    this.versusPeerLocked = false;
+    this.versusDeployFired = false;
+    this.versusHandingOff = false;
+    if (this.multiplayer) {
+      this.setupVersusBriefingListeners(this.multiplayer);
+    }
     this.missions = loadOrGenerateMissions();
     this.rerollsUsedThisVisit = this.handoff.rerollsUsedThisVisit ?? 0;
+    this.selectedStartPhase = this.runMode === RunMode.CAMPAIGN
+      ? clampCampaignStartPhase(this.handoff.selectedStartPhase ?? MIN_CAMPAIGN_START_PHASE)
+      : MIN_CAMPAIGN_START_PHASE;
     this.bgDebris = [];
     this.bgDrifters = [];
     this.bgNpcs = [];
@@ -162,6 +215,8 @@ export class MissionSelectScene extends Phaser.Scene {
     this.debrisTimer = 0;
     this.npcTimer = 0;
 
+    const layout = getLayout();
+    const briefing = this.getBriefingLayoutConfig();
     const saved = loadMissionSave();
     this.rerollsRemaining = saved.rerollsRemaining ?? MAX_REROLLS;
 
@@ -206,7 +261,7 @@ export class MissionSelectScene extends Phaser.Scene {
       this.drawCard(i);
     }
 
-    this.drawRerollButton();
+    this.drawActionButtons();
     this.drawRepPanel();
     this.drawMenuButton();
     this.createSettingsUi();
@@ -220,6 +275,7 @@ export class MissionSelectScene extends Phaser.Scene {
     const layout = getLayout();
     const narrow = isNarrowViewport(layout);
     const shortHeight = isShortViewport(layout);
+    const campaignActions = this.runMode === RunMode.CAMPAIGN;
     const compact = layout.gameHeight <= 860 || narrow;
     const veryCompact = layout.gameHeight <= 640 || (narrow && shortHeight);
     const tight = layout.gameHeight <= 640 || shortHeight;
@@ -234,11 +290,14 @@ export class MissionSelectScene extends Phaser.Scene {
     const missionToRerollGap = veryCompact ? 6 : tight ? 8 : compact ? 12 : 14;
     const rerollHeight = veryCompact ? 26 : compact ? 28 : 32;
     const rerollY = cardTop + cardHeight * 3 + cardGap * 2 + missionToRerollGap;
+    const actionRowGap = veryCompact ? 6 : tight ? 8 : compact ? 10 : 12;
+    const campaignPhaseY = rerollY + rerollHeight + actionRowGap;
     const repRowGap = veryCompact ? 4 : tight ? 4 : compact ? 5 : REP_ROW_GAP;
     const rerollToHeaderGap = veryCompact ? 8 : tight ? 9 : compact ? 12 : REP_SECTION_GAP + 4;
     const headerOffset = veryCompact ? 6 : compact ? 8 : 10;
     const headerToGridGap = (veryCompact ? 10 : tight ? 12 : compact ? 16 : 18) + headerOffset;
-    const repHeaderY = rerollY + rerollHeight + rerollToHeaderGap;
+    const actionSectionHeight = campaignActions ? rerollHeight + actionRowGap : 0;
+    const repHeaderY = rerollY + rerollHeight + actionSectionHeight + rerollToHeaderGap;
     const repGridTop = repHeaderY + headerToGridGap;
     const deployButtonWidth = veryCompact ? 170 : compact ? 184 : 200;
     const deployButtonHeight = veryCompact ? 36 : compact ? 40 : 46;
@@ -266,6 +325,8 @@ export class MissionSelectScene extends Phaser.Scene {
       cardGap,
       rerollY,
       rerollHeight,
+      actionRowGap,
+      campaignPhaseY,
       repHeaderY,
       repGridTop,
       repRowWidth,
@@ -366,7 +427,51 @@ export class MissionSelectScene extends Phaser.Scene {
     this.cardUi[index].push(repRewardText);
   }
 
-  private drawRerollButton(): void {
+  private drawMissionActionButton(
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+    labelText: string,
+    toneColor: number,
+    labelAlpha: number,
+    fontSize: string,
+    onClick?: () => void,
+  ): void {
+    const bg = this.add.graphics().setDepth(10);
+    bg.fillStyle(toneColor, toneColor === COLORS.HAZARD ? 0.04 : 0.08);
+    bg.fillRoundedRect(left, top, width, height, 8);
+    bg.lineStyle(1.5, toneColor, onClick ? 0.4 : 0.2);
+    bg.strokeRoundedRect(left, top, width, height, 8);
+    this.rerollUi.push(bg);
+
+    const label = this.add.text(left + width / 2, top + height / 2, labelText, {
+      fontFamily: UI_FONT,
+      fontSize,
+      color: colorStr(toneColor),
+      align: 'center',
+      wordWrap: { width: width - 12 },
+    }).setOrigin(0.5).setDepth(11).setAlpha(labelAlpha);
+    this.rerollUi.push(label);
+
+    if (!onClick) {
+      return;
+    }
+
+    const hit = this.add.zone(left, top, width, height)
+      .setData('cornerRadius', 8)
+      .setOrigin(0, 0)
+      .setDepth(12)
+      .setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      playUiSelectSfx(this);
+      onClick();
+    });
+    this.rerollUi.push(hit);
+  }
+
+  private drawActionButtons(): void {
     for (const obj of this.rerollUi) obj.destroy();
     this.rerollUi = [];
 
@@ -378,40 +483,98 @@ export class MissionSelectScene extends Phaser.Scene {
     const hasRerolls = this.rerollsRemaining > 0;
     const canAfford = availableWallet >= rerollCost;
     const canReroll = hasRerolls && canAfford;
-    const btnWidth = briefing.veryCompact ? 152 : briefing.compact ? 164 : 178;
     const btnHeight = briefing.rerollHeight;
-    const btnX = layout.centerX - btnWidth / 2;
+    const rerollFontSize = readableFontSize(briefing.veryCompact ? 9 : briefing.compact ? 10 : 11);
 
-    const btnGfx = this.add.graphics().setDepth(10);
-    btnGfx.fillStyle(canReroll ? COLORS.HUD : COLORS.HAZARD, canReroll ? 0.08 : 0.04);
-    btnGfx.fillRoundedRect(btnX, rerollY, btnWidth, btnHeight, 8);
-    btnGfx.lineStyle(1.5, canReroll ? COLORS.HUD : COLORS.HAZARD, canReroll ? 0.4 : 0.2);
-    btnGfx.strokeRoundedRect(btnX, rerollY, btnWidth, btnHeight, 8);
-    this.rerollUi.push(btnGfx);
+    if (this.runMode === RunMode.CAMPAIGN) {
+      const buttonGap = briefing.veryCompact ? 8 : 10;
+      const rowButtonWidth = Math.floor((briefing.cardWidth - buttonGap) / 2);
+      const rerollLeft = briefing.cardMarginX;
+      const lifeLeft = rerollLeft + rowButtonWidth + buttonGap;
+      const lifeAffordable = availableWallet >= CAMPAIGN_LIFE_COST;
+      const startPhaseCost = getCampaignStartPhaseCost(this.selectedStartPhase);
+      const startPhaseAffordable = startPhaseCost === 0 || availableWallet >= startPhaseCost;
+      const rerollLabel = hasRerolls
+        ? `REROLL ${rerollCost}c (${this.rerollsRemaining})`
+        : 'NO REROLLS';
 
-    const labelStr = hasRerolls ? `REROLL ${rerollCost}c (${this.rerollsRemaining})` : 'NO REROLLS';
-    const color = canReroll ? COLORS.HUD : COLORS.HAZARD;
-    const label = this.add.text(layout.centerX, rerollY + btnHeight / 2, labelStr, {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(briefing.veryCompact ? 10 : briefing.compact ? 11 : 12),
-      color: colorStr(color),
-      align: 'center',
-    }).setOrigin(0.5).setDepth(11).setAlpha(canReroll ? 0.8 : 0.4);
-    this.rerollUi.push(label);
-
-    if (canReroll) {
-      const rerollHit = this.add.zone(btnX, rerollY, btnWidth, btnHeight)
-        .setData('cornerRadius', 8)
-        .setOrigin(0, 0)
-        .setDepth(12)
-        .setInteractive({ useHandCursor: true });
-      rerollHit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-        event.stopPropagation();
-        playUiSelectSfx(this);
-        this.executeReroll();
-      });
-      this.rerollUi.push(rerollHit);
+      this.drawMissionActionButton(
+        rerollLeft,
+        rerollY,
+        rowButtonWidth,
+        btnHeight,
+        rerollLabel,
+        canReroll ? COLORS.HUD : COLORS.HAZARD,
+        canReroll ? 0.82 : 0.42,
+        rerollFontSize,
+        canReroll ? () => this.executeReroll() : undefined,
+      );
+      this.drawMissionActionButton(
+        lifeLeft,
+        rerollY,
+        rowButtonWidth,
+        btnHeight,
+        `+1 LIFE // ${formatCompactCreditCost(CAMPAIGN_LIFE_COST)}`,
+        lifeAffordable ? COLORS.SALVAGE : COLORS.HAZARD,
+        lifeAffordable ? 0.86 : 0.46,
+        readableFontSize(briefing.veryCompact ? 8 : briefing.compact ? 9 : 10),
+        lifeAffordable ? () => this.executeCampaignLifePurchase() : undefined,
+      );
+      this.drawMissionActionButton(
+        briefing.cardMarginX,
+        briefing.campaignPhaseY,
+        briefing.cardWidth,
+        btnHeight,
+        `START PHASE ${this.selectedStartPhase} // ${formatCompactCreditCost(startPhaseCost)}`,
+        startPhaseAffordable ? COLORS.GATE : COLORS.HAZARD,
+        startPhaseAffordable ? 0.86 : 0.74,
+        readableFontSize(briefing.veryCompact ? 8 : briefing.compact ? 9 : 10),
+        () => this.advanceSelectedStartPhase(),
+      );
+      return;
     }
+
+    const btnWidth = briefing.veryCompact ? 152 : briefing.compact ? 164 : 178;
+    const btnLeft = layout.centerX - btnWidth / 2;
+    const labelStr = hasRerolls ? `REROLL (${this.rerollsRemaining})` : 'NO REROLLS';
+    this.drawMissionActionButton(
+      btnLeft,
+      rerollY,
+      btnWidth,
+      btnHeight,
+      labelStr,
+      canReroll ? COLORS.HUD : COLORS.HAZARD,
+      canReroll ? 0.82 : 0.42,
+      readableFontSize(briefing.veryCompact ? 10 : briefing.compact ? 11 : 12),
+      canReroll ? () => this.executeReroll() : undefined,
+    );
+  }
+
+  private advanceSelectedStartPhase(): void {
+    if (this.runMode !== RunMode.CAMPAIGN) {
+      return;
+    }
+
+    this.selectedStartPhase = this.selectedStartPhase >= MAX_CAMPAIGN_START_PHASE
+      ? MIN_CAMPAIGN_START_PHASE
+      : this.selectedStartPhase + 1;
+    this.drawActionButtons();
+    this.drawDeployButton();
+  }
+
+  private executeCampaignLifePurchase(): void {
+    if (this.runMode !== RunMode.CAMPAIGN) {
+      return;
+    }
+    if (!this.saveSystem.spendWalletCredits(CAMPAIGN_LIFE_COST, this.runMode)) {
+      this.drawActionButtons();
+      this.drawRepPanel();
+      return;
+    }
+
+    this.saveSystem.addCampaignLives(1);
+    this.drawActionButtons();
+    this.drawRepPanel();
   }
 
   private drawMenuButton(): void {
@@ -752,8 +915,8 @@ export class MissionSelectScene extends Phaser.Scene {
   private executeReroll(): void {
     if (this.rerollsRemaining <= 0) return;
     const rerollCost = this.getCurrentRerollCost();
-    if (!this.saveSystem.spendWalletCredits(rerollCost, this.runMode)) {
-      this.drawRerollButton();
+    if (rerollCost > 0 && !this.saveSystem.spendWalletCredits(rerollCost, this.runMode)) {
+      this.drawActionButtons();
       this.drawRepPanel();
       return;
     }
@@ -773,7 +936,7 @@ export class MissionSelectScene extends Phaser.Scene {
     saveMissionSelection(this.missions, this.rerollsRemaining);
 
     for (let i = 0; i < 3; i++) this.drawCard(i);
-    this.drawRerollButton();
+    this.drawActionButtons();
     this.drawRepPanel();
   }
 
@@ -791,6 +954,9 @@ export class MissionSelectScene extends Phaser.Scene {
   }
 
   private getCurrentRerollCost(): number {
+    if (this.runMode === RunMode.ARCADE) {
+      return 0;
+    }
     return REROLL_BASE_COST * (this.rerollsUsedThisVisit + 1);
   }
 
@@ -937,6 +1103,15 @@ export class MissionSelectScene extends Phaser.Scene {
     const deployY = this.getDeployY();
     const btnWidth = briefing.deployButtonWidth;
     const btnHeight = briefing.deployButtonHeight;
+    const isVersus = this.runMode === RunMode.VERSUS && !!this.multiplayer;
+    let deployLabel: string;
+    if (isVersus) {
+      deployLabel = this.versusLocalLocked ? 'UNLOCK' : 'LOCK IN';
+    } else if (this.runMode === RunMode.CAMPAIGN && this.selectedStartPhase > 1) {
+      deployLabel = `DEPLOY P${this.selectedStartPhase}`;
+    } else {
+      deployLabel = 'DEPLOY';
+    }
 
     const deployBg = this.add.graphics().setDepth(10);
     deployBg.fillStyle(COLORS.HUD, 0.08);
@@ -945,7 +1120,7 @@ export class MissionSelectScene extends Phaser.Scene {
     deployBg.strokeRoundedRect(layout.centerX - btnWidth / 2, deployY - btnHeight / 2, btnWidth, btnHeight, 12);
     this.deployUi.push(deployBg);
 
-    const deployText = this.add.text(layout.centerX, deployY, 'DEPLOY', {
+    const deployText = this.add.text(layout.centerX, deployY, deployLabel, {
       fontFamily: TITLE_FONT,
       fontSize: readableFontSize(briefing.veryCompact ? 22 : briefing.compact ? 26 : 30),
       color: colorStr(COLORS.HUD),
@@ -953,13 +1128,19 @@ export class MissionSelectScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(11);
     this.deployUi.push(deployText);
 
-    this.tweens.add({
-      targets: deployText,
-      alpha: 0.3,
-      duration: 800,
-      yoyo: true,
-      repeat: -1,
-    });
+    // Pulse the action button while it's awaiting input. While locked-in we
+    // freeze the alpha so it reads as committed instead of beckoning.
+    if (!isVersus || !this.versusLocalLocked) {
+      this.tweens.add({
+        targets: deployText,
+        alpha: 0.3,
+        duration: 800,
+        yoyo: true,
+        repeat: -1,
+      });
+    } else {
+      deployText.setAlpha(0.55);
+    }
 
     const deployHit = this.add.zone(
       layout.centerX - btnWidth / 2,
@@ -970,21 +1151,50 @@ export class MissionSelectScene extends Phaser.Scene {
     deployHit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       playUiSelectSfx(this);
-      this.deploy();
+      if (isVersus) {
+        this.toggleVersusLockIn();
+      } else {
+        this.deploy();
+      }
     });
     this.deployUi.push(deployHit);
 
+    if (isVersus) {
+      const peerName = this.multiplayer?.session.getPeer()?.playerName?.trim()?.toUpperCase() || 'OPPONENT';
+      const peerLine = this.versusPeerLocked
+        ? `${peerName} // LOCKED`
+        : `${peerName} // BRIEFING…`;
+      const peerStatus = this.add.text(layout.centerX, deployY + btnHeight / 2 + 14, peerLine, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(12),
+        color: colorStr(this.versusPeerLocked ? COLORS.GATE : COLORS.HUD),
+        align: 'center',
+      }).setOrigin(0.5, 0).setDepth(11).setAlpha(0.85);
+      this.deployUi.push(peerStatus);
+    }
   }
 
   private deploy(): void {
+    const startPhase = this.runMode === RunMode.CAMPAIGN
+      ? clampCampaignStartPhase(this.selectedStartPhase)
+      : MIN_CAMPAIGN_START_PHASE;
+    const startPhaseCost = getCampaignStartPhaseCost(startPhase);
+    if (startPhaseCost > 0 && !this.saveSystem.spendWalletCredits(startPhaseCost, this.runMode)) {
+      this.drawActionButtons();
+      this.drawRepPanel();
+      return;
+    }
+
     this.saveMissions();
     const repSave = loadCompanyRep();
     const runBoosts = getRunBoostsFromAffiliation(repSave);
+    const backgroundHandoff = startPhase > 1 ? {} : this.buildBackgroundHandoff();
     this.scene.start(SCENE_KEYS.GAME, {
-      ...this.buildBackgroundHandoff(),
+      ...backgroundHandoff,
       mode: this.runMode,
       selectedMissions: this.missions.filter((m) => m.accepted),
       runBoosts,
+      ...(startPhase > 1 ? { startPhase } : {}),
     });
   }
 
@@ -1004,7 +1214,95 @@ export class MissionSelectScene extends Phaser.Scene {
     this.geoSphere.update(delta);
   }
 
+  private setupVersusBriefingListeners(handoff: MultiplayerHandoff): void {
+    handoff.session.onBroadcast(NET_EVENT.MATCH_BRIEFING_READY, (payload) => {
+      const p = payload as MatchBriefingReadyPayload | undefined;
+      if (!p || typeof p.ready !== 'boolean') return;
+      this.versusPeerLocked = p.ready;
+      this.drawDeployButton();
+      this.maybeFireVersusDeploy();
+    });
+    handoff.session.onBroadcast(NET_EVENT.MATCH_DEPLOY, (payload) => {
+      const p = payload as MatchDeployPayload | undefined;
+      if (!p || typeof p.matchId !== 'string') return;
+      // Guest receives host's deploy and follows immediately. Host fires
+      // both branches in maybeFireVersusDeploy and skips this listener path
+      // because the broadcast is `self: false`.
+      this.fireVersusDeploy(p.matchId);
+    });
+  }
+
+  private toggleVersusLockIn(): void {
+    if (!this.multiplayer) return;
+    if (this.versusDeployFired) return;
+    const peerStillHere = !!this.multiplayer.session.getPeer();
+    if (!peerStillHere && !this.versusLocalLocked) {
+      // Don't allow locking in if the peer has dropped — wait for them or back out.
+      return;
+    }
+    this.versusLocalLocked = !this.versusLocalLocked;
+    const payload: MatchBriefingReadyPayload = { ready: this.versusLocalLocked };
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_BRIEFING_READY, payload).catch((err) => {
+      console.warn('[MissionSelect] briefing_ready broadcast failed', err);
+    });
+    this.drawDeployButton();
+    this.maybeFireVersusDeploy();
+  }
+
+  private maybeFireVersusDeploy(): void {
+    if (!this.multiplayer || this.versusDeployFired) return;
+    if (!this.versusLocalLocked || !this.versusPeerLocked) return;
+    if (!this.multiplayer.session.isHost()) return;
+    const session = this.multiplayer.session;
+    const matchId = `m_${session.roomCode}_${Date.now().toString(36)}`;
+    const payload: MatchDeployPayload = { matchId, delayMs: 0 };
+    session.broadcast(NET_EVENT.MATCH_DEPLOY, payload).catch((err) => {
+      console.warn('[MissionSelect] match_deploy broadcast failed', err);
+    });
+    this.fireVersusDeploy(matchId);
+  }
+
+  private fireVersusDeploy(matchId: string): void {
+    if (!this.multiplayer || this.versusDeployFired) return;
+    this.versusDeployFired = true;
+    this.versusHandingOff = true;
+
+    this.saveMissions();
+    const repSave = loadCompanyRep();
+    const runBoosts = getRunBoostsFromAffiliation(repSave);
+
+    const session = this.multiplayer.session;
+    const peer = session.getPeer();
+    const role: 'host' | 'guest' = session.isHost() ? 'host' : 'guest';
+    const handoff: MultiplayerHandoff = {
+      session,
+      role,
+      matchId,
+      peerId: peer?.playerId ?? this.multiplayer.peerId,
+      startAt: Date.now(),
+    };
+
+    // Drop MissionSelect's broadcast listeners but keep the channel alive so
+    // GameScene can re-bind its own SNAPSHOT / MATCH_EXTRACT / etc. handlers
+    // on the same session.
+    session.clearListeners();
+
+    this.scene.start(SCENE_KEYS.GAME, {
+      mode: this.runMode,
+      selectedMissions: this.missions.filter((m) => m.accepted),
+      runBoosts,
+      multiplayer: handoff,
+    });
+  }
+
   private cleanup(): void {
+    // If the player is leaving MissionSelect without firing a versus deploy
+    // (e.g., menu/back), tear down the multiplayer session so the peer sees
+    // them drop instead of hanging on a stale presence entry.
+    if (this.multiplayer && !this.versusHandingOff) {
+      this.multiplayer.session.leave().catch(() => { /* ignore */ });
+      this.multiplayer = null;
+    }
     this.cleanupBackground();
     this.cursor.destroy(this);
     this.hologramOverlay.destroy();
@@ -1100,6 +1398,7 @@ export class MissionSelectScene extends Phaser.Scene {
       mode: this.runMode,
       reopenSettings: this.settingsOpen,
       rerollsUsedThisVisit: this.rerollsUsedThisVisit,
+      selectedStartPhase: this.selectedStartPhase,
     };
   }
 

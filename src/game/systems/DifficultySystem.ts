@@ -11,6 +11,8 @@ import {
   GUNSHIP_BOSS_DEBRIS_COUNT,
   NPC_BONUS_DROP_CHANCE,
   NPC_BONUS_POINTS,
+  VERSUS_LASER_DROP_CHANCE_ENEMY,
+  VERSUS_LASER_DROP_CHANCE_NPC,
 } from '../data/tuning';
 import { getPhaseConfig, pickAsteroidSize } from '../data/phaseConfig';
 import { DrifterHazard } from '../entities/DrifterHazard';
@@ -40,6 +42,8 @@ export class DifficultySystem {
   private shieldDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private bonusDropPositions: { x: number; y: number; vx: number; vy: number; points: number; miningBonus?: boolean }[] = [];
   private bombDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
+  private versusLaserDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
+  private versusLasersEnabled = false;
   private shipDebris: ShipDebris[] = [];
   private boss: GunshipBoss | null = null;
   private bossDefeated = false;
@@ -127,6 +131,16 @@ export class DifficultySystem {
     return drops;
   }
 
+  consumeVersusLaserDrops(): { x: number; y: number; vx: number; vy: number }[] {
+    const drops = this.versusLaserDropPositions;
+    this.versusLaserDropPositions = [];
+    return drops;
+  }
+
+  setVersusLasersEnabled(enabled: boolean): void {
+    this.versusLasersEnabled = enabled;
+  }
+
   consumeBossEvents(): BossEvents {
     const events = { ...this.bossEvents };
     this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
@@ -202,6 +216,7 @@ export class DifficultySystem {
     this.shieldDropPositions = [];
     this.bonusDropPositions = [];
     this.bombDropPositions = [];
+    this.versusLaserDropPositions = [];
     this.bossDefeated = false;
     this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
     this.drifterTimer = 0;
@@ -234,7 +249,7 @@ export class DifficultySystem {
       this.drifterTimer = 0;
     }
 
-    if (this.config.beamEnabled && !this.config.bossEnabled) {
+    if (this.config.beamEnabled) {
       this.beamTimer += delta;
       if (this.beamTimer >= this.config.beamFrequency && this.beamBurstQueue === 0) {
         Overlays.beamWarningFlash(this.scene);
@@ -329,6 +344,14 @@ export class DifficultySystem {
               vy: enemy.getVelocityY() * 0.3,
             });
           }
+          if (this.versusLasersEnabled && Math.random() < VERSUS_LASER_DROP_CHANCE_ENEMY) {
+            this.versusLaserDropPositions.push({
+              x: enemy.x,
+              y: enemy.y,
+              vx: enemy.getVelocityX() * 0.3,
+              vy: enemy.getVelocityY() * 0.3,
+            });
+          }
         }
         enemy.destroy();
         this.enemies.splice(i, 1);
@@ -350,6 +373,14 @@ export class DifficultySystem {
               vx: npc.vx * 0.5,
               vy: npc.vy * 0.5,
               points: NPC_BONUS_POINTS,
+            });
+          }
+          if (this.versusLasersEnabled && Math.random() < VERSUS_LASER_DROP_CHANCE_NPC) {
+            this.versusLaserDropPositions.push({
+              x: npc.x,
+              y: npc.y,
+              vx: npc.vx * 0.5,
+              vy: npc.vy * 0.5,
             });
           }
         }
@@ -691,6 +722,12 @@ export class DifficultySystem {
               vx: enemy.getVelocityX() * 0.3, vy: enemy.getVelocityY() * 0.3,
             });
           }
+          if (this.versusLasersEnabled && Math.random() < VERSUS_LASER_DROP_CHANCE_ENEMY) {
+            this.versusLaserDropPositions.push({
+              x: enemy.x, y: enemy.y,
+              vx: enemy.getVelocityX() * 0.3, vy: enemy.getVelocityY() * 0.3,
+            });
+          }
         }
       }
 
@@ -735,6 +772,14 @@ export class DifficultySystem {
         });
         if (Math.random() < BOMB_DROP_CHANCE + this.bonusDropChanceAdd) {
           this.bombDropPositions.push({
+            x: enemy.x,
+            y: enemy.y,
+            vx: enemy.getVelocityX() * 0.3,
+            vy: enemy.getVelocityY() * 0.3,
+          });
+        }
+        if (this.versusLasersEnabled && Math.random() < VERSUS_LASER_DROP_CHANCE_ENEMY) {
+          this.versusLaserDropPositions.push({
             x: enemy.x,
             y: enemy.y,
             vx: enemy.getVelocityX() * 0.3,
@@ -844,6 +889,7 @@ export class DifficultySystem {
     this.shieldDropPositions = [];
     this.bonusDropPositions = [];
     this.bombDropPositions = [];
+    this.versusLaserDropPositions = [];
     this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
   }
 }

@@ -1,48 +1,53 @@
 # State
-_Last updated: 2026-04-29 1249_
+_Last updated: 2026-04-29 1621_
 
 ## Current focus
-Phase 5 mirrored versus is now build-green and automated two-client verified for the full-arena mirror, result flow, rematch reuse, and peer-left handling. Next session can either do a human desktop feel pass for subjective readability/juice or move to the secondary arcade/campaign company-buff check.
+Versus design pass landed all five plan phases (A-E) plus the spectate disruption follow-up. Rematch ghost-ship bug is fixed via snapshot epoch. Extract is required to win - non-extract = DRAW. Versus runs route through MissionSelect with each side picking its own contracts/favors/affiliation, then both players lock in before deploy. Post-run spectate now gives the waiting player regenerating sabotage laser charges and ping markers instead of passive watching only.
 
 ## What's working
-- `src/main.ts`: exposes `window.__BITP_GAME__` so local runtime probes can inspect the active Phaser scene graph during automated verification.
-- `src/game/systems/NetSystem.ts`: versus event map now includes `MATCH_RESULT_PULSE` for result-screen heartbeat traffic.
-- `src/game/scenes/GameScene.ts`:
-  - full-arena mirror backdrop is tuned lighter, while peer ship/enemy/readout alpha is stronger for normal-play readability.
-  - automated two-client pass covered normal mirror play, death vs death, death vs alive, extract vs alive with the full 15s timeout branch, and 3 consecutive rematches over the same `NetSession`.
-  - result-screen peer disconnect now falls back to a lightweight heartbeat timeout, so the rematch button reliably degrades to `<CALLSIGN> LEFT` even when Supabase presence stays stale after a hard drop.
+- `src/game/systems/NetSystem.ts`: snapshot epoch field plus `MATCH_LASER`, `MATCH_PING`, `MATCH_BRIEFING_READY`, and `MATCH_DEPLOY` events with payload types.
+- `src/game/scenes/GameScene.ts` rematch path: receiver discards stale-epoch snapshots - peer ship no longer freezes at prior round's extract location.
+- `src/game/scenes/GameScene.ts` versus resolver: extract-required win, non-extract resolves to DRAW.
+- `src/game/scenes/GameScene.ts` post-run flow: fullscreen spectate of the peer's live arena, with spectator laser-charge regen, six selectable strike lanes, and cosmetic peer pings.
+- `src/game/entities/VersusLaserPickup.ts` + `src/game/entities/VersusLaserStrike.ts`: versus sabotage laser. Drops from enemy/NPC kills (8% / 4%), broadcasts any of 6 lanes, and renders a 1.5s warning plus 0.5s lethal sweep on the peer's screen.
+- `src/game/entities/VersusPingMarker.ts`: cosmetic ping marker for spectator taps on the peer mirror.
+- `src/game/scenes/VersusLobbyScene.ts`: lobby READY routes both peers to MissionSelect with `RunMode.VERSUS`.
+- `src/game/scenes/MissionSelectScene.ts`: versus mode shows `LOCK IN` / `UNLOCK` plus peer status; both locked -> host fires `MATCH_DEPLOY` -> both transition to GameScene with their own loadout.
+- `src/game/data/tuning.ts`: sabotage laser and spectate inventory values are data-driven (`VERSUS_LASER_WARNING_MS = 1500`, `SPECTATE_LASER_REGEN_MS = 15000`, `SPECTATE_LASER_MAX_CHARGES = 3`, `SPECTATE_PING_COOLDOWN_MS = 1000`).
 - `npm.cmd run build`: passes.
-- `.tmp/versus-pass-report.json` plus the saved `.tmp/*.png` captures document the latest automated versus pass.
 
 ## In progress
-- Human two-window feel pass is still optional but not done from this session. The automation verified logic and presentation, not whether the mirror feels ideal to a real player on mouse/keyboard.
-- Restored arcade/campaign company-buff behavior is still build-verified only. No manual balance pass yet.
-- Manual Supabase SQL migration for `mode` / `company_id` columns is still pending (`docs/sql/2026-04-28 1403 mode and company_id columns.sql`).
-- Cold-refresh phone playtest of the startup trim is still pending.
+- Manual two-window dev playtest of the full versus flow: lobby -> MissionSelect briefing lock-in -> game -> sabotage drops -> spectate disruptions -> result -> rematch.
+- Balance/readability follow-up on spectate disruption cadence, charge cap, ping visibility, and edge-button crowding.
 
 ## Known issues
-- Result-screen peer-left handling no longer depends solely on Supabase presence, but the new heartbeat fallback is only exercised in desktop headless automation so far. Background-tab/mobile throttling is still unverified.
-- Mirror enemy ghosts still pair by array index, so mid-snapshot reorder can shimmer for one frame.
-- Restored arcade company buffs are not manually verified or balance-tested yet.
-- Supabase migration required: `scores` and `losses` still need nullable `mode` and `company_id` columns. Until applied, write calls strip unsupported fields and leaderboard reads fall back to mixed legacy rows.
+- Current versus flow is TypeScript-build-verified only; no fresh two-window manual playtest after spectate disruption changes.
+- Palette change inside versus MissionSelect tears down the multiplayer session (`scene.restart` path still breaks the handoff).
+- Peer-disconnect during briefing leaves the locked player waiting; no auto-unlock yet.
+- Sabotage laser strikes still only target the local player on the receiver side; they do not clear receiver-side NPCs, enemies, or asteroids.
+- Spectate lane buttons sit on arena edges and may crowd ships or hazards during live play.
+- Manual Supabase SQL migration for `mode` / `company_id` columns is still pending (`docs/sql/2026-04-28 1403 mode and company_id columns.sql`).
+- Restored arcade/campaign company buffs are still not manually verified or balance-tested.
 - Soft respawn keeps rep-flux income accumulators across lives.
 - Rep-flux tuning placeholders remain in `tuning.ts`.
 
 ## Next actions
-1. If desired, do a short human two-window desktop/browser pass to judge mirror feel now that the automated Phase 5 matrix is clean.
-2. Separately, manually verify the restored company-buff behavior in `ARCADE` and `CAMPAIGN` and judge whether arcade balance gets too generous.
-3. Apply the pending Supabase `mode` / `company_id` migration.
+1. Manually run a two-window versus session covering: lobby -> MissionSelect briefing lock-in -> game with sabotage drops -> spectate lasers/pings -> result -> rematch.
+2. Tune spectate disruption feel based on playtest (regen rate, max charges, ping readability, lane button placement).
+3. Fix the main versus robustness gaps: MissionSelect palette restart teardown and briefing disconnect wait state.
 
 ## Active plan
-docs/plans/2026-04-29 1132 Plan revision - Mirrored Versus Full Arena Mirror.md
+docs/plans/2026-04-29 1432 Plan - Versus Mission Select Sabotage Spectate.md
 
 ## How to verify
 1. `npm.cmd run build`
-2. Review `.tmp/versus-pass-report.json` and the saved `.tmp/versus-*.png` captures from the latest automated two-client pass.
-3. Optional manual spot-check: `npm.cmd run dev`, open two browser windows, and confirm the mirror/readout/result flow still feels good in real play.
+2. `npm.cmd run dev`, open two browser windows. Host + join versus -> both READY -> both land in MissionSelect with `LOCK IN` button and peer status. Lock in on both -> both transition to GameScene with their own selected missions/favors.
+3. Confirm sabotage laser pickups drop from enemy/NPC kills (violet), pickup -> cooldown -> peer's screen sees a telegraphed lane sweep.
+4. Confirm that when one player ends and the other is still alive, the waiting player enters fullscreen spectate with charge regen, lane buttons for all 6 strike lanes, and tap-to-ping markers on the peer mirror.
+5. Confirm rematch keeps peer ship animated correctly on round 2+ (no freeze at prior extract coords).
+6. Confirm DRAW outcomes when both die regardless of score.
 
 ## Recent logs
-- docs/log/2026-04-29 1249 Versus Phase 5 Automated Pass and Mirror Tuning.md - tuned mirror readability, added result heartbeat fallback, and completed the automated two-client versus matrix.
-- docs/log/2026-04-29 1157 Session Wrap and Phase 5 Handoff.md - closed the previous session with the pending versus playtest and readability pass at the top of the queue.
-- docs/log/2026-04-29 1155 Restore Arcade Company Buffs.md - restored static company buffs to arcade for playtesting while keeping versus neutral.
-- docs/log/2026-04-29 1138 Versus Uses Saved Callsign.md - switched versus labels/results/rematch states over to the saved menu callsign.
+- docs/log/2026-04-29 1519 Spectate Disruption Inventory.md - spectate-side laser charges, pings, and vertical lane lasers.
+- docs/log/2026-04-29 1508 Versus MissionSelect Briefing Routing.md - Phase E: lobby -> MissionSelect -> lock-in -> deploy via new `MATCH_BRIEFING_READY` and `MATCH_DEPLOY` events.
+- docs/log/2026-04-29 1459 Versus Sabotage Laser Power-Up.md - Phase D: versus-only sabotage laser pickup + receiver lane sweep.

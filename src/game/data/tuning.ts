@@ -72,6 +72,24 @@ export const BOMB_DROP_CHANCE = 0.25;         // 25% chance enemy drops a bomb
 export const BOMB_COLLECTION_DELAY = 1500;    // 1.5s before it can be collected
 export const BONUS_COLLECTION_DELAY = 1500;   // 1.5s before bonus can be collected
 
+// Versus sabotage laser pickup (versus mode only)
+export const VERSUS_LASER_PICKUP_RADIUS = 14;
+export const VERSUS_LASER_PICKUP_LIFETIME = 18000;
+export const VERSUS_LASER_DROP_CHANCE_ENEMY = 0.08;  // 8% on enemy kill
+export const VERSUS_LASER_DROP_CHANCE_NPC = 0.04;    // 4% on NPC kill
+export const VERSUS_LASER_COLLECTION_DELAY = 1500;
+export const VERSUS_LASER_SEND_COOLDOWN_MS = 5000;   // collector self-rate-limit
+export const VERSUS_LASER_WARNING_MS = 1500;         // telegraph window
+export const VERSUS_LASER_LETHAL_MS = 500;           // lethal sweep window
+export const VERSUS_LASER_WIDTH = 26;
+export const VERSUS_LASER_COLOR = 0xc070ff;          // violet, distinct from cyan/red
+
+// Spectator-side disruption inventory. While dead/extracted but peer is still
+// playing, the spectator can fire sabotage lasers and pings to mess with them.
+export const SPECTATE_LASER_REGEN_MS = 15000;        // 1 charge per 15s
+export const SPECTATE_LASER_MAX_CHARGES = 3;
+export const SPECTATE_PING_COOLDOWN_MS = 1000;       // 1 ping per second
+
 // Phase 10 boss - Regent gunship
 export const GUNSHIP_BOSS_GUN_COUNT = 5;
 export const GUNSHIP_BOSS_EDGE_PASS_MIN_MS = 10_000;
