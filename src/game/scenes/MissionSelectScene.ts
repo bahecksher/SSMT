@@ -19,6 +19,7 @@ import {
   COMPANIES,
   COMPANY_IDS,
   getCompanyAffiliation,
+  getCompanyBoostSummary,
   getRepStanding,
   getRunBoostsFromAffiliation,
   loadCompanyRep,
@@ -820,6 +821,7 @@ export class MissionSelectScene extends Phaser.Scene {
     const rowHeight = briefing.repRowHeight;
     const rowLeft = briefing.cardMarginX;
     const dense = rowHeight <= 40 || briefing.narrow;
+    const showBoostSubline = rowHeight >= 40;
 
     for (let i = 0; i < COMPANY_IDS.length; i++) {
       const companyId = COMPANY_IDS[i];
@@ -828,6 +830,7 @@ export class MissionSelectScene extends Phaser.Scene {
       const standing = getRepStanding(rep);
       const isSelected = affiliatedCompanyId === companyId;
       const rowTop = gridTop + i * (rowHeight + briefing.repRowGap);
+      const boostSummary = getCompanyBoostSummary(companyId, standing.level, !showBoostSubline);
 
       const bg = this.add.graphics().setDepth(10);
       bg.fillStyle(COLORS.BG, 0.9);
@@ -856,12 +859,14 @@ export class MissionSelectScene extends Phaser.Scene {
       }).setDepth(11).setAlpha(0.96);
       this.repPanelUi.push(nameText);
 
-      const repValueLine = standing.nextRepRequired
-        ? `${rep}/${standing.nextRepRequired} REP`
-        : `${rep} REP // MAX`;
+      const repValueLine = showBoostSubline
+        ? (standing.nextRepRequired
+          ? `${rep}/${standing.nextRepRequired} REP`
+          : `${rep} REP // MAX`)
+        : boostSummary;
       const repValueText = this.add.text(rowLeft + rowWidth - (dense ? 14 : 18), labelY, repValueLine, {
         fontFamily: UI_FONT,
-        fontSize: readableFontSize(dense ? 9 : briefing.compact ? 11 : 12),
+        fontSize: readableFontSize(showBoostSubline ? (dense ? 9 : briefing.compact ? 11 : 12) : (dense ? 8 : 9)),
         color: colorStr(company.color),
         align: 'right',
         stroke: colorStr(COLORS.BG),
@@ -886,6 +891,17 @@ export class MissionSelectScene extends Phaser.Scene {
         bar.fillRoundedRect(barLeft, barTop, fillWidth, barHeight, 3);
       }
       this.repPanelUi.push(bar);
+
+      if (showBoostSubline) {
+        const boostText = this.add.text(textLeft, barTop + barHeight + (dense ? 3 : 4), boostSummary, {
+          fontFamily: UI_FONT,
+          fontSize: readableFontSize(dense ? 8 : briefing.compact ? 9 : 10),
+          color: colorStr(company.color),
+          stroke: colorStr(COLORS.BG),
+          strokeThickness: 2,
+        }).setDepth(11).setAlpha(isSelected ? 0.92 : 0.78);
+        this.repPanelUi.push(boostText);
+      }
 
       const canSelect = rep > 0;
       if (canSelect || isSelected) {

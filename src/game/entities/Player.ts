@@ -156,6 +156,7 @@ export class Player {
 
   getVelocityX(): number { return this.vx; }
   getVelocityY(): number { return this.vy; }
+  getHeading(): number { return this.heading; }
 
   destroy(): void {
     this.graphic.destroy();

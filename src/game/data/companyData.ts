@@ -10,6 +10,7 @@ export interface CompanyDef {
   liaison: string;
   liaisonTitle: string;
   boostLabel: string;
+  compactBoostLabel: string;
   leaderboardTag: string;
 }
 
@@ -36,6 +37,7 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
     liaison: 'HOLT',
     liaisonTitle: 'HOLT // DEEPCORE',
     boostLabel: 'MINING YIELD',
+    compactBoostLabel: 'MINING',
     leaderboardTag: 'DPC',
   },
   [CompanyId.RECLAIM]: {
@@ -46,6 +48,7 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
     liaison: 'VOSS',
     liaisonTitle: 'VOSS // RECLAIM',
     boostLabel: 'SALVAGE YIELD',
+    compactBoostLabel: 'SALVAGE',
     leaderboardTag: 'RCL',
   },
   [CompanyId.IRONVEIL]: {
@@ -55,7 +58,8 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
     accent: 0xff0044,
     liaison: 'KADE',
     liaisonTitle: 'KADE // IRONVEIL',
-    boostLabel: 'SCORE MULT',
+    boostLabel: 'BANKED SCORE',
+    compactBoostLabel: 'SCORE',
     leaderboardTag: 'IRN',
   },
   [CompanyId.FREEPORT]: {
@@ -66,6 +70,7 @@ export const COMPANIES: Record<CompanyId, CompanyDef> = {
     liaison: 'NYLA',
     liaisonTitle: 'NYLA // FREEPORT',
     boostLabel: 'DROP RATE',
+    compactBoostLabel: 'DROPS',
     leaderboardTag: 'FPT',
   },
 };
@@ -231,6 +236,21 @@ export function getCompanyBoostDisplay(companyId: CompanyId, level: number): str
     case CompanyId.IRONVEIL: return formatMultiplierBoost(IRONVEIL_SCORE_MULT[level] ?? 1);
     case CompanyId.FREEPORT: return `+${Math.round((FREEPORT_DROP_ADD[level] ?? 0) * 100)}%`;
   }
+}
+
+export function getCompanyBoostSummary(companyId: CompanyId, level: number, compact = false): string {
+  const company = COMPANIES[companyId];
+  const boostLevel = Math.max(1, level);
+  const label = compact ? company.compactBoostLabel : company.boostLabel;
+  const display = getCompanyBoostDisplay(companyId, boostLevel);
+
+  if (level <= 0) {
+    return compact
+      ? `${label} ${display} @ ${REP_THRESHOLDS[1].repRequired} REP`
+      : `${label} ${display} AT ${REP_THRESHOLDS[1].label}`;
+  }
+
+  return `${label} ${display}`;
 }
 
 export function getCompanyAffiliation(repSave: CompanyRepSave): CompanyAffiliationState {

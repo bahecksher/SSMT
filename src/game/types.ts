@@ -42,12 +42,13 @@ export type GameState = (typeof GameState)[keyof typeof GameState];
 export const RunMode = {
   ARCADE: 'ARCADE',
   CAMPAIGN: 'CAMPAIGN',
+  VERSUS: 'VERSUS',
 } as const;
 
 export type RunMode = (typeof RunMode)[keyof typeof RunMode];
 
 export function isRunMode(value: unknown): value is RunMode {
-  return value === RunMode.ARCADE || value === RunMode.CAMPAIGN;
+  return value === RunMode.ARCADE || value === RunMode.CAMPAIGN || value === RunMode.VERSUS;
 }
 
 // --- Company Reputation ---
@@ -139,4 +140,17 @@ export interface MissionSaveData {
   activeMissions: ActiveMission[];
   completedLifetime: number;
   rerollsRemaining: number;
+}
+
+// --- Multiplayer (Versus) ---
+
+export type NetRole = 'host' | 'guest';
+
+export interface MultiplayerSession {
+  roomCode: string;
+  playerId: string;
+  peerId: string;
+  role: NetRole;
+  matchId: string;
+  startAt: number;
 }

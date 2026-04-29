@@ -4,6 +4,7 @@ import { MenuScene } from './scenes/MenuScene';
 import { MissionSelectScene } from './scenes/MissionSelectScene';
 import { GameScene } from './scenes/GameScene';
 import { TutorialArenaScene } from './scenes/TutorialArenaScene';
+import { VersusLobbyScene } from './scenes/VersusLobbyScene';
 import { getInitialViewportSize, setLayoutSize } from './layout';
 import { applyColorPalette } from './constants';
 import { getSettings } from './systems/SettingsSystem';
@@ -24,7 +25,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
     autoCenter: Phaser.Scale.CENTER_BOTH,
     autoRound: true,
   },
-  scene: [BootScene, MenuScene, MissionSelectScene, GameScene, TutorialArenaScene],
+  scene: [BootScene, MenuScene, MissionSelectScene, GameScene, TutorialArenaScene, VersusLobbyScene],
   render: {
     antialias: true,
     pixelArt: false,

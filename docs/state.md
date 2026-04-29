@@ -1,47 +1,50 @@
 # State
-_Last updated: 2026-04-28 0324_
+_Last updated: 2026-04-29 0002_
 
 ## Current focus
-Phone startup latency. Boot now stays on a minimal critical path: the game only blocks on menu + early-game music, no longer waits on webfont readiness before showing the menu, and the forced boot hold has been cut again to `100ms` so the boot screen is barely more than a transition flash.
+Mirrored versus multiplayer MVP remains the active plan: two players run full local sims, exchange low-fidelity arena snapshots, and resolve on extract/death by score compare via Supabase Realtime broadcast channels.
+
+Small targeted detour landed this session: the Mission Select company perk lines no longer prepend the word `BOOST`, so each corporation row now just shows the perk text itself.
 
 ## What's working
-- `src/game/scenes/BootScene.ts`: boot still shows the existing hologram loading presentation, but the mandatory hold is now just `100ms` instead of a long wait, and the boot-to-menu handoff no longer blocks on font readiness.
-- `src/game/systems/MusicSystem.ts`: boot-time music preload is trimmed to `menuSynth`, `bassOne`, and `drumsTwo`; `drumsThree`, `bassThree`, and `gameSynth` now warm after the menu appears instead of blocking first paint.
-- `src/game/systems/MusicSystem.ts`: later-loaded gameplay stems start at the current gameplay reference stem's delayed seek position, so late loading should preserve beat alignment instead of reintroducing the old off-beat phase 3→4 crossfade.
-- `src/game/scenes/MenuScene.ts`, `src/game/scenes/MissionSelectScene.ts`, and `src/game/scenes/GameScene.ts`: existing `warmMusicCache(this)` calls now do useful background work again because `MID_GAME_TRACKS` is populated.
-- `npm.cmd run build`: passes after the latest boot-hold trim.
+- `src/game/scenes/BootScene.ts`: minimal critical path, 100ms forced hold, no font readiness gate.
+- `src/game/systems/MusicSystem.ts`: trimmed boot-time preload (`menuSynth`, `bassOne`, `drumsTwo`); deferred stems warm post-menu and seek-align to the current gameplay reference stem.
+- `src/game/scenes/MenuScene.ts`: one mode toggle now cycles `ARCADE`, `CAMPAIGN`, and `VERSUS`; arcade still shows the weekly `PILOTS` / `CORPS` boards, campaign still shows the local campaign board, and versus now shows a matchmaking status panel instead of a separate menu button.
+- `src/game/scenes/VersusLobbyScene.ts`: menu start now routes into the versus lobby when `VERSUS` is selected.
+- `src/game/scenes/GameScene.ts`: mirrored-versus runs force `RunMode.VERSUS`, block score recording/payouts, and use versus-specific result copy instead of debug wording.
+- `src/game/scenes/MissionSelectScene.ts`: company rows still show each corp's run perk, but the visible perk line now omits the extra `BOOST //` prefix.
+- Affiliation boosts are still wired into gameplay: Deepcore mining yield, Reclaim salvage yield, Iron Veil banked-score multiplier, Freeport drop-rate bonus.
+- `npm.cmd run build`: passes.
 
 ## In progress
-- Cold-refresh browser playtest on an actual phone to measure perceived startup improvement from the smaller boot path.
-- Music playtest focused on the menu unlock path and the phase 3→4 transition, since this pass intentionally reintroduced deferred gameplay-stem loading with a new alignment strategy.
-- Manual Supabase SQL migration for `mode` / `company_id` columns is still pending.
+- Versus plan is active; lobby/menu entry is present, but the full mirrored match loop still needs continued integration/testing in this workspace snapshot.
+- Cold-refresh phone playtest of the latest startup trim is still pending from the previous focus.
+- Manual Supabase SQL migration for `mode` / `company_id` columns is still pending (see `docs/sql/2026-04-28 1403 mode and company_id columns.sql`).
 
 ## Known issues
-- **Supabase migration required**: `scores` / `losses` still need nullable `mode` columns, and corporation-tagged rows still need nullable `company_id` columns server-side. Until then, write calls strip unsupported fields and arcade leaderboard reads fall back to legacy mixed rows.
-- The new late-load beat-alignment path is build-verified only. It still needs real browser/phone validation, especially on Safari and lower-end Android devices.
-- Soft respawn on death keeps rep-flux income accumulators across lives, so pre-death mining/salvage income can still count toward RECLAIM/DEEPCORE rep at run end.
-- Rep-flux tuning values are still placeholders: `salvageCreditsPerRep:200`, `miningCreditsPerRep:200`, `ironVeilKillsPerRep:5`, `ironVeilRivalRepCostPerKill:1`, `ironVeilRivalRepCostCapPerRun:3`, `freePortExtractRep:1`, `freePortDeathRep:2`.
-- Campaign default lives remain `2`, beam audio is still placeholder, and browser autoplay restrictions still require an initial interaction for music/SFX.
+- **Supabase migration required**: `scores` / `losses` need nullable `mode` columns; corp-tagged rows need nullable `company_id`. Until applied, write calls strip unsupported fields and arcade leaderboard reads fall back to legacy mixed rows.
+- Company bonus values are still scaffolding-only numbers (`+15/+30/+50%`, `+10/+20/+30%` style tiers). Visibility/copy is cleaner, but tuning still needs a later pass.
+- Late-load beat-alignment path is build-verified only, not playtested on real phone (Safari, low-end Android).
+- Soft respawn keeps rep-flux income accumulators across lives, so pre-death mining/salvage income can still count toward RECLAIM/DEEPCORE rep at run end.
+- Rep-flux tuning placeholders remain: `salvageCreditsPerRep:200`, `miningCreditsPerRep:200`, `ironVeilKillsPerRep:5`, `ironVeilRivalRepCostPerKill:1`, `ironVeilRivalRepCostCapPerRun:3`, `freePortExtractRep:1`, `freePortDeathRep:2`.
+- Versus mode is fully trust-based; no anti-cheat. Leaderboard/payout blocking is now enforced for mirrored runs, but versus still has no dedicated result/reporting layer beyond the current no-records messaging.
 
 ## Next actions
-1. Cold-refresh on phone and compare menu-usable time before/after the boot-path slimming and `100ms` boot floor.
-2. Playtest menu unlock, MissionSelect, and phase 3→4 audio to confirm the late-load seek alignment stays on-beat.
-3. If startup is still too slow on phones, the next likely step is lazy-loading non-menu scenes so Menu can appear before parsing Game/Mission/Tutorial code.
+1. Resume the mirrored versus plan inside `src/game/systems/NetSystem.ts` / `GameScene.ts`, especially match resolution and opponent outcome handling.
+2. Run the pending Supabase SQL migration for `mode` / `company_id`.
+3. Tap-through test the Mission Select company panel and the three-state menu selector on desktop and phone-sized viewports.
 
 ## Active plan
-docs/plans/2026-04-28 0318 Plan revision - Startup Loading Performance.md
+docs/plans/2026-04-28 2304 Plan - Mirrored Versus Multiplayer.md
 
 ## How to verify
 1. `npm.cmd run build`
-2. Hard-refresh the app on phone or mobile emulation and confirm the menu appears almost immediately after boot begins.
-3. Confirm boot still shows the loader briefly, but no longer lingers waiting on title-font readiness.
-4. After first interaction, confirm menu music starts normally.
-5. Enter Mission Select and gameplay, then confirm phase 1/2 music is present and phase 3→4 does not obviously slip off-beat.
-6. Confirm late full-track handoff still occurs at phase 7+.
+2. Open Mission Select and confirm each company row still shows its perk, but without the `BOOST` prefix.
+3. Confirm the rest of the company row layout still fits correctly on compact/mobile-sized screens.
 
 ## Recent logs
-- docs/log/2026-04-28 0324 Boot Hold Reduced to 100ms.md - cut the remaining forced boot delay down to 100ms while keeping the lighter boot asset path.
-- docs/log/2026-04-28 0318 Startup Boot Path Slimdown.md - shrank the boot-time music set, removed the boot font gate, shortened the forced hold, and added seek alignment for late-loaded gameplay stems.
-- docs/log/2026-04-28 0301 Tutorial Entry Bomb Flash.md - tutorial intro gate now triggers the same bomb flash/audio accent as the main game start.
-- docs/log/2026-04-28 0255 Tutorial Entry Gate Startup.md - tutorial scene now opens with a live-game-style gate intro, and the broken mixed tutorial HUD references were cleaned up so the scene builds again.
-- docs/log/2026-04-28 0220 Tutorial Continuous State and Respawn Fallback.md - sections share a continuous arena, soft-respawn replaces hard reset on death, 1.5s respawn-fallback keeps required entities alive.
+- docs/log/2026-04-29 0002 Removed Boost Prefix from Company Perks.md — removed the `BOOST //` prefix from Mission Select company perk lines.
+- docs/log/2026-04-28 2355 Versus Mode Folded Into Selector.md — moved versus into the shared mode selector, removed the dedicated menu button, and blocked mirrored runs from score/payout paths.
+- docs/log/2026-04-28 2347 Single Mode Toggle.md — collapsed separate campaign/arcade mode tabs into one toggle while preserving mode-specific leaderboard swaps.
+- docs/log/2026-04-28 2319 Company Bonus Card Clarity.md — restored visible corporation bonus copy on MissionSelect cards without changing balance.
+- docs/log/2026-04-28 2309 Versus Multiplayer Plan Active.md — swapped active plan to mirrored versus multiplayer; ship plan paused.

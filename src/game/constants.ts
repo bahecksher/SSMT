@@ -5,6 +5,7 @@ export const SCENE_KEYS = {
   GAME: 'GameScene',
   HOW_TO_PLAY: 'HowToPlayScene',
   TUTORIAL_ARENA: 'TutorialArenaScene',
+  VERSUS_LOBBY: 'VersusLobbyScene',
 } as const;
 
 export const TITLE_FONT = '"pixel_lcd", Consolas, "Lucida Console", Menlo, Monaco, monospace';

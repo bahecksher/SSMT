@@ -63,6 +63,7 @@ const BG_DEBRIS_SPAWN_MS = 2000;
 const BG_NPC_SPAWN_MS = 2500;
 const MENU_STARFIELD_OVERSCAN = 96;
 const MENU_STARFIELD_COUNT = 170;
+const MENU_MODE_CYCLE: RunMode[] = [RunMode.ARCADE, RunMode.CAMPAIGN, RunMode.VERSUS];
 
 export class MenuScene extends Phaser.Scene {
   private saveSystem!: SaveSystem;
@@ -76,12 +77,9 @@ export class MenuScene extends Phaser.Scene {
   private corpBoardTabBg!: Phaser.GameObjects.Graphics;
   private corpBoardTab!: Phaser.GameObjects.Text;
   private corpBoardTabHit!: Phaser.GameObjects.Zone;
-  private arcadeBoardTabBg!: Phaser.GameObjects.Graphics;
-  private arcadeBoardTab!: Phaser.GameObjects.Text;
-  private arcadeBoardTabHit!: Phaser.GameObjects.Zone;
-  private campaignBoardTabBg!: Phaser.GameObjects.Graphics;
-  private campaignBoardTab!: Phaser.GameObjects.Text;
-  private campaignBoardTabHit!: Phaser.GameObjects.Zone;
+  private modeToggleTabBg!: Phaser.GameObjects.Graphics;
+  private modeToggleTab!: Phaser.GameObjects.Text;
+  private modeToggleTabHit!: Phaser.GameObjects.Zone;
   private settingsButton!: MenuButton;
   private howToPlayButton!: MenuButton;
   private settingsPanelUi: Phaser.GameObjects.GameObject[] = [];
@@ -314,32 +312,23 @@ export class MenuScene extends Phaser.Scene {
     const pilotTabX = centerX + tabOffset;
     const modeTabX = centerX;
 
-    const campaignTabY = leaderboardTitleTop + this.leaderboardTabHeight / 2;
-    const arcadeTabY = campaignTabY + this.leaderboardTabHeight + (veryCompactMenu ? 8 : 10);
+    const modeTabY = leaderboardTitleTop + this.leaderboardTabHeight / 2;
 
-    this.arcadeBoardTabBg = this.add.graphics().setDepth(uiDepth);
-    this.campaignBoardTabBg = this.add.graphics().setDepth(uiDepth);
+    this.modeToggleTabBg = this.add.graphics().setDepth(uiDepth);
     this.pilotBoardTabBg = this.add.graphics().setDepth(uiDepth);
     this.corpBoardTabBg = this.add.graphics().setDepth(uiDepth);
 
-    this.arcadeBoardTab = this.add.text(modeTabX, arcadeTabY, 'ARCADE', {
+    this.modeToggleTab = this.add.text(modeTabX, modeTabY, this.getModeToggleLabel(this.saveSystem.getSelectedMode()), {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(compactMenu ? 15 : 16),
       color: gateColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth + 1);
 
-    this.campaignBoardTab = this.add.text(modeTabX, campaignTabY, 'CAMPAIGN', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(compactMenu ? 15 : 16),
-      color: hudColor,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(uiDepth + 1);
-
     this.leaderboardTitle = this.add.text(
       centerX,
-      arcadeTabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 8 : 10),
-      'WEEKLY LEADERBOARD',
+      modeTabY + this.leaderboardTabHeight / 2 + (veryCompactMenu ? 8 : 10),
+      this.getLeaderboardTitle(this.saveSystem.getSelectedMode()),
       {
         fontFamily: UI_FONT,
         fontSize: readableFontSize(veryCompactMenu ? 12 : 14),
@@ -363,15 +352,9 @@ export class MenuScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth + 1);
 
-    this.arcadeBoardTabHit = this.add.zone(
+    this.modeToggleTabHit = this.add.zone(
       modeTabX - this.modeTabWidth / 2,
-      arcadeTabY - this.leaderboardTabHeight / 2,
-      this.modeTabWidth,
-      this.leaderboardTabHeight,
-    ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
-    this.campaignBoardTabHit = this.add.zone(
-      modeTabX - this.modeTabWidth / 2,
-      campaignTabY - this.leaderboardTabHeight / 2,
+      modeTabY - this.leaderboardTabHeight / 2,
       this.modeTabWidth,
       this.leaderboardTabHeight,
     ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
@@ -389,24 +372,10 @@ export class MenuScene extends Phaser.Scene {
       this.leaderboardTabHeight,
     ).setData('cornerRadius', 8).setOrigin(0, 0).setDepth(uiDepth + 2).setInteractive({ useHandCursor: true });
 
-    this.arcadeBoardTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
+    this.modeToggleTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
       e.event.stopPropagation();
-      if (this.saveSystem.getSelectedMode() !== RunMode.ARCADE) {
-        playUiSelectSfx(this);
-        this.saveSystem.setSelectedMode(RunMode.ARCADE);
-        this.updateModeTabStyles();
-        this.loadLeaderboard();
-      }
-    });
-
-    this.campaignBoardTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
-      e.event.stopPropagation();
-      if (this.saveSystem.getSelectedMode() !== RunMode.CAMPAIGN) {
-        playUiSelectSfx(this);
-        this.saveSystem.setSelectedMode(RunMode.CAMPAIGN);
-        this.updateModeTabStyles();
-        this.loadLeaderboard();
-      }
+      playUiSelectSfx(this);
+      this.toggleMode();
     });
 
     this.pilotBoardTabHit.on('pointerdown', (e: Phaser.Input.Pointer) => {
@@ -505,9 +474,15 @@ export class MenuScene extends Phaser.Scene {
 
       // Snapshot background entity state for seamless handoff
       playUiSelectSfx(this);
+      const selectedMode = this.saveSystem.getSelectedMode();
+      if (selectedMode === RunMode.VERSUS) {
+        this.cleanupBackground();
+        this.scene.start(SCENE_KEYS.VERSUS_LOBBY);
+        return;
+      }
+
       const backgroundHandoff = this.buildBackgroundHandoff();
       this.cleanupBackground();
-      const selectedMode = this.saveSystem.getSelectedMode();
       if (selectedMode === RunMode.CAMPAIGN) {
         this.saveSystem.ensureCampaignSession();
       }
@@ -1100,16 +1075,36 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private updateModeTabStyles(): void {
-    const active = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
-    const inactive = active;
     const mode = this.saveSystem.getSelectedMode();
-    this.drawTabButton(this.arcadeBoardTabBg, this.arcadeBoardTab.x, this.arcadeBoardTab.y, mode === RunMode.ARCADE, this.modeTabWidth);
-    this.drawTabButton(this.campaignBoardTabBg, this.campaignBoardTab.x, this.campaignBoardTab.y, mode === RunMode.CAMPAIGN, this.modeTabWidth);
-    this.arcadeBoardTab.setColor(mode === RunMode.ARCADE ? active : inactive);
-    this.arcadeBoardTab.setAlpha(mode === RunMode.ARCADE ? 1 : 0.72);
-    this.campaignBoardTab.setColor(mode === RunMode.CAMPAIGN ? active : inactive);
-    this.campaignBoardTab.setAlpha(mode === RunMode.CAMPAIGN ? 1 : 0.72);
+    const active = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
+    this.drawTabButton(this.modeToggleTabBg, this.modeToggleTab.x, this.modeToggleTab.y, true, this.modeTabWidth);
+    this.modeToggleTab.setText(this.getModeToggleLabel(mode));
+    this.modeToggleTab.setColor(active);
+    this.modeToggleTab.setAlpha(1);
     this.updateLeaderboardSectionVisibility();
+  }
+
+  private toggleMode(): void {
+    const currentMode = this.saveSystem.getSelectedMode();
+    const currentIndex = MENU_MODE_CYCLE.indexOf(currentMode);
+    const nextMode = MENU_MODE_CYCLE[(currentIndex + 1 + MENU_MODE_CYCLE.length) % MENU_MODE_CYCLE.length];
+    this.saveSystem.setSelectedMode(nextMode);
+    this.updateModeTabStyles();
+    this.loadLeaderboard();
+  }
+
+  private getModeToggleLabel(mode: RunMode): string {
+    return mode;
+  }
+
+  private getLeaderboardTitle(mode: RunMode): string {
+    if (mode === RunMode.CAMPAIGN) {
+      return 'LOCAL CAMPAIGN BOARD';
+    }
+    if (mode === RunMode.VERSUS) {
+      return 'VERSUS MATCHMAKING';
+    }
+    return 'WEEKLY LEADERBOARD';
   }
 
   private drawTabButton(
@@ -1140,8 +1135,16 @@ export class MenuScene extends Phaser.Scene {
     this.updateLeaderboardSectionVisibility();
     this.statusText.setPosition(getLayout().centerX, this.leaderboardStatusY);
 
-    if (this.saveSystem.getSelectedMode() === RunMode.CAMPAIGN) {
+    const selectedMode = this.saveSystem.getSelectedMode();
+
+    if (selectedMode === RunMode.CAMPAIGN) {
       this.renderCampaignLeaderboard(this.saveSystem.getCampaignLeaderboard());
+      return;
+    }
+
+    if (selectedMode === RunMode.VERSUS) {
+      this.statusText.setText('1V1 MIRRORED LOBBY // NO LEADERBOARD YET').setVisible(true);
+      this.positionMenuComm();
       return;
     }
 
@@ -1395,8 +1398,9 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private updateLeaderboardSectionVisibility(): void {
-    const visible = this.saveSystem.getSelectedMode() !== RunMode.CAMPAIGN;
-    this.leaderboardTitle.setText(visible ? 'WEEKLY LEADERBOARD' : 'LOCAL CAMPAIGN BOARD');
+    const mode = this.saveSystem.getSelectedMode();
+    const visible = mode === RunMode.ARCADE;
+    this.leaderboardTitle.setText(this.getLeaderboardTitle(mode));
     for (const obj of this.leaderboardSectionUi) {
       (obj as Phaser.GameObjects.Graphics | Phaser.GameObjects.Text).setVisible(visible);
     }

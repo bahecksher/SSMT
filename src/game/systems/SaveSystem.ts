@@ -10,6 +10,22 @@ import {
 
 const DEFAULT_CAMPAIGN_LIVES = 2;
 const MAX_CAMPAIGN_LEADERBOARD_ENTRIES = 10;
+
+// Bump when SaveData shape changes. Add a step to `migrateSave` for each bump.
+const CURRENT_SAVE_VERSION = 1;
+
+interface SaveEnvelope {
+  v: number;
+  data: Partial<SaveData> & Record<string, unknown>;
+}
+
+function isSaveEnvelope(value: unknown): value is SaveEnvelope {
+  return typeof value === 'object'
+    && value !== null
+    && typeof (value as { v?: unknown }).v === 'number'
+    && typeof (value as { data?: unknown }).data === 'object'
+    && (value as { data: unknown }).data !== null;
+}
 const DEFAULT_SAVE: SaveData = {
   bestScore: 0,
   campaignBestScore: 0,
@@ -101,6 +117,37 @@ function normalizeCampaignSession(value: unknown): CampaignSessionSave | null {
   };
 }
 
+function normalizeV1(parsed: Partial<SaveData> & Record<string, unknown>): SaveData {
+  const legacyWalletCredits = typeof parsed.walletCredits === 'number'
+    ? Math.max(0, Math.floor(parsed.walletCredits))
+    : 0;
+  const campaignLeaderboard = normalizeCampaignLeaderboard(parsed.campaignLeaderboard);
+  const derivedCampaignBest = campaignLeaderboard[0]?.score ?? 0;
+  return {
+    bestScore: typeof parsed.bestScore === 'number' ? parsed.bestScore : DEFAULT_SAVE.bestScore,
+    campaignBestScore: typeof parsed.campaignBestScore === 'number'
+      ? Math.max(derivedCampaignBest, Math.max(0, Math.floor(parsed.campaignBestScore)))
+      : derivedCampaignBest,
+    selectedMode: isRunMode(parsed.selectedMode) ? parsed.selectedMode : DEFAULT_SAVE.selectedMode,
+    arcadeWalletCredits: typeof parsed.arcadeWalletCredits === 'number'
+      ? Math.max(0, Math.floor(parsed.arcadeWalletCredits))
+      : legacyWalletCredits,
+    campaignWalletCredits: typeof parsed.campaignWalletCredits === 'number'
+      ? Math.max(0, Math.floor(parsed.campaignWalletCredits))
+      : DEFAULT_SAVE.campaignWalletCredits,
+    campaignSession: normalizeCampaignSession(parsed.campaignSession),
+    campaignLeaderboard,
+  };
+}
+
+function migrateSave(envelope: SaveEnvelope): SaveData {
+  // Step ladder: bump `data` shape one version at a time.
+  // Currently every prior version is shape-compatible with v1, so normalizeV1 covers all.
+  // Future bumps: add `if (v < N) { data = migrateNMinus1ToN(data); }` blocks here.
+  const data = envelope.data;
+  return normalizeV1(data);
+}
+
 function normalizeCampaignLeaderboard(value: unknown): LocalCampaignLeaderboardEntry[] {
   if (!Array.isArray(value)) {
     return [];
@@ -150,27 +197,11 @@ export class SaveSystem {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as Partial<SaveData> & Record<string, unknown>;
-        const legacyWalletCredits = typeof parsed.walletCredits === 'number'
-          ? Math.max(0, Math.floor(parsed.walletCredits))
-          : 0;
-        const campaignLeaderboard = normalizeCampaignLeaderboard(parsed.campaignLeaderboard);
-        const derivedCampaignBest = campaignLeaderboard[0]?.score ?? 0;
-        return {
-          bestScore: typeof parsed.bestScore === 'number' ? parsed.bestScore : DEFAULT_SAVE.bestScore,
-          campaignBestScore: typeof parsed.campaignBestScore === 'number'
-            ? Math.max(derivedCampaignBest, Math.max(0, Math.floor(parsed.campaignBestScore)))
-            : derivedCampaignBest,
-          selectedMode: isRunMode(parsed.selectedMode) ? parsed.selectedMode : DEFAULT_SAVE.selectedMode,
-          arcadeWalletCredits: typeof parsed.arcadeWalletCredits === 'number'
-            ? Math.max(0, Math.floor(parsed.arcadeWalletCredits))
-            : legacyWalletCredits,
-          campaignWalletCredits: typeof parsed.campaignWalletCredits === 'number'
-            ? Math.max(0, Math.floor(parsed.campaignWalletCredits))
-            : DEFAULT_SAVE.campaignWalletCredits,
-          campaignSession: normalizeCampaignSession(parsed.campaignSession),
-          campaignLeaderboard,
-        };
+        const parsed = JSON.parse(raw) as unknown;
+        const envelope: SaveEnvelope = isSaveEnvelope(parsed)
+          ? parsed
+          : { v: 0, data: (parsed ?? {}) as SaveEnvelope['data'] };
+        return migrateSave(envelope);
       }
     } catch {
       // Private browsing or corrupted data
@@ -180,7 +211,11 @@ export class SaveSystem {
 
   private save(): void {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+      const envelope: SaveEnvelope = {
+        v: CURRENT_SAVE_VERSION,
+        data: this.data as unknown as SaveEnvelope['data'],
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(envelope));
     } catch {
       // Private browsing
     }

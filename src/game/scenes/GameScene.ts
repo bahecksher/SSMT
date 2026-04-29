@@ -72,6 +72,16 @@ import { playSfx, playUiSelectSfx } from '../systems/SfxSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { SettingsSlider } from '../ui/SettingsSlider';
 import { RunMode } from '../types';
+import {
+  NET_EVENT,
+  type MirrorSnapshot,
+  type MultiplayerHandoff,
+} from '../systems/NetSystem';
+
+function lerpAngleShortest(from: number, to: number, alpha: number): number {
+  const delta = Phaser.Math.Angle.Wrap(to - from);
+  return from + delta * alpha;
+}
 
 interface MenuHandoff {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
@@ -81,6 +91,7 @@ interface MenuHandoff {
   selectedMissions?: ActiveMission[];
   runBoosts?: RunBoosts;
   mode?: RunMode;
+  multiplayer?: MultiplayerHandoff;
 }
 
 interface StarfieldStar {
@@ -193,6 +204,24 @@ export class GameScene extends Phaser.Scene {
   private scoreRecordingBlocked = false;
   private affiliatedCompanyId: CompanyId | null = null;
 
+  // Multiplayer (mirrored versus) state
+  private static readonly SNAPSHOT_INTERVAL_MS = 100;
+  // Render this far behind the newest sample so we always have an older sample
+  // to lerp from. Matches the sender's tick interval.
+  private static readonly MIRROR_INTERP_BUFFER_MS = 100;
+  // Mirror PIP size as fraction of arena dims (bottom-right corner overlay).
+  private static readonly MIRROR_FRAC = 0.28;
+  private static readonly MIRROR_INSET_PX = 8;
+  private multiplayer: MultiplayerHandoff | null = null;
+  private snapshotAccumMs = 0;
+  private peerSnapshots: { snap: MirrorSnapshot; arr: number }[] = [];
+  private matchClockStartMs = 0;
+  private mirrorRect: { x: number; y: number; w: number; h: number } | null = null;
+  private mirrorBg: Phaser.GameObjects.Graphics | null = null;
+  private mirrorEntities: Phaser.GameObjects.Graphics | null = null;
+  private mirrorLabel: Phaser.GameObjects.Text | null = null;
+  private mirrorWaiting: Phaser.GameObjects.Text | null = null;
+
   constructor() {
     super(SCENE_KEYS.GAME);
   }
@@ -227,7 +256,9 @@ export class GameScene extends Phaser.Scene {
     this.scoreRecordingBlocked = false;
 
     this.saveSystem = new SaveSystem();
-    this.runMode = handoff.mode ?? this.saveSystem.getSelectedMode();
+    this.runMode = handoff.multiplayer
+      ? (handoff.mode ?? RunMode.VERSUS)
+      : (handoff.mode ?? this.saveSystem.getSelectedMode());
     this.saveSystem.setSelectedMode(this.runMode);
     if (this.runMode === RunMode.CAMPAIGN) {
       this.saveSystem.ensureCampaignSession();
@@ -351,6 +382,11 @@ export class GameScene extends Phaser.Scene {
     if (!this.liaisonComm || !this.liaisonCompanyId) {
       const openingLineKey = handoff.retryFromDeath && Math.random() < 0.45 ? 'gameOverRetry' : 'runStart';
       this.showSlickExclusive(getSlickLine(openingLineKey));
+    }
+
+    if (handoff.multiplayer) {
+      this.scoreRecordingBlocked = true;
+      this.setupMultiplayer(handoff.multiplayer);
     }
 
     // Liaison intro — show after Slick's opener fades
@@ -941,6 +977,8 @@ export class GameScene extends Phaser.Scene {
       && this.time.now < this.activeCommVisibleUntil,
     );
     this.hud.updateMissions(this.missionSystem.getActiveMissions());
+
+    this.tickMultiplayer(delta);
   }
 
   private spawnDebris(): void {
@@ -1400,6 +1438,207 @@ export class GameScene extends Phaser.Scene {
     this.geoSphere.destroy();
     this.starfield.destroy();
     this.arenaBorder.destroy();
+    this.teardownMultiplayer();
+  }
+
+  private setupMultiplayer(handoff: MultiplayerHandoff): void {
+    this.multiplayer = handoff;
+    this.matchClockStartMs = Date.now();
+    this.snapshotAccumMs = 0;
+    this.peerSnapshots = [];
+
+    handoff.session.onBroadcast(NET_EVENT.SNAPSHOT, (payload) => {
+      const snap = payload as MirrorSnapshot | undefined;
+      if (!snap || typeof snap.t !== 'number') return;
+      const last = this.peerSnapshots[this.peerSnapshots.length - 1];
+      if (last && snap.t < last.snap.t) return;
+      this.peerSnapshots.push({ snap, arr: Date.now() });
+      if (this.peerSnapshots.length > 2) this.peerSnapshots.shift();
+    });
+
+    this.createMirrorViewport();
+  }
+
+  private createMirrorViewport(): void {
+    const layout = getLayout();
+    const w = Math.max(80, Math.round(layout.arenaWidth * GameScene.MIRROR_FRAC));
+    const h = Math.max(80, Math.round(layout.arenaHeight * GameScene.MIRROR_FRAC));
+    const x = layout.arenaRight - w - GameScene.MIRROR_INSET_PX;
+    const y = layout.arenaBottom - h - GameScene.MIRROR_INSET_PX;
+    this.mirrorRect = { x, y, w, h };
+
+    this.mirrorBg = this.add.graphics().setDepth(118);
+    this.mirrorEntities = this.add.graphics().setDepth(119);
+
+    const labelColor = `#${COLORS.HUD.toString(16).padStart(6, '0')}`;
+    const bgColor = `#${COLORS.BG.toString(16).padStart(6, '0')}`;
+    this.mirrorLabel = this.add.text(x + 5, y + 3, 'P2 …', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(9),
+      color: labelColor,
+      stroke: bgColor,
+      strokeThickness: 2,
+    }).setOrigin(0, 0).setDepth(120).setAlpha(0.85);
+
+    this.mirrorWaiting = this.add.text(x + w / 2, y + h / 2, 'WAITING', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
+      color: labelColor,
+      stroke: bgColor,
+      strokeThickness: 2,
+    }).setOrigin(0.5, 0.5).setDepth(120).setAlpha(0.5);
+
+    this.drawMirrorBg();
+  }
+
+  private drawMirrorBg(): void {
+    const r = this.mirrorRect;
+    const g = this.mirrorBg;
+    if (!r || !g) return;
+    g.clear();
+    g.fillStyle(COLORS.BG, 0.55);
+    g.fillRect(r.x, r.y, r.w, r.h);
+    g.lineStyle(1, COLORS.HUD, 0.5);
+    g.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  }
+
+  private teardownMultiplayer(): void {
+    this.mirrorBg?.destroy(); this.mirrorBg = null;
+    this.mirrorEntities?.destroy(); this.mirrorEntities = null;
+    this.mirrorLabel?.destroy(); this.mirrorLabel = null;
+    this.mirrorWaiting?.destroy(); this.mirrorWaiting = null;
+    this.mirrorRect = null;
+    if (this.multiplayer) {
+      this.multiplayer.session.leave().catch(() => { /* ignore */ });
+      this.multiplayer = null;
+    }
+    this.peerSnapshots = [];
+  }
+
+  private tickMultiplayer(delta: number): void {
+    if (!this.multiplayer) return;
+    this.snapshotAccumMs += delta;
+    if (this.snapshotAccumMs >= GameScene.SNAPSHOT_INTERVAL_MS) {
+      this.snapshotAccumMs = 0;
+      this.sendSnapshot();
+    }
+    this.updateMirrorViewport();
+  }
+
+  private sendSnapshot(): void {
+    if (!this.multiplayer) return;
+    const layout = getLayout();
+    const aw = layout.arenaWidth || 1;
+    const ah = layout.arenaHeight || 1;
+    const al = layout.arenaLeft;
+    const at = layout.arenaTop;
+    const round4 = (n: number) => Math.round(n * 10000) / 10000;
+    const enemies = this.difficultySystem.getEnemies();
+    const snapshot: MirrorSnapshot = {
+      t: Date.now() - this.matchClockStartMs,
+      ship: {
+        x: round4((this.player.x - al) / aw),
+        y: round4((this.player.y - at) / ah),
+        angle: Math.round(this.player.getHeading() * 1000) / 1000,
+        alive: !this.player.destroyed,
+        shielded: this.player.hasShield,
+      },
+      enemies: enemies.map((e) => ({
+        x: round4((e.x - al) / aw),
+        y: round4((e.y - at) / ah),
+        type: 0,
+      })),
+      score: Math.round(this.scoreSystem.getBanked() + this.scoreSystem.getUnbanked()),
+      phase: this.difficultySystem.getConfig().phaseNumber,
+      extracted: this.state === GameState.EXTRACTING || this.state === GameState.RESULTS,
+    };
+    this.multiplayer.session.broadcast(NET_EVENT.SNAPSHOT, snapshot).catch((err) => {
+      console.warn('[GameScene] snapshot broadcast failed', err);
+    });
+  }
+
+  private updateMirrorViewport(): void {
+    const rect = this.mirrorRect;
+    const g = this.mirrorEntities;
+    if (!rect || !g) return;
+    g.clear();
+
+    if (this.peerSnapshots.length === 0) {
+      this.mirrorWaiting?.setVisible(true);
+      this.mirrorLabel?.setText('P2 …');
+      return;
+    }
+    this.mirrorWaiting?.setVisible(false);
+
+    const newest = this.peerSnapshots[this.peerSnapshots.length - 1];
+    const older = this.peerSnapshots.length > 1 ? this.peerSnapshots[0] : newest;
+    const dt = Math.max(1, newest.snap.t - older.snap.t);
+    const localElapsed = Date.now() - newest.arr;
+    const renderT = newest.snap.t + localElapsed - GameScene.MIRROR_INTERP_BUFFER_MS;
+    let alpha = (renderT - older.snap.t) / dt;
+    if (alpha < 0) alpha = 0;
+    else if (alpha > 1) alpha = 1;
+
+    const mapX = (fx: number) => {
+      const c = fx < 0 ? 0 : fx > 1 ? 1 : fx;
+      return rect.x + c * rect.w;
+    };
+    const mapY = (fy: number) => {
+      const c = fy < 0 ? 0 : fy > 1 ? 1 : fy;
+      return rect.y + c * rect.h;
+    };
+
+    const ENEMY_ALPHA = 0.45;
+    g.fillStyle(COLORS.ENEMY, ENEMY_ALPHA);
+    g.lineStyle(1, COLORS.ENEMY, ENEMY_ALPHA + 0.2);
+    const paired = Math.min(older.snap.enemies.length, newest.snap.enemies.length);
+    for (let i = 0; i < paired; i++) {
+      const oe = older.snap.enemies[i];
+      const ne = newest.snap.enemies[i];
+      const fx = oe.x + (ne.x - oe.x) * alpha;
+      const fy = oe.y + (ne.y - oe.y) * alpha;
+      g.fillCircle(mapX(fx), mapY(fy), 2.2);
+    }
+    for (let i = paired; i < newest.snap.enemies.length; i++) {
+      const ne = newest.snap.enemies[i];
+      g.fillCircle(mapX(ne.x), mapY(ne.y), 2.2);
+    }
+
+    // Ship: lerp position + angle (raw lerp; sub-frame, near-equal angles)
+    const sFx = older.snap.ship.x + (newest.snap.ship.x - older.snap.ship.x) * alpha;
+    const sFy = older.snap.ship.y + (newest.snap.ship.y - older.snap.ship.y) * alpha;
+    const sAngle = lerpAngleShortest(older.snap.ship.angle, newest.snap.ship.angle, alpha);
+    const sx = mapX(sFx);
+    const sy = mapY(sFy);
+
+    if (newest.snap.ship.alive) {
+      const triR = 5;
+      const x1 = sx + Math.cos(sAngle) * triR;
+      const y1 = sy + Math.sin(sAngle) * triR;
+      const x2 = sx + Math.cos(sAngle + (Math.PI * 2) / 3) * triR;
+      const y2 = sy + Math.sin(sAngle + (Math.PI * 2) / 3) * triR;
+      const x3 = sx + Math.cos(sAngle - (Math.PI * 2) / 3) * triR;
+      const y3 = sy + Math.sin(sAngle - (Math.PI * 2) / 3) * triR;
+      g.lineStyle(1.25, COLORS.PLAYER, 0.75);
+      g.fillStyle(COLORS.PLAYER, 0.25);
+      g.beginPath();
+      g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x3, y3); g.closePath();
+      g.fillPath();
+      g.strokePath();
+      if (newest.snap.ship.shielded) {
+        g.lineStyle(1, COLORS.SHIELD, 0.6);
+        g.strokeCircle(sx, sy, triR * 1.6);
+      }
+    } else {
+      g.lineStyle(1.25, COLORS.HAZARD, 0.7);
+      g.beginPath();
+      g.moveTo(sx - 3, sy - 3); g.lineTo(sx + 3, sy + 3);
+      g.moveTo(sx + 3, sy - 3); g.lineTo(sx - 3, sy + 3);
+      g.strokePath();
+    }
+
+    const aliveTag = newest.snap.ship.alive ? '' : 'KIA  ';
+    this.mirrorLabel?.setText(`P2  ${aliveTag}${newest.snap.score}  PH ${newest.snap.phase}`);
   }
 
   private updateStarfield(delta: number): void {
@@ -1610,6 +1849,7 @@ export class GameScene extends Phaser.Scene {
     const centerX = layout.centerX;
     const isDeath = data.cause === 'death';
     const isCampaign = data.mode === RunMode.CAMPAIGN;
+    const isVersus = data.mode === RunMode.VERSUS;
     const isCampaignGameOver = isCampaign && !!data.campaignGameOver;
     const arenaInset = Phaser.Math.Clamp(Math.round(Math.min(layout.arenaWidth, layout.arenaHeight) * 0.04), 16, 30);
     const panelLeft = layout.arenaLeft + arenaInset;
@@ -1712,10 +1952,14 @@ export class GameScene extends Phaser.Scene {
 
     if (!data.scoreRecorded) {
       currentY += lineGap;
-      const blockedText = this.add.text(centerX, currentY, ultraCompactResults ? 'DEBUG RUN // NO SCORE' : 'DEBUG RUN // SCORE NOT RECORDED', {
+      const blockedLabel = isVersus
+        ? (ultraCompactResults ? 'VERSUS // NO SCORE LOG' : 'VERSUS MATCH // SCORE NOT RECORDED')
+        : (ultraCompactResults ? 'DEBUG RUN // NO SCORE' : 'DEBUG RUN // SCORE NOT RECORDED');
+      const blockedColor = isVersus ? COLORS.GATE : COLORS.HAZARD;
+      const blockedText = this.add.text(centerX, currentY, blockedLabel, {
         fontFamily: UI_FONT,
         fontSize: compactResults ? detailSize : metaSize,
-        color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
+        color: `#${blockedColor.toString(16).padStart(6, '0')}`,
         align: 'center',
         wordWrap: { width: textWidth },
       }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.88);
@@ -1726,14 +1970,16 @@ export class GameScene extends Phaser.Scene {
 
     currentY += lineGap;
     const modeSummary = !data.scoreRecorded
-      ? (ultraCompactResults ? 'DEBUG RUN // NO PAYOUTS' : 'DEBUG RUN // NO RECORDS OR PAYOUTS')
+      ? (isVersus
+        ? (ultraCompactResults ? 'VERSUS // NO PAYOUTS' : 'VERSUS // NO RECORDS OR PAYOUTS')
+        : (ultraCompactResults ? 'DEBUG RUN // NO PAYOUTS' : 'DEBUG RUN // NO RECORDS OR PAYOUTS'))
       : isCampaign
         ? (isCampaignGameOver
           ? (ultraCompactResults ? 'CAMPAIGN OVER // SCORE LOGGED' : 'CAMPAIGN OVER // SCORE SUBMITTED')
           : `CAMPAIGN // LIVES LEFT ${data.campaignLivesRemaining ?? 0}`)
       : (ultraCompactResults ? 'ARCADE // LIVE BOARD' : 'ARCADE // LEADERBOARD LIVE');
     const modeSummaryColor = !data.scoreRecorded
-      ? COLORS.HAZARD
+      ? (isVersus ? COLORS.GATE : COLORS.HAZARD)
       : isCampaign
       ? (isCampaignGameOver ? COLORS.HAZARD : COLORS.SALVAGE)
       : COLORS.GATE;
