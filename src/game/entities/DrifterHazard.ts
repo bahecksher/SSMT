@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS } from '../constants';
+import { getRenderTuningProfile } from '../data/renderTuning';
 import { DRIFTER_RADIUS, DRIFTER_MINING_RADIUS_MULT, DRIFTER_MAX_HP, DRIFTER_SPEED_MAX, HP_DEPLETED_WARN_TIME } from '../data/tuning';
 import { getLayout } from '../layout';
 import { rotatePoint } from '../utils/geometry';
@@ -30,6 +31,7 @@ export class DrifterHazard {
   private spinSpeed: number;
   private vertices: [number, number][];
   private miningPulse = 0;
+  private miningSegmentCount: number;
 
   // Minimum scale below which fragments won't split further
   static readonly MIN_SPLIT_SCALE = 0.6;
@@ -55,6 +57,7 @@ export class DrifterHazard {
     this.hp = this.maxHp;
     this.spinSpeed = Phaser.Math.FloatBetween(0.2, 0.6) * (Math.random() < 0.5 ? 1 : -1);
     this.vertices = DrifterHazard.generateVertices(this.radius);
+    this.miningSegmentCount = getRenderTuningProfile().asteroidMiningSegments;
 
     // Pick a random edge to spawn from
     const edge = Phaser.Math.Between(0, 3);
@@ -129,6 +132,7 @@ export class DrifterHazard {
     d.angle = 0;
     d.spinSpeed = Phaser.Math.FloatBetween(0.2, 0.6) * (Math.random() < 0.5 ? 1 : -1);
     d.vertices = DrifterHazard.generateVertices(d.radius);
+    d.miningSegmentCount = getRenderTuningProfile().asteroidMiningSegments;
     d.graphic = scene.add.graphics().setDepth(5);
     d.draw();
     d.graphic.setPosition(d.x, d.y);
@@ -204,7 +208,7 @@ export class DrifterHazard {
       g.fillCircle(0, 0, mr);
 
       // Mining zone ring - dashed rotating segments
-      const segCount = 12;
+      const segCount = this.miningSegmentCount;
       const segGap = 0.2;
       const segAngle = (Math.PI * 2) / segCount;
       const ringAlpha = 0.25 + Math.sin(this.miningPulse) * 0.1;

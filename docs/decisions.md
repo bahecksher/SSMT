@@ -299,3 +299,9 @@ MissionSelect should show both sides of company progression at the point of choi
 
 ### 2026-04-14 - Rep gain rules are stated before and after a run
 The UI should not make players infer how company reputation works from thresholds alone. MissionSelect now explicitly says accepted contracts pay bonus credits and company rep on extraction, locked favor cards point players toward completing contracts, and extraction results report the rep actually claimed so the earn loop is visible end-to-end.
+
+### 2026-04-29 - Constrained mobile rendering now auto-reduces vector load
+Phone-sized narrow/short viewports now automatically use a reduced render profile instead of the full visual density. Gameplay gets fewer slower-redrawn stars, the shared geo-sphere uses lower detail and a slower redraw cadence, mirrored-versus repainting is throttled, and repeated dashed-ring effects are simplified. The intent is to prioritize framerate on constrained mobile devices without removing the holo/vector look outright.
+
+### 2026-04-29 - Constrained live versus mirror favors framerate over full ghost detail
+On narrow/short phone-sized viewports, live versus no longer renders the peer's full enemy ghost field or the live arena tint behind gameplay. The peer ship and status remain, and full-detail peer rendering still returns during spectate. This keeps the core versus read while cutting the heaviest newly introduced render path on constrained mobile.

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS } from '../constants';
+import { getRenderTuningProfile } from '../data/renderTuning';
 import {
   SALVAGE_RADIUS,
   SALVAGE_DRIFT_SPEED_MIN,
@@ -47,6 +48,7 @@ export class SalvageDebris {
   private spinSpeed: number;
   /** Each module: [offsetX, offsetY, halfW, halfH, angleOffset] */
   private rects: [number, number, number, number, number][];
+  private readonly radiusSegmentCount: number;
 
   /**
    * Generate 2-3 rectangular modules connected edge-to-edge.
@@ -119,6 +121,7 @@ export class SalvageDebris {
     const shapeRadius = this.isRare ? 45 : 80;
     this.rects = SalvageDebris.generateRects(shapeRadius);
     this.spinSpeed = Phaser.Math.FloatBetween(0.15, 0.45) * (Math.random() < 0.5 ? 1 : -1);
+    this.radiusSegmentCount = getRenderTuningProfile().salvageRingSegments;
 
     // Spawn from a random screen edge, aimed at the interior
     const edge = Phaser.Math.Between(0, 3);
@@ -324,7 +327,7 @@ export class SalvageDebris {
 
     // Dashed ring effect using arcs
     g.lineStyle(1.5, color, pulseAlpha + 0.1);
-    const segments = 16;
+    const segments = this.radiusSegmentCount;
     const gap = 0.15;
     const segAngle = (Math.PI * 2) / segments;
     for (let i = 0; i < segments; i++) {

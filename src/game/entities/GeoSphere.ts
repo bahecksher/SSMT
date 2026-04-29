@@ -1,16 +1,13 @@
 import Phaser from 'phaser';
 import { COLORS } from '../constants';
+import { getRenderTuningProfile } from '../data/renderTuning';
 import { getLayout } from '../layout';
 
-/** Number of subdivisions of the icosphere (higher = more triangles). */
-const SUBDIVISIONS = 2;
 const SPIN_SPEED = 0.006; // radians per second around Y axis
 const TILT_SPEED = 0.002; // very slow wobble around X axis
 const RING_INNER_RADIUS = 1.25;
 const RING_OUTER_RADIUS = 1.95;
 const RING_TILT = 0.28;
-const RING_SEGMENTS = 160;
-const RING_DEBRIS_STEP = 1;
 const RING_COLOR = 0xc7d2de;
 const RING_SCREEN_OFFSET_Y = -0.09;
 /** Global opacity multiplier so the ring reads as background, not gameplay. */
@@ -111,14 +108,22 @@ export class GeoSphere {
   private angleY = 0;
   private angleX = 0.35; // initial tilt
   private radius: number;
+  private readonly ringSegments: number;
+  private readonly ringDebrisStep: number;
+  private readonly frameMs: number;
+  private redrawAccumMs = 0;
 
   private originX: number;
   private originY: number;
 
   constructor(scene: Phaser.Scene) {
-    const { verts, edges } = buildIcosphere(SUBDIVISIONS);
+    const renderProfile = getRenderTuningProfile();
+    const { verts, edges } = buildIcosphere(renderProfile.geoSphereSubdivisions);
     this.baseVerts = verts;
     this.edges = edges;
+    this.ringSegments = renderProfile.geoSphereRingSegments;
+    this.ringDebrisStep = renderProfile.geoSphereRingDebrisStep;
+    this.frameMs = renderProfile.geoSphereFrameMs;
 
     const layout = getLayout();
     // Large sphere tucked deep into the bottom-right corner — only a sliver visible
@@ -134,6 +139,11 @@ export class GeoSphere {
     const dt = delta / 1000;
     this.angleY += SPIN_SPEED * dt;
     this.angleX = 0.35 + Math.sin(this.angleY * (TILT_SPEED / SPIN_SPEED)) * 0.15;
+    this.redrawAccumMs += delta;
+    if (this.redrawAccumMs < this.frameMs) {
+      return;
+    }
+    this.redrawAccumMs %= this.frameMs;
     this.draw();
   }
 
@@ -159,8 +169,8 @@ export class GeoSphere {
 
     const projectRing = (radiusScale: number): { x: number; y: number; z: number }[] => {
       const points: { x: number; y: number; z: number }[] = [];
-      for (let i = 0; i <= RING_SEGMENTS; i++) {
-        const angle = (i / RING_SEGMENTS) * Math.PI * 2;
+      for (let i = 0; i <= this.ringSegments; i++) {
+        const angle = (i / this.ringSegments) * Math.PI * 2;
         const radiusJitter = 1 + Math.sin(angle * 5 + 0.8) * 0.008;
         const base: Vec3 = {
           x: Math.cos(angle) * radiusScale * radiusJitter,
@@ -221,7 +231,7 @@ export class GeoSphere {
     };
 
     const drawRingDebris = (front: boolean): void => {
-      for (let i = 0; i < ringMid.length - 1; i += RING_DEBRIS_STEP) {
+      for (let i = 0; i < ringMid.length - 1; i += this.ringDebrisStep) {
         const point = ringMid[i];
         const next = ringMid[i + 1];
         if ((point.z >= 0) !== front) continue;
@@ -254,7 +264,7 @@ export class GeoSphere {
         const companionOffset = (((Math.sin(i * 1.11 + 0.4) + 1) * 0.5) - 0.5) * bandLen * 0.18;
         g.fillCircle(baseX + nx * companionOffset, baseY + ny * companionOffset, size * 0.58);
 
-        if (i % (RING_DEBRIS_STEP * 2) === 0) {
+        if (i % (this.ringDebrisStep * 2) === 0) {
           const shardLen = size * (1.6 + ((Math.sin(i * 0.37 + 0.2) + 1) * 0.5));
           const shardHalf = size * 0.42;
           const skew = (((Math.sin(i * 0.51 + 2.1) + 1) * 0.5) - 0.5) * size * 0.6;
@@ -268,7 +278,7 @@ export class GeoSphere {
           g.fillPath();
         }
 
-        if (i % (RING_DEBRIS_STEP * 2) === 0) {
+        if (i % (this.ringDebrisStep * 2) === 0) {
           g.lineStyle(front ? 1.15 : 0.9, RING_COLOR, alpha * 0.98);
           g.lineBetween(
             baseX - tx * size * 1.35,
@@ -278,7 +288,7 @@ export class GeoSphere {
           );
         }
 
-        if (i % (RING_DEBRIS_STEP * 3) === 0) {
+        if (i % (this.ringDebrisStep * 3) === 0) {
           const chunkBaseX = baseX + nx * (((Math.sin(i * 0.23 + 0.8) + 1) * 0.5) - 0.5) * bandLen * 0.35;
           const chunkBaseY = baseY + ny * (((Math.sin(i * 0.23 + 0.8) + 1) * 0.5) - 0.5) * bandLen * 0.35;
           const chunkLen = size * (1.1 + ((Math.sin(i * 0.31 + 1.4) + 1) * 0.5) * 1.2);
@@ -294,7 +304,7 @@ export class GeoSphere {
           g.fillPath();
         }
 
-        if (i % (RING_DEBRIS_STEP * 4) === 0) {
+        if (i % (this.ringDebrisStep * 4) === 0) {
           const edgeOffset = (((Math.sin(i * 0.29 + 1.7) + 1) * 0.5) - 0.5) * bandLen * 0.55;
           const edgeX = baseX + nx * edgeOffset;
           const edgeY = baseY + ny * edgeOffset;

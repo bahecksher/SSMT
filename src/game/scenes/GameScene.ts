@@ -62,6 +62,7 @@ import { getLiaisonLine } from '../data/liaisonLines';
 import { RegentComm } from '../ui/RegentComm';
 import { getSlickLine } from '../data/slickLines';
 import { getRegentLine } from '../data/regentLines';
+import { getRenderTuningProfile, type RenderTuningProfile } from '../data/renderTuning';
 import { getLayout, isNarrowViewport, isShortViewport, setLayoutSize } from '../layout';
 import { getSettings, updateSettings } from '../systems/SettingsSystem';
 import {
@@ -158,7 +159,6 @@ export class GameScene extends Phaser.Scene {
   private static readonly CAMPAIGN_RESPAWN_WARP_MS = 1000;
   private static readonly PAUSE_SLOW_SCALE = 0.025;
   private static readonly STARFIELD_OVERSCAN = 96;
-  private static readonly STARFIELD_COUNT = 170;
   private static readonly GAMEPLAY_COMM_GAP_MS = 2200;
   private static readonly DEFAULT_COMM_HIDE_MS = {
     slick: 5200,
@@ -201,6 +201,8 @@ export class GameScene extends Phaser.Scene {
   private countdownDurationMs = GameScene.START_COUNTDOWN_MS;
   private starfield!: Phaser.GameObjects.Graphics;
   private starfieldStars: StarfieldStar[] = [];
+  private renderTuning!: RenderTuningProfile;
+  private starfieldAccumMs = 0;
   private geoSphere!: GeoSphere;
   private arenaBorder!: Phaser.GameObjects.Graphics;
   private hologramOverlay!: HologramOverlay;
@@ -273,6 +275,8 @@ export class GameScene extends Phaser.Scene {
   private mirrorEntities: Phaser.GameObjects.Graphics | null = null;
   private mirrorLabel: Phaser.GameObjects.Text | null = null;
   private mirrorWaiting: Phaser.GameObjects.Text | null = null;
+  private mirrorRenderAccumMs = 0;
+  private mirrorNeedsRedraw = false;
   private localTerminalFired = false;
   private localOutcome: VersusOutcome | null = null;
   private peerOutcome: VersusOutcome | null = null;
@@ -298,6 +302,7 @@ export class GameScene extends Phaser.Scene {
     warmMusicCache(this);
     const handoff = data ?? {};
     const layout = getLayout();
+    this.renderTuning = getRenderTuningProfile(layout);
     this.state = GameState.COUNTDOWN;
     this.rareSalvageTimer = 0;
     this.countdownTimer = GameScene.START_COUNTDOWN_MS;
@@ -343,6 +348,9 @@ export class GameScene extends Phaser.Scene {
     this.rematchPrimaryRefresh = null;
     this.lastPeerSeenAt = 0;
     this.resultPulseAccumMs = 0;
+    this.starfieldAccumMs = 0;
+    this.mirrorRenderAccumMs = 0;
+    this.mirrorNeedsRedraw = false;
 
     this.saveSystem = new SaveSystem();
     this.runMode = handoff.multiplayer
@@ -364,7 +372,7 @@ export class GameScene extends Phaser.Scene {
     // Starfield background (hologram-tinted)
     this.starfield = this.add.graphics().setDepth(-1);
     this.starfieldStars = [];
-    for (let i = 0; i < GameScene.STARFIELD_COUNT; i++) {
+    for (let i = 0; i < this.renderTuning.gameStarfieldCount; i++) {
       this.starfieldStars.push({
         x: Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, layout.gameWidth + GameScene.STARFIELD_OVERSCAN),
         y: Phaser.Math.Between(-GameScene.STARFIELD_OVERSCAN, layout.gameHeight + GameScene.STARFIELD_OVERSCAN),
@@ -1626,6 +1634,8 @@ export class GameScene extends Phaser.Scene {
     this.peerEpoch = null;
     this.lastPeerSeenAt = Date.now();
     this.resultPulseAccumMs = 0;
+    this.mirrorRenderAccumMs = 0;
+    this.mirrorNeedsRedraw = true;
 
     handoff.session.onBroadcast(NET_EVENT.SNAPSHOT, (payload) => {
       const snap = payload as MirrorSnapshot | undefined;
@@ -1647,6 +1657,7 @@ export class GameScene extends Phaser.Scene {
       if (last && snap.t < last.snap.t) return;
       this.peerSnapshots.push({ snap, arr: Date.now() });
       if (this.peerSnapshots.length > 2) this.peerSnapshots.shift();
+      this.mirrorNeedsRedraw = true;
     });
 
     handoff.session.onBroadcast(NET_EVENT.MATCH_EXTRACT, (payload) => {
@@ -2034,8 +2045,14 @@ export class GameScene extends Phaser.Scene {
     const g = this.mirrorBg;
     if (!r || !g) return;
     g.clear();
+    const alpha = this.versusSpectating
+      ? GameScene.MIRROR_BG_ALPHA
+      : this.renderTuning.mirrorLiveBgAlpha;
+    if (alpha <= 0) {
+      return;
+    }
     const inset = 2;
-    g.fillStyle(COLORS.BG, GameScene.MIRROR_BG_ALPHA);
+    g.fillStyle(COLORS.BG, alpha);
     g.fillRect(r.x + inset, r.y + inset, r.w - inset * 2, r.h - inset * 2);
   }
 
@@ -2074,6 +2091,7 @@ export class GameScene extends Phaser.Scene {
     if (!visible) {
       this.mirrorWaiting?.setVisible(false);
     }
+    this.mirrorNeedsRedraw = true;
   }
 
   private tickMultiplayer(delta: number): void {
@@ -2086,7 +2104,15 @@ export class GameScene extends Phaser.Scene {
     this.tickResultPeerHeartbeat(delta);
     this.tickSpectateInventory(delta);
     this.tickPingMarkers(delta);
-    this.updateMirrorViewport();
+    const mirrorFrameMs = this.versusSpectating
+      ? this.renderTuning.mirrorSpectateRenderFrameMs
+      : this.renderTuning.mirrorRenderFrameMs;
+    this.mirrorRenderAccumMs += delta;
+    if (this.mirrorNeedsRedraw || this.mirrorRenderAccumMs >= mirrorFrameMs) {
+      this.mirrorRenderAccumMs = 0;
+      this.mirrorNeedsRedraw = false;
+      this.updateMirrorViewport();
+    }
   }
 
   private tickPingMarkers(delta: number): void {
@@ -2286,25 +2312,28 @@ export class GameScene extends Phaser.Scene {
     };
 
     const spectate = this.versusSpectating;
+    const renderEnemies = spectate || this.renderTuning.mirrorLiveRenderEnemies;
     const enemyR = spectate ? GameScene.MIRROR_SPECTATE_ENEMY_RADIUS : GameScene.MIRROR_ENEMY_RADIUS;
     const shipR = spectate ? GameScene.MIRROR_SPECTATE_SHIP_RADIUS : GameScene.MIRROR_SHIP_RADIUS;
     const enemyFillAlpha = spectate ? 0.32 : 0.12;
     const enemyStrokeAlpha = spectate ? 0.7 : 0.24;
-    g.fillStyle(COLORS.ENEMY, enemyFillAlpha);
-    g.lineStyle(spectate ? 1.5 : 1, COLORS.ENEMY, enemyStrokeAlpha);
-    const paired = Math.min(older.snap.enemies.length, newest.snap.enemies.length);
-    for (let i = 0; i < paired; i++) {
-      const oe = older.snap.enemies[i];
-      const ne = newest.snap.enemies[i];
-      const fx = oe.x + (ne.x - oe.x) * alpha;
-      const fy = oe.y + (ne.y - oe.y) * alpha;
-      g.fillCircle(mapX(fx), mapY(fy), enemyR);
-      g.strokeCircle(mapX(fx), mapY(fy), enemyR);
-    }
-    for (let i = paired; i < newest.snap.enemies.length; i++) {
-      const ne = newest.snap.enemies[i];
-      g.fillCircle(mapX(ne.x), mapY(ne.y), enemyR);
-      g.strokeCircle(mapX(ne.x), mapY(ne.y), enemyR);
+    if (renderEnemies) {
+      g.fillStyle(COLORS.ENEMY, enemyFillAlpha);
+      g.lineStyle(spectate ? 1.5 : 1, COLORS.ENEMY, enemyStrokeAlpha);
+      const paired = Math.min(older.snap.enemies.length, newest.snap.enemies.length);
+      for (let i = 0; i < paired; i++) {
+        const oe = older.snap.enemies[i];
+        const ne = newest.snap.enemies[i];
+        const fx = oe.x + (ne.x - oe.x) * alpha;
+        const fy = oe.y + (ne.y - oe.y) * alpha;
+        g.fillCircle(mapX(fx), mapY(fy), enemyR);
+        g.strokeCircle(mapX(fx), mapY(fy), enemyR);
+      }
+      for (let i = paired; i < newest.snap.enemies.length; i++) {
+        const ne = newest.snap.enemies[i];
+        g.fillCircle(mapX(ne.x), mapY(ne.y), enemyR);
+        g.strokeCircle(mapX(ne.x), mapY(ne.y), enemyR);
+      }
     }
 
     const sFx = older.snap.ship.x + (newest.snap.ship.x - older.snap.ship.x) * alpha;
@@ -2344,8 +2373,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateStarfield(delta: number): void {
+    this.starfieldAccumMs += delta;
+    if (this.starfieldAccumMs < this.renderTuning.gameStarfieldFrameMs) {
+      return;
+    }
     const layout = getLayout();
-    const dt = delta / 1000;
+    const dt = this.starfieldAccumMs / 1000;
+    this.starfieldAccumMs = 0;
     for (const star of this.starfieldStars) {
       star.x -= star.speed * dt;
       if (star.x < -GameScene.STARFIELD_OVERSCAN - star.size) {
@@ -2988,7 +3022,10 @@ export class GameScene extends Phaser.Scene {
 
   private beginVersusSpectate(): void {
     this.versusSpectating = true;
+    this.drawMirrorBg();
     this.setMirrorVisible(true);
+    this.mirrorRenderAccumMs = this.renderTuning.mirrorSpectateRenderFrameMs;
+    this.mirrorNeedsRedraw = true;
     // Promote mirror layers above the result-screen backing so the peer's
     // arena reads as the dominant view. The waiting overlay only paints thin
     // top/bottom bars, leaving the middle of the arena open for the mirror.
@@ -3007,6 +3044,9 @@ export class GameScene extends Phaser.Scene {
   private endVersusSpectate(): void {
     if (!this.versusSpectating) return;
     this.versusSpectating = false;
+    this.drawMirrorBg();
+    this.mirrorRenderAccumMs = this.renderTuning.mirrorRenderFrameMs;
+    this.mirrorNeedsRedraw = true;
     this.mirrorBg?.setDepth(GameScene.MIRROR_BG_DEPTH);
     this.mirrorEntities?.setDepth(GameScene.MIRROR_ENTITY_DEPTH);
     this.mirrorLabel?.setDepth(GameScene.MIRROR_TEXT_DEPTH);
