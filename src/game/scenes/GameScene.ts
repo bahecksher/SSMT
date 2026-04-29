@@ -726,15 +726,20 @@ export class GameScene extends Phaser.Scene {
         this.versusLaserStrikes.splice(i, 1);
         continue;
       }
-      if (gameplayActive && strike.isLethal() && !this.player.destroyed) {
-        if (strike.hits(this.player.x, this.player.y, PLAYER_RADIUS)) {
+      if (gameplayActive && strike.isLethal()) {
+        let playerKilled = false;
+        if (!this.player.destroyed && strike.hits(this.player.x, this.player.y, PLAYER_RADIUS)) {
           // Shield absorbs the strike (matches existing beam-vs-shield contract).
           if (this.player.hasShield) {
             this.player.hasShield = false;
           } else {
-            this.handleDeath('laser');
-            return;
+            playerKilled = true;
           }
+        }
+        this.resolveIncomingVersusLaserStrike(strike);
+        if (playerKilled) {
+          this.handleDeath('laser');
+          return;
         }
       }
     }
@@ -1781,6 +1786,63 @@ export class GameScene extends Phaser.Scene {
   /** Receiver: spawn the lethal lane sweep that the peer just fired. */
   private spawnIncomingVersusLaser(lane: VersusLaserLane): void {
     this.versusLaserStrikes.push(new VersusLaserStrike(this, lane));
+  }
+
+  /**
+   * Receiver-side sabotage laser should meaningfully disrupt the local arena,
+   * not just the player. Clear local asteroids, enemies, NPCs, and all pickup
+   * types directly so we do not accidentally spawn fresh drops from the strike.
+   */
+  private resolveIncomingVersusLaserStrike(strike: VersusLaserStrike): void {
+    const drifters = this.difficultySystem.getDrifters();
+    for (let i = drifters.length - 1; i >= 0; i--) {
+      const drifter = drifters[i];
+      if (!drifter.active || !strike.hits(drifter.x, drifter.y, drifter.radius)) continue;
+      this.playerDebris.push(new ShipDebris(this, drifter.x, drifter.y, drifter.vx, drifter.vy, COLORS.ASTEROID, drifter.radius));
+      drifter.destroy();
+      drifters.splice(i, 1);
+    }
+
+    const enemies = this.difficultySystem.getEnemies();
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const enemy = enemies[i];
+      if (!enemy.active || !strike.hits(enemy.x, enemy.y, enemy.radius)) continue;
+      this.playerDebris.push(new ShipDebris(this, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), COLORS.ENEMY, enemy.radius));
+      enemy.destroy();
+      enemies.splice(i, 1);
+    }
+
+    const npcs = this.difficultySystem.getNPCs();
+    for (let i = npcs.length - 1; i >= 0; i--) {
+      const npc = npcs[i];
+      if (!npc.active || !strike.hits(npc.x, npc.y, npc.radius)) continue;
+      this.playerDebris.push(new ShipDebris(this, npc.x, npc.y, npc.vx, npc.vy, npc.getHullColor(), npc.radius));
+      npc.destroy();
+      npcs.splice(i, 1);
+    }
+
+    this.clearPickupArrayInVersusLaser(this.shields, strike);
+    this.clearPickupArrayInVersusLaser(this.bonusPickups, strike);
+    this.clearPickupArrayInVersusLaser(this.bombPickups, strike);
+    this.clearPickupArrayInVersusLaser(this.versusLaserPickups, strike);
+  }
+
+  private clearPickupArrayInVersusLaser<T extends {
+    active: boolean;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    radius: number;
+    destroy(): void;
+  }>(pickups: T[], strike: VersusLaserStrike): void {
+    for (let i = pickups.length - 1; i >= 0; i--) {
+      const pickup = pickups[i];
+      if (!pickup.active || !strike.hits(pickup.x, pickup.y, pickup.radius)) continue;
+      this.playerDebris.push(new ShipDebris(this, pickup.x, pickup.y, pickup.vx, pickup.vy, COLORS.SALVAGE, pickup.radius));
+      pickup.destroy();
+      pickups.splice(i, 1);
+    }
   }
 
   /**

@@ -172,6 +172,8 @@ export class MissionSelectScene extends Phaser.Scene {
   private multiplayer: MultiplayerHandoff | null = null;
   private versusLocalLocked = false;
   private versusPeerLocked = false;
+  private versusPeerPresent = false;
+  private versusPeerName = 'OPPONENT';
   private versusDeployFired = false;
   private versusHandingOff = false;
 
@@ -197,6 +199,8 @@ export class MissionSelectScene extends Phaser.Scene {
     this.multiplayer = this.runMode === RunMode.VERSUS ? (this.handoff.multiplayer ?? null) : null;
     this.versusLocalLocked = false;
     this.versusPeerLocked = false;
+    this.versusPeerPresent = !!this.multiplayer?.session.getPeer();
+    this.versusPeerName = this.multiplayer?.session.getPeer()?.playerName?.trim()?.toUpperCase() || 'OPPONENT';
     this.versusDeployFired = false;
     this.versusHandingOff = false;
     if (this.multiplayer) {
@@ -1160,14 +1164,15 @@ export class MissionSelectScene extends Phaser.Scene {
     this.deployUi.push(deployHit);
 
     if (isVersus) {
-      const peerName = this.multiplayer?.session.getPeer()?.playerName?.trim()?.toUpperCase() || 'OPPONENT';
-      const peerLine = this.versusPeerLocked
-        ? `${peerName} // LOCKED`
-        : `${peerName} // BRIEFING…`;
+      const peerLine = !this.versusPeerPresent
+        ? `${this.versusPeerName} // LEFT`
+        : this.versusPeerLocked
+          ? `${this.versusPeerName} // LOCKED`
+          : `${this.versusPeerName} // BRIEFING…`;
       const peerStatus = this.add.text(layout.centerX, deployY + btnHeight / 2 + 14, peerLine, {
         fontFamily: UI_FONT,
         fontSize: readableFontSize(12),
-        color: colorStr(this.versusPeerLocked ? COLORS.GATE : COLORS.HUD),
+        color: colorStr(!this.versusPeerPresent ? COLORS.HAZARD : this.versusPeerLocked ? COLORS.GATE : COLORS.HUD),
         align: 'center',
       }).setOrigin(0.5, 0).setDepth(11).setAlpha(0.85);
       this.deployUi.push(peerStatus);
@@ -1215,9 +1220,14 @@ export class MissionSelectScene extends Phaser.Scene {
   }
 
   private setupVersusBriefingListeners(handoff: MultiplayerHandoff): void {
+    handoff.session.onPresence((peers) => {
+      const peer = peers.find((p) => p.playerId !== handoff.session.playerId) ?? null;
+      this.handleVersusPeerPresence(peer);
+    });
     handoff.session.onBroadcast(NET_EVENT.MATCH_BRIEFING_READY, (payload) => {
       const p = payload as MatchBriefingReadyPayload | undefined;
       if (!p || typeof p.ready !== 'boolean') return;
+      this.versusPeerPresent = true;
       this.versusPeerLocked = p.ready;
       this.drawDeployButton();
       this.maybeFireVersusDeploy();
@@ -1230,6 +1240,22 @@ export class MissionSelectScene extends Phaser.Scene {
       // because the broadcast is `self: false`.
       this.fireVersusDeploy(p.matchId);
     });
+  }
+
+  private handleVersusPeerPresence(peer: { playerName: string } | null): void {
+    this.versusPeerPresent = !!peer;
+    if (peer?.playerName?.trim()) {
+      this.versusPeerName = peer.playerName.trim().toUpperCase();
+    }
+
+    if (!peer) {
+      this.versusPeerLocked = false;
+      if (this.versusLocalLocked) {
+        this.versusLocalLocked = false;
+      }
+    }
+
+    this.drawDeployButton();
   }
 
   private toggleVersusLockIn(): void {

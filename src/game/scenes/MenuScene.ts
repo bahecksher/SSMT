@@ -476,8 +476,9 @@ export class MenuScene extends Phaser.Scene {
       playUiSelectSfx(this);
       const selectedMode = this.saveSystem.getSelectedMode();
       if (selectedMode === RunMode.VERSUS) {
+        const backgroundHandoff = this.buildBackgroundHandoff();
         this.cleanupBackground();
-        this.scene.start(SCENE_KEYS.VERSUS_LOBBY);
+        this.scene.start(SCENE_KEYS.VERSUS_LOBBY, backgroundHandoff);
         return;
       }
 

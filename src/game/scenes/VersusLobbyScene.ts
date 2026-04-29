@@ -6,6 +6,12 @@ import { SaveSystem } from '../systems/SaveSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { CustomCursor } from '../ui/CustomCursor';
+import { SalvageDebris } from '../entities/SalvageDebris';
+import { DrifterHazard } from '../entities/DrifterHazard';
+import { NPCShip } from '../entities/NPCShip';
+import { GeoSphere } from '../entities/GeoSphere';
+import { DRIFTER_SPEED_BASE } from '../data/tuning';
+import { pickAsteroidSize } from '../data/phaseConfig';
 import {
   NetSession,
   NET_EVENT,
@@ -21,6 +27,12 @@ import { RunMode } from '../types';
 
 type LobbyState = 'IDLE' | 'JOINING' | 'WAITING' | 'COUNTDOWN' | 'STARTED' | 'ERROR';
 
+interface LobbyBackgroundHandoffData {
+  drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
+  debrisState?: { x: number; y: number; vx: number; vy: number }[];
+  npcState?: { x: number; y: number; vx: number; vy: number }[];
+}
+
 interface LobbyButton {
   bg: Phaser.GameObjects.Graphics;
   label: Phaser.GameObjects.Text;
@@ -32,10 +44,25 @@ interface LobbyButton {
 }
 
 const COUNTDOWN_MS = 3000;
+const BG_MAX_DEBRIS = 2;
+const BG_MAX_DRIFTERS = 5;
+const BG_MAX_NPCS = 2;
+const BG_DRIFTER_SPAWN_MS = 800;
+const BG_DEBRIS_SPAWN_MS = 2000;
+const BG_NPC_SPAWN_MS = 2500;
+const BACKGROUND_STARFIELD_OVERSCAN = 96;
+const BACKGROUND_STARFIELD_COUNT = 170;
 
 export class VersusLobbyScene extends Phaser.Scene {
   private hologramOverlay!: HologramOverlay;
   private cursor!: CustomCursor;
+  private bgDebris: SalvageDebris[] = [];
+  private bgDrifters: DrifterHazard[] = [];
+  private bgNpcs: NPCShip[] = [];
+  private geoSphere!: GeoSphere;
+  private drifterTimer = 0;
+  private debrisTimer = 0;
+  private npcTimer = 0;
 
   private state: LobbyState = 'IDLE';
   private session: NetSession | null = null;
@@ -60,11 +87,25 @@ export class VersusLobbyScene extends Phaser.Scene {
     super(SCENE_KEYS.VERSUS_LOBBY);
   }
 
-  create(): void {
+  create(data?: LobbyBackgroundHandoffData): void {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
     applyColorPalette(getSettings().paletteId);
     this.saveSystem = new SaveSystem();
+    this.state = 'IDLE';
+    this.session = null;
+    this.buttons = [];
+    this.dynamicTexts = [];
+    this.localReady = false;
+    this.countdownTimer = null;
+    this.leaving = false;
+    this.handingOff = false;
+    this.bgDebris = [];
+    this.bgDrifters = [];
+    this.bgNpcs = [];
+    this.drifterTimer = 0;
+    this.debrisTimer = 0;
+    this.npcTimer = 0;
     this.hologramOverlay = new HologramOverlay(this);
     this.cursor = new CustomCursor(this);
 
@@ -76,6 +117,32 @@ export class VersusLobbyScene extends Phaser.Scene {
     const codeSize = readableFontSize(compact ? 28 : 36);
     const hintSize = readableFontSize(compact ? 11 : 13);
     const countdownSize = readableFontSize(compact ? 56 : 80);
+    const backgroundHandoff = data ?? {};
+
+    const starfield = this.add.graphics().setDepth(-1);
+    starfield.fillStyle(COLORS.STARFIELD_BG, 1);
+    starfield.fillRect(
+      -BACKGROUND_STARFIELD_OVERSCAN,
+      -BACKGROUND_STARFIELD_OVERSCAN,
+      layout.gameWidth + BACKGROUND_STARFIELD_OVERSCAN * 2,
+      layout.gameHeight + BACKGROUND_STARFIELD_OVERSCAN * 2,
+    );
+    for (let i = 0; i < BACKGROUND_STARFIELD_COUNT; i++) {
+      const sx = Phaser.Math.Between(-BACKGROUND_STARFIELD_OVERSCAN, layout.gameWidth + BACKGROUND_STARFIELD_OVERSCAN);
+      const sy = Phaser.Math.Between(-BACKGROUND_STARFIELD_OVERSCAN, layout.gameHeight + BACKGROUND_STARFIELD_OVERSCAN);
+      const brightness = Phaser.Math.FloatBetween(0.1, 0.4);
+      const size = Phaser.Math.FloatBetween(0.5, 1.2);
+      const starColor = Math.random() < 0.6 ? COLORS.PLAYER : 0xffffff;
+      starfield.fillStyle(starColor, brightness);
+      starfield.fillCircle(sx, sy, size);
+    }
+    this.geoSphere = new GeoSphere(this);
+    this.restoreBackgroundEntities(backgroundHandoff);
+
+    const backingTop = layout.gameHeight * (compact ? 0.045 : 0.06);
+    const backing = this.add.graphics().setDepth(9);
+    backing.fillStyle(COLORS.BG, 0.7);
+    backing.fillRoundedRect(20, backingTop, layout.gameWidth - 40, layout.gameHeight - backingTop - 20, 12);
 
     this.titleText = this.add.text(layout.centerX, layout.gameHeight * 0.10, 'VERSUS', {
       fontFamily: TITLE_FONT,
@@ -139,8 +206,10 @@ export class VersusLobbyScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    this.updateBackground(delta);
     this.hologramOverlay.update(delta);
     this.cursor.update(this);
+    this.geoSphere.update(delta);
   }
 
   // -- State machine --
@@ -380,7 +449,11 @@ export class VersusLobbyScene extends Phaser.Scene {
     // favors, then the host broadcasts MATCH_DEPLOY when both lock in. Pass
     // mode=VERSUS so MissionSelect knows to hide campaign-only controls and
     // render the lock-in flow instead of plain DEPLOY.
-    this.scene.start(SCENE_KEYS.MISSION_SELECT, { multiplayer: handoff, mode: RunMode.VERSUS });
+    this.scene.start(SCENE_KEYS.MISSION_SELECT, {
+      ...this.buildBackgroundHandoff(),
+      multiplayer: handoff,
+      mode: RunMode.VERSUS,
+    });
   }
 
   private cancelCountdown(): void {
@@ -422,6 +495,7 @@ export class VersusLobbyScene extends Phaser.Scene {
     if (this.leaving) return;
     this.leaving = true;
     this.cancelCountdown();
+    const backgroundHandoff = this.buildBackgroundHandoff();
     if (this.session) {
       try {
         await this.session.leave();
@@ -431,7 +505,181 @@ export class VersusLobbyScene extends Phaser.Scene {
       this.session = null;
     }
     playUiSelectSfx(this);
-    this.scene.start(SCENE_KEYS.MENU);
+    this.scene.start(SCENE_KEYS.MENU, backgroundHandoff);
+  }
+
+  private restoreBackgroundEntities(handoff: LobbyBackgroundHandoffData): void {
+    if (handoff.debrisState) {
+      for (const debris of handoff.debrisState) {
+        this.bgDebris.push(SalvageDebris.createAt(this, debris.x, debris.y, debris.vx, debris.vy));
+      }
+    } else {
+      for (let i = 0; i < BG_MAX_DEBRIS; i++) {
+        this.bgDebris.push(new SalvageDebris(this));
+      }
+    }
+
+    if (handoff.drifterState) {
+      for (const drifter of handoff.drifterState) {
+        this.bgDrifters.push(
+          DrifterHazard.createFragment(this, drifter.x, drifter.y, drifter.vx, drifter.vy, drifter.radiusScale),
+        );
+      }
+    } else {
+      for (let i = 0; i < 3; i++) {
+        const sizeScale = pickAsteroidSize(1);
+        const speed = DRIFTER_SPEED_BASE * (1 / Math.sqrt(sizeScale));
+        this.bgDrifters.push(new DrifterHazard(this, speed, sizeScale));
+      }
+    }
+
+    if (handoff.npcState) {
+      for (const npc of handoff.npcState) {
+        this.bgNpcs.push(NPCShip.createAt(this, npc.x, npc.y, npc.vx, npc.vy));
+      }
+    } else {
+      for (let i = 0; i < BG_MAX_NPCS; i++) {
+        this.bgNpcs.push(new NPCShip(this));
+      }
+    }
+  }
+
+  private buildBackgroundHandoff(): LobbyBackgroundHandoffData {
+    return {
+      drifterState: this.bgDrifters
+        .filter((drifter) => drifter.active)
+        .map((drifter) => ({
+          x: drifter.x,
+          y: drifter.y,
+          vx: drifter.vx,
+          vy: drifter.vy,
+          radiusScale: drifter.radiusScale,
+        })),
+      debrisState: this.bgDebris
+        .filter((debris) => debris.active)
+        .map((debris) => ({
+          x: debris.x,
+          y: debris.y,
+          vx: debris.driftVx,
+          vy: debris.driftVy,
+        })),
+      npcState: this.bgNpcs
+        .filter((npc) => npc.active)
+        .map((npc) => ({
+          x: npc.x,
+          y: npc.y,
+          vx: npc.vx,
+          vy: npc.vy,
+        })),
+    };
+  }
+
+  private updateBackground(delta: number): void {
+    for (let i = this.bgDebris.length - 1; i >= 0; i--) {
+      this.bgDebris[i].update(delta);
+      if (!this.bgDebris[i].active) {
+        this.bgDebris[i].destroy();
+        this.bgDebris.splice(i, 1);
+      }
+    }
+
+    for (let i = this.bgDrifters.length - 1; i >= 0; i--) {
+      this.bgDrifters[i].update(delta);
+      if (!this.bgDrifters[i].active) {
+        this.bgDrifters[i].destroy();
+        this.bgDrifters.splice(i, 1);
+      }
+    }
+
+    for (const npc of this.bgNpcs) {
+      if (!npc.active) continue;
+
+      let bestTarget: SalvageDebris | null = null;
+      let bestDist = Infinity;
+      for (const debris of this.bgDebris) {
+        if (!debris.active || debris.depleted) continue;
+        const dist = Phaser.Math.Distance.Between(npc.x, npc.y, debris.x, debris.y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestTarget = debris;
+        }
+      }
+
+      if (bestTarget) {
+        npc.setTarget(bestTarget.x, bestTarget.y);
+      } else {
+        npc.clearTarget();
+      }
+    }
+
+    for (let i = this.bgNpcs.length - 1; i >= 0; i--) {
+      const npc = this.bgNpcs[i];
+      npc.update(delta);
+      if (!npc.active) {
+        npc.destroy();
+        this.bgNpcs.splice(i, 1);
+      }
+    }
+
+    for (const npc of this.bgNpcs) {
+      if (!npc.active || !npc.isSalvaging()) continue;
+      for (const debris of this.bgDebris) {
+        if (!debris.active || debris.depleted) continue;
+        const dist = Phaser.Math.Distance.Between(npc.x, npc.y, debris.x, debris.y);
+        if (dist < debris.salvageRadius) {
+          debris.hp -= delta / 1000;
+          if (debris.hp <= 0) {
+            debris.hp = 0;
+            debris.depleted = true;
+          }
+        }
+      }
+    }
+
+    for (const npc of this.bgNpcs) {
+      if (!npc.active) continue;
+      for (const drifter of this.bgDrifters) {
+        if (!drifter.active) continue;
+        const dx = npc.x - drifter.x;
+        const dy = npc.y - drifter.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < npc.radius + drifter.radius) {
+          npc.active = false;
+          npc.killedByHazard = true;
+          break;
+        }
+      }
+    }
+
+    this.debrisTimer += delta;
+    if (this.debrisTimer >= BG_DEBRIS_SPAWN_MS && this.bgDebris.length < BG_MAX_DEBRIS) {
+      this.bgDebris.push(new SalvageDebris(this));
+      this.debrisTimer = 0;
+    }
+
+    this.drifterTimer += delta;
+    if (this.drifterTimer >= BG_DRIFTER_SPAWN_MS && this.bgDrifters.length < BG_MAX_DRIFTERS) {
+      const sizeScale = pickAsteroidSize(1);
+      const speed = DRIFTER_SPEED_BASE * (1 / Math.sqrt(sizeScale));
+      this.bgDrifters.push(new DrifterHazard(this, speed, sizeScale));
+      this.drifterTimer = 0;
+    }
+
+    this.npcTimer += delta;
+    if (this.npcTimer >= BG_NPC_SPAWN_MS && this.bgNpcs.length < BG_MAX_NPCS) {
+      this.bgNpcs.push(new NPCShip(this));
+      this.npcTimer = 0;
+    }
+  }
+
+  private cleanupBackground(): void {
+    for (const debris of this.bgDebris) debris.destroy();
+    this.bgDebris = [];
+    for (const drifter of this.bgDrifters) drifter.destroy();
+    this.bgDrifters = [];
+    for (const npc of this.bgNpcs) npc.destroy();
+    this.bgNpcs = [];
+    this.geoSphere?.destroy();
   }
 
   // -- Button helpers --
@@ -499,6 +747,7 @@ export class VersusLobbyScene extends Phaser.Scene {
       this.session.leave().catch(() => { /* ignore */ });
     }
     this.session = null;
+    this.cleanupBackground();
     for (const btn of this.buttons) {
       btn.bg.destroy();
       btn.label.destroy();
