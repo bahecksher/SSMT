@@ -6,6 +6,7 @@ import {
   DIFFICULTY_SPAWN_SCALE,
   ENEMY_SPAWN_RATE_BASE,
   NPC_SPAWN_RATE_BASE,
+  WORMHOLE_POCKET_SIZE_POOL,
 } from './tuning';
 
 // Size variation per phase: [radiusScale, weight] pairs
@@ -23,15 +24,22 @@ function getSizePool(phase: number): [number, number][] {
   return SIZE_POOLS[Math.min(phase, maxKey)];
 }
 
-export function pickAsteroidSize(phase: number): number {
-  const pool = getSizePool(phase);
+function pickWeightedAsteroidSize(pool: readonly (readonly [number, number])[]): number {
   const totalWeight = pool.reduce((sum, [, w]) => sum + w, 0);
   let roll = Math.random() * totalWeight;
   for (const [scale, weight] of pool) {
     roll -= weight;
     if (roll <= 0) return scale;
   }
-  return 1;
+  return pool[0]?.[0] ?? 1;
+}
+
+export function pickAsteroidSize(phase: number): number {
+  return pickWeightedAsteroidSize(getSizePool(phase));
+}
+
+export function pickPocketAsteroidSize(): number {
+  return pickWeightedAsteroidSize(WORMHOLE_POCKET_SIZE_POOL);
 }
 
 export function getPhaseConfig(phase: number): PhaseConfig {

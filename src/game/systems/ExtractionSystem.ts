@@ -1,22 +1,37 @@
 import type Phaser from 'phaser';
-import { PHASE_LENGTH, EXIT_GATE_PREVIEW } from '../data/tuning';
+import {
+  PHASE_LENGTH,
+  EXIT_GATE_PREVIEW,
+  WORMHOLE_POCKET_GATE_CYCLE_MS,
+  WORMHOLE_POCKET_GATE_PREVIEW_MS,
+  WORMHOLE_POCKET_GATE_DURATION_MS,
+} from '../data/tuning';
 import { ExitGate } from '../entities/ExitGate';
 
 /** Time within the phase when the gate visual first appears. */
 const GATE_SPAWN_TIME = PHASE_LENGTH - EXIT_GATE_PREVIEW;
+const POCKET_GATE_SPAWN_TIME = WORMHOLE_POCKET_GATE_CYCLE_MS - WORMHOLE_POCKET_GATE_PREVIEW_MS;
 
 export class ExtractionSystem {
   private scene: Phaser.Scene;
   private phaseTimer = 0;
+  private savedPhaseTimer = 0;
+  private pocketGateTimer = 0;
   private gate: ExitGate | null = null;
   private closingGate: ExitGate | null = null;
   private phaseCount = 1;
+  private pocketMode = false;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
   }
 
   update(delta: number): void {
+    if (this.pocketMode) {
+      this.updatePocket(delta);
+      return;
+    }
+
     this.phaseTimer += delta;
     // Clear previous frame's closing gate
     if (this.closingGate) {
@@ -43,6 +58,32 @@ export class ExtractionSystem {
     }
   }
 
+  private updatePocket(delta: number): void {
+    this.pocketGateTimer += delta;
+    if (this.closingGate) {
+      this.closingGate.destroy();
+      this.closingGate = null;
+    }
+
+    if (this.gate) {
+      this.gate.update(delta);
+      if (!this.gate.active) {
+        this.closingGate = this.gate;
+        this.gate = null;
+        this.pocketGateTimer = 0;
+      }
+    }
+
+    if (!this.gate && !this.closingGate && this.pocketGateTimer >= POCKET_GATE_SPAWN_TIME) {
+      this.gate = new ExitGate(
+        this.scene,
+        undefined,
+        WORMHOLE_POCKET_GATE_PREVIEW_MS,
+        WORMHOLE_POCKET_GATE_DURATION_MS,
+      );
+    }
+  }
+
   updateVisual(delta: number): void {
     this.gate?.updateVisual(delta);
   }
@@ -63,6 +104,9 @@ export class ExtractionSystem {
 
   getTimeToGate(): number {
     if (this.gate) return 0;
+    if (this.pocketMode) {
+      return Math.max(0, POCKET_GATE_SPAWN_TIME - this.pocketGateTimer);
+    }
     return Math.max(0, GATE_SPAWN_TIME - this.phaseTimer);
   }
 
@@ -70,22 +114,47 @@ export class ExtractionSystem {
     return this.phaseCount;
   }
 
+  isPocketMode(): boolean {
+    return this.pocketMode;
+  }
+
+  enterPocketMode(): void {
+    if (this.pocketMode) {
+      return;
+    }
+
+    this.savedPhaseTimer = this.phaseTimer;
+    this.phaseTimer = 0;
+    this.pocketGateTimer = 0;
+    this.pocketMode = true;
+    this.clearGateState();
+  }
+
+  exitPocketMode(): void {
+    if (!this.pocketMode) {
+      return;
+    }
+
+    this.pocketMode = false;
+    this.pocketGateTimer = 0;
+    this.phaseTimer = this.savedPhaseTimer;
+    this.clearGateState();
+  }
+
   debugSetPhase(phase: number): void {
     this.phaseCount = Math.max(1, Math.floor(phase));
     this.phaseTimer = 0;
-
-    if (this.gate) {
-      this.gate.destroy();
-      this.gate = null;
-    }
-
-    if (this.closingGate) {
-      this.closingGate.destroy();
-      this.closingGate = null;
-    }
+    this.savedPhaseTimer = 0;
+    this.pocketGateTimer = 0;
+    this.pocketMode = false;
+    this.clearGateState();
   }
 
   destroy(): void {
+    this.clearGateState();
+  }
+
+  private clearGateState(): void {
     if (this.gate) {
       this.gate.destroy();
       this.gate = null;

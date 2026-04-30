@@ -167,6 +167,13 @@ export class EnemyShip {
   getVelocityX(): number { return this.vx; }
   getVelocityY(): number { return this.vy; }
 
+  applyImpulse(ix: number, iy: number): void {
+    this.x += ix * 0.08;
+    this.y += iy * 0.08;
+    this.heading = Math.atan2(this.vy + iy, this.vx + ix);
+    this.graphic.setPosition(this.x, this.y);
+  }
+
   destroy(): void {
     this.graphic.destroy();
   }

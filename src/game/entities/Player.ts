@@ -158,6 +158,11 @@ export class Player {
   getVelocityY(): number { return this.vy; }
   getHeading(): number { return this.heading; }
 
+  applyImpulse(ix: number, iy: number): void {
+    this.vx += ix;
+    this.vy += iy;
+  }
+
   destroy(): void {
     this.graphic.destroy();
   }

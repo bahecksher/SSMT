@@ -9,13 +9,13 @@ const LAYERED_TRACKS = [
   'bassThree',
   'gameSynth',
 ] as const;
-const FULL_TRACKS = ['fullPhase1', 'fullPhase2'] as const;
+const FULL_TRACKS = ['fullPhase1', 'fullPhase2', 'wormhole'] as const;
 const GAMEPLAY_LAYERED_TRACKS = ['bassOne', 'drumsTwo', 'drumsThree', 'bassThree', 'gameSynth'] as const;
 // Keep boot light on phones: menu music plus the earliest gameplay stems only.
 // Later gameplay stems warm in the menu / mission flow and are seek-aligned to
 // the running gameplay reference stem when they finish loading.
 const BOOT_TRACKS = ['menuSynth', 'bassOne', 'drumsTwo'] as const;
-const MID_GAME_TRACKS = ['drumsThree', 'bassThree', 'gameSynth'] as const;
+const MID_GAME_TRACKS = ['drumsThree', 'bassThree', 'gameSynth', 'wormhole'] as const;
 const LATE_GAME_TRACKS = [...FULL_TRACKS] as const;
 
 type LayeredTrack = typeof LAYERED_TRACKS[number];
@@ -37,6 +37,7 @@ const MUSIC_KEYS: Record<MusicTrack, string> = {
   gameSynth: 'music-synth-3',
   fullPhase1: 'music-full-phase-1',
   fullPhase2: 'music-full-phase-2',
+  wormhole: 'music-wormhole',
 };
 
 const BASE_URL = import.meta.env.BASE_URL;
@@ -50,6 +51,7 @@ const MUSIC_PATHS: Record<MusicTrack, string[]> = {
   gameSynth: [`${BASE_URL}audio/synth-3.mp3`],
   fullPhase1: [`${BASE_URL}audio/full-phase-1.mp3`],
   fullPhase2: [`${BASE_URL}audio/full-phase-2.mp3`],
+  wormhole: [`${BASE_URL}audio/event-horizon-evasion.mp3`],
 };
 
 const MUSIC_START_DELAY_S = 0.05;
@@ -597,6 +599,15 @@ export function setGameplayMusicForPhase(scene: Phaser.Scene, phase: number): vo
     layeredMix: gameplayMix,
     clearLateGameTrack: phase <= 1,
     fadeMs: GAMEPLAY_FADE_MS,
+  });
+}
+
+export function setWormholeMusic(scene: Phaser.Scene): void {
+  setMusicState(scene, {
+    layeredMix: SILENT_LAYERED_MIX,
+    fullTrack: 'wormhole',
+    preserveLateGameTrack: true,
+    fadeMs: FULL_TRACK_FADE_MS,
   });
 }
 

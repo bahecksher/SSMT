@@ -4,6 +4,10 @@ import type { PhaseConfig } from '../types';
 import {
   ASTEROID_DESTROY_BONUS,
   ASTEROID_DESTROY_DROP_CHANCE,
+  BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MAX_MS,
+  BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MIN_MS,
+  BOSS_SHIELD_DRIFT_SPEED_MAX,
+  BOSS_SHIELD_DRIFT_SPEED_MIN,
   BOMB_DROP_CHANCE,
   DRIFTER_MINEABLE_CHANCE,
   DRIFTER_SPEED_BASE,
@@ -13,8 +17,12 @@ import {
   NPC_BONUS_POINTS,
   VERSUS_LASER_DROP_CHANCE_ENEMY,
   VERSUS_LASER_DROP_CHANCE_NPC,
+  WORMHOLE_POCKET_DRIFTER_CAP_MULT,
+  WORMHOLE_POCKET_MINEABLE_CHANCE,
+  WORMHOLE_POCKET_SPEED_MULT,
+  WORMHOLE_POCKET_SPAWN_RATE_MULT,
 } from '../data/tuning';
-import { getPhaseConfig, pickAsteroidSize } from '../data/phaseConfig';
+import { getPhaseConfig, pickAsteroidSize, pickPocketAsteroidSize } from '../data/phaseConfig';
 import { DrifterHazard } from '../entities/DrifterHazard';
 import { BeamHazard } from '../entities/BeamHazard';
 import { EnemyShip } from '../entities/EnemyShip';
@@ -22,6 +30,9 @@ import { NPCShip } from '../entities/NPCShip';
 import { SHIELD_PICKUP_RADIUS } from '../entities/ShieldPickup';
 import { ShipDebris } from '../entities/ShipDebris';
 import { GunshipBoss } from '../entities/GunshipBoss';
+import { SlagHauler } from '../entities/SlagHauler';
+import type { BossEntity } from '../entities/BossEntity';
+import { BOSS_SPAWN_WEIGHT_GUNSHIP } from '../data/tuning';
 import { Overlays } from '../ui/Overlays';
 import { getLayout, getArenaDensityScale } from '../layout';
 import { playSfx } from './SfxSystem';
@@ -45,7 +56,7 @@ export class DifficultySystem {
   private versusLaserDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private versusLasersEnabled = false;
   private shipDebris: ShipDebris[] = [];
-  private boss: GunshipBoss | null = null;
+  private boss: BossEntity | null = null;
   private bossDefeated = false;
   private bossEvents: BossEvents = { spawned: false, coreExposed: false, destroyed: false };
   private scaledMaxDrifters = 0;
@@ -60,15 +71,34 @@ export class DifficultySystem {
   private npcTimer = 0;
   private bonusDropChanceAdd = 0.0;
   private asteroidCollisionSfxCooldownMs = 0;
+  private bossShieldDriftTimerMs = 0;
+  private nextBossShieldDriftSpawnMs = 0;
+  private pocketActive = false;
 
   constructor(scene: Phaser.Scene, phase: number) {
     this.scene = scene;
     this.config = getPhaseConfig(phase);
     this.updateDensityScale();
+    this.resetBossShieldDriftTimer();
   }
 
   setBoosts(bonusDropChanceAdd: number): void {
     this.bonusDropChanceAdd = bonusDropChanceAdd;
+  }
+
+  setPocketActive(active: boolean): void {
+    this.pocketActive = active;
+    if (active) {
+      this.beamTimer = 0;
+      this.beamBurstQueue = 0;
+      this.beamBurstTimer = 0;
+      this.enemyTimer = 0;
+      this.npcTimer = 0;
+    }
+  }
+
+  isPocketActive(): boolean {
+    return this.pocketActive;
   }
 
   setPhase(phase: number): void {
@@ -109,7 +139,7 @@ export class DifficultySystem {
     return this.npcs;
   }
 
-  getBoss(): GunshipBoss | null {
+  getBoss(): BossEntity | null {
     return this.boss;
   }
 
@@ -151,24 +181,21 @@ export class DifficultySystem {
     return this.boss?.checkBeamHit(targetX, targetY, targetRadius) ?? false;
   }
 
-  getBossGunCollisionIndex(targetX: number, targetY: number, targetRadius: number): number | null {
-    return this.boss?.getCollidingGunIndex(targetX, targetY, targetRadius) ?? null;
+  getBossHardpointCollisionIndex(targetX: number, targetY: number, targetRadius: number): number | null {
+    return this.boss?.getCollidingHardpointIndex(targetX, targetY, targetRadius) ?? null;
   }
 
-  destroyBossGun(index: number): boolean {
+  destroyBossHardpoint(index: number): boolean {
     if (!this.boss) {
       return false;
     }
 
-    const drop = this.boss.destroyGun(index);
+    const drop = this.boss.destroyHardpoint(index);
     if (!drop) {
       return false;
     }
 
     this.shipDebris.push(new ShipDebris(this.scene, drop.x, drop.y, drop.vx, drop.vy, COLORS.ENEMY, 16));
-    if (this.canDropShieldAt(drop.x, drop.y)) {
-      this.shieldDropPositions.push(drop);
-    }
 
     if (this.boss.isCoreExposed()) {
       this.bossEvents.coreExposed = true;
@@ -202,6 +229,7 @@ export class DifficultySystem {
 
     this.boss.destroy();
     this.boss = null;
+    this.resetBossShieldDriftTimer();
   }
 
   debugSetPhase(phase: number): void {
@@ -219,6 +247,7 @@ export class DifficultySystem {
     this.versusLaserDropPositions = [];
     this.bossDefeated = false;
     this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
+    this.pocketActive = false;
     this.drifterTimer = 0;
     this.beamTimer = 0;
     this.beamBurstQueue = 0;
@@ -234,61 +263,73 @@ export class DifficultySystem {
   }
 
   update(delta: number, playerX = 0, playerY = 0): void {
-    if (this.config.bossEnabled && !this.boss && !this.bossDefeated) {
+    const activeConfig = this.getActiveConfig();
+    const activeScaledMaxDrifters = this.getActiveScaledMaxDrifters();
+
+    if (activeConfig.bossEnabled && !this.boss && !this.bossDefeated) {
       this.spawnBoss();
     }
 
     this.asteroidCollisionSfxCooldownMs = Math.max(0, this.asteroidCollisionSfxCooldownMs - delta);
     this.drifterTimer += delta;
-    if (this.drifterTimer >= this.config.hazardSpawnRate * this.scaledSpawnMult && this.drifters.length < this.scaledMaxDrifters) {
-      const speed = DRIFTER_SPEED_BASE * this.config.hazardSpeedMultiplier;
-      const sizeScale = pickAsteroidSize(this.config.phaseNumber);
-      const adjustedSpeed = speed * (1 / Math.sqrt(sizeScale));
-      const isMineable = Math.random() < DRIFTER_MINEABLE_CHANCE;
+    if (this.drifterTimer >= activeConfig.hazardSpawnRate * this.scaledSpawnMult && this.drifters.length < activeScaledMaxDrifters) {
+      const speed = DRIFTER_SPEED_BASE * activeConfig.hazardSpeedMultiplier;
+      const sizeScale = this.pocketActive ? pickPocketAsteroidSize() : pickAsteroidSize(activeConfig.phaseNumber);
+      const adjustedSpeed = speed * (1 / Math.sqrt(sizeScale)) * (this.pocketActive ? WORMHOLE_POCKET_SPEED_MULT : 1);
+      const isMineable = Math.random() < (this.pocketActive ? WORMHOLE_POCKET_MINEABLE_CHANCE : DRIFTER_MINEABLE_CHANCE);
       this.drifters.push(new DrifterHazard(this.scene, adjustedSpeed, sizeScale, isMineable));
       this.drifterTimer = 0;
     }
 
-    if (this.config.beamEnabled) {
+    if (activeConfig.beamEnabled) {
       this.beamTimer += delta;
-      if (this.beamTimer >= this.config.beamFrequency && this.beamBurstQueue === 0) {
+      if (this.beamTimer >= activeConfig.beamFrequency && this.beamBurstQueue === 0) {
         Overlays.beamWarningFlash(this.scene);
         // First beam fires immediately, rest queued as rapid burst
-        this.beams.push(new BeamHazard(this.scene, this.config.beamWidth));
-        this.beamBurstQueue = this.config.beamBurstCount - 1;
+        this.beams.push(new BeamHazard(this.scene, activeConfig.beamWidth));
+        this.beamBurstQueue = activeConfig.beamBurstCount - 1;
         this.beamBurstTimer = 0;
         this.beamTimer = 0;
       }
       // Rapid-fire burst: spawn queued beams with short delays
       if (this.beamBurstQueue > 0) {
         this.beamBurstTimer += delta;
-        if (this.beamBurstTimer >= this.config.beamBurstDelay) {
-          this.beams.push(new BeamHazard(this.scene, this.config.beamWidth));
+        if (this.beamBurstTimer >= activeConfig.beamBurstDelay) {
+          this.beams.push(new BeamHazard(this.scene, activeConfig.beamWidth));
           this.beamBurstQueue--;
-          this.beamBurstTimer -= this.config.beamBurstDelay;
+          this.beamBurstTimer -= activeConfig.beamBurstDelay;
         }
       }
     }
 
-    if (this.config.enemyEnabled && !this.config.bossEnabled) {
+    if (activeConfig.enemyEnabled && !activeConfig.bossEnabled) {
       this.enemyTimer += delta;
-      if (this.enemyTimer >= this.config.enemySpawnRate * this.scaledSpawnMult && this.enemies.length < this.scaledMaxEnemies) {
+      if (this.enemyTimer >= activeConfig.enemySpawnRate * this.scaledSpawnMult && this.enemies.length < this.scaledMaxEnemies) {
         this.enemies.push(new EnemyShip(this.scene));
         this.enemyTimer = 0;
       }
     }
 
-    if (this.config.npcEnabled) {
+    if (activeConfig.npcEnabled) {
       this.npcTimer += delta;
-      if (this.npcTimer >= this.config.npcSpawnRate * this.scaledSpawnMult && this.npcs.length < this.scaledMaxNPCs) {
+      if (this.npcTimer >= activeConfig.npcSpawnRate * this.scaledSpawnMult && this.npcs.length < this.scaledMaxNPCs) {
         this.npcs.push(new NPCShip(this.scene));
         this.npcTimer = 0;
       }
     }
 
     this.boss?.update(delta);
-    if (this.boss?.consumeBeamWarningPulse()) {
+    this.updateBossShieldDrift(delta);
+    if (this.boss?.consumeWarningPulse()) {
       Overlays.beamWarningFlash(this.scene);
+    }
+    if (this.boss) {
+      const vents = this.boss.consumeAsteroidVents();
+      const overflowCap = activeScaledMaxDrifters + 8;
+      for (const v of vents) {
+        if (this.drifters.length >= overflowCap) break;
+        this.drifters.push(DrifterHazard.createFragment(this.scene, v.x, v.y, v.vx, v.vy, v.sizeScale, v.mineable));
+      }
     }
     for (const d of this.drifters) d.update(delta);
     for (const npc of this.npcs) npc.update(delta);
@@ -800,7 +841,10 @@ export class DifficultySystem {
 
   private spawnBoss(): void {
     this.clearCombatThreats();
-    this.boss = new GunshipBoss(this.scene);
+    this.boss = Math.random() < BOSS_SPAWN_WEIGHT_GUNSHIP
+      ? new GunshipBoss(this.scene)
+      : new SlagHauler(this.scene);
+    this.resetBossShieldDriftTimer();
     this.bossEvents.spawned = true;
   }
 
@@ -826,15 +870,8 @@ export class DifficultySystem {
     }
 
     const boss = this.boss;
-    const center = boss.getCenter();
-    const edge = boss.getEdge();
+    const { center, inward, tangent } = boss.getDestructionPlan();
     const layout = getLayout();
-    const inward =
-      edge === 'top' ? { x: 0, y: 1 }
-        : edge === 'bottom' ? { x: 0, y: -1 }
-          : edge === 'left' ? { x: 1, y: 0 }
-            : { x: -1, y: 0 };
-    const tangent = { x: -inward.y, y: inward.x };
 
     this.shipDebris.push(new ShipDebris(this.scene, center.x, center.y, inward.x * 90, inward.y * 90, COLORS.ENEMY, 42));
     for (let i = 0; i < GUNSHIP_BOSS_DEBRIS_COUNT; i++) {
@@ -860,7 +897,110 @@ export class DifficultySystem {
     boss.destroy();
     this.boss = null;
     this.bossDefeated = true;
+    this.resetBossShieldDriftTimer();
     this.bossEvents.destroyed = true;
+  }
+
+  private updateBossShieldDrift(delta: number): void {
+    if (!this.boss || this.pocketActive) {
+      return;
+    }
+
+    this.bossShieldDriftTimerMs += delta;
+    if (this.bossShieldDriftTimerMs < this.nextBossShieldDriftSpawnMs) {
+      return;
+    }
+
+    this.spawnBossShieldDriftIn();
+    this.resetBossShieldDriftTimer();
+  }
+
+  private resetBossShieldDriftTimer(): void {
+    this.bossShieldDriftTimerMs = 0;
+    this.nextBossShieldDriftSpawnMs = Phaser.Math.Between(
+      BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MIN_MS,
+      BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MAX_MS,
+    );
+  }
+
+  private spawnBossShieldDriftIn(): void {
+    const layout = getLayout();
+    const margin = SHIELD_PICKUP_RADIUS + 18;
+    const targetX = Phaser.Math.FloatBetween(
+      layout.arenaLeft + layout.arenaWidth * 0.22,
+      layout.arenaRight - layout.arenaWidth * 0.22,
+    );
+    const targetY = Phaser.Math.FloatBetween(
+      layout.arenaTop + layout.arenaHeight * 0.22,
+      layout.arenaBottom - layout.arenaHeight * 0.22,
+    );
+
+    let spawnX = targetX;
+    let spawnY = targetY;
+    switch (Phaser.Math.Between(0, 3)) {
+      case 0:
+        spawnX = Phaser.Math.FloatBetween(layout.arenaLeft + margin, layout.arenaRight - margin);
+        spawnY = layout.arenaTop - margin;
+        break;
+      case 1:
+        spawnX = Phaser.Math.FloatBetween(layout.arenaLeft + margin, layout.arenaRight - margin);
+        spawnY = layout.arenaBottom + margin;
+        break;
+      case 2:
+        spawnX = layout.arenaLeft - margin;
+        spawnY = Phaser.Math.FloatBetween(layout.arenaTop + margin, layout.arenaBottom - margin);
+        break;
+      default:
+        spawnX = layout.arenaRight + margin;
+        spawnY = Phaser.Math.FloatBetween(layout.arenaTop + margin, layout.arenaBottom - margin);
+        break;
+    }
+
+    const angle = Math.atan2(targetY - spawnY, targetX - spawnX);
+    const speed = Phaser.Math.FloatBetween(BOSS_SHIELD_DRIFT_SPEED_MIN, BOSS_SHIELD_DRIFT_SPEED_MAX);
+    this.shieldDropPositions.push({
+      x: spawnX,
+      y: spawnY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+    });
+  }
+
+  private getActiveConfig(): PhaseConfig {
+    if (!this.pocketActive) {
+      return this.config;
+    }
+
+    return {
+      ...this.config,
+      hazardSpawnRate: this.config.hazardSpawnRate * WORMHOLE_POCKET_SPAWN_RATE_MULT,
+      maxConcurrentDrifters: Math.max(
+        this.config.maxConcurrentDrifters + 4,
+        Math.round(this.config.maxConcurrentDrifters * WORMHOLE_POCKET_DRIFTER_CAP_MULT),
+      ),
+      beamEnabled: false,
+      beamFrequency: 0,
+      beamBurstCount: 0,
+      beamBurstDelay: 0,
+      enemyEnabled: false,
+      enemySpawnRate: 0,
+      maxConcurrentEnemies: 0,
+      npcEnabled: false,
+      npcSpawnRate: 0,
+      maxConcurrentNPCs: 0,
+      bossEnabled: false,
+    };
+  }
+
+  private getActiveScaledMaxDrifters(): number {
+    if (!this.pocketActive) {
+      return this.scaledMaxDrifters;
+    }
+
+    return Math.max(
+      this.scaledMaxDrifters + 6,
+      Math.round(this.scaledMaxDrifters * WORMHOLE_POCKET_DRIFTER_CAP_MULT),
+    );
   }
 
   private canDropShieldAt(x: number, y: number): boolean {

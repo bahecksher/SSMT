@@ -30,6 +30,8 @@ export const COMPANY_AFFILIATION_KEY = 'ssmt_company_affiliation';
 
 export const PALETTE_ORDER = ['green', 'orange', 'blue', 'red', 'volt', 'pulse', 'frost'] as const;
 export type PaletteId = (typeof PALETTE_ORDER)[number];
+export const POCKET_PALETTE_ID = 'pocket' as const;
+export type RuntimePaletteId = PaletteId | typeof POCKET_PALETTE_ID;
 
 export interface PaletteColors {
   STARFIELD_BG: number;
@@ -56,7 +58,7 @@ export interface PaletteColors {
 
 export const DEFAULT_PALETTE_ID: PaletteId = 'blue';
 
-const PALETTES: Record<PaletteId, PaletteColors> = {
+const PALETTES: Record<RuntimePaletteId, PaletteColors> = {
   green: {
     STARFIELD_BG: 0x02120d,
     BG: 0x06100d,
@@ -211,6 +213,28 @@ const PALETTES: Record<PaletteId, PaletteColors> = {
     SHIELD: 0xffffff,
     BOMB: 0xffbf45,
   },
+  pocket: {
+    STARFIELD_BG: 0x171006,
+    BG: 0x1f1707,
+    GLOBE: 0xfff3a6,
+    ARENA_BORDER: 0xffe66d,
+    PLAYER: 0xffffff,
+    PLAYER_GLOW: 0xfff1a8,
+    SALVAGE: 0xfff06a,
+    SALVAGE_RADIUS: 0xfff06a,
+    HAZARD: 0xffc247,
+    HAZARD_INERT: 0x8d7134,
+    ASTEROID: 0xffd66d,
+    ASTEROID_INERT: 0x92783f,
+    ENEMY: 0xff7a54,
+    BEAM: 0xff9965,
+    GATE: 0xffffb8,
+    HUD: 0xfff4a8,
+    GRID: 0x4c3b12,
+    NPC: 0xffc247,
+    SHIELD: 0xffffff,
+    BOMB: 0xfff06a,
+  },
 };
 
 export const PALETTE_LABELS: Record<PaletteId, string> = {
@@ -236,11 +260,11 @@ export function getNextPaletteId(current: PaletteId): PaletteId {
   return PALETTE_ORDER[(currentIndex + 1) % PALETTE_ORDER.length];
 }
 
-export function applyColorPalette(paletteId: PaletteId): PaletteColors {
+export function applyColorPalette(paletteId: RuntimePaletteId): PaletteColors {
   Object.assign(COLORS, PALETTES[paletteId]);
   return COLORS;
 }
 
-export function getPaletteColors(paletteId: PaletteId): PaletteColors {
+export function getPaletteColors(paletteId: RuntimePaletteId): PaletteColors {
   return PALETTES[paletteId];
 }

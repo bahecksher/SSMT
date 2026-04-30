@@ -29,8 +29,8 @@ export const NET_EVENT = {
   MATCH_BRIEFING_READY: 'match_briefing_ready',
   /** Host broadcast: both peers locked in, start the GameScene countdown now. */
   MATCH_DEPLOY: 'match_deploy',
-  /** Spectator ping marker on the live player's arena. */
-  MATCH_PING: 'match_ping',
+  /** Spectator repulsor charge on the live player's arena. */
+  MATCH_REPULSOR: 'match_repulsor',
 } as const;
 
 /** Versus MissionSelect lock-in toggle. */
@@ -38,8 +38,8 @@ export interface MatchBriefingReadyPayload {
   ready: boolean;
 }
 
-/** Spectate ping: dead/extracted peer pokes a coord on the live player's arena. */
-export interface MatchPingPayload {
+/** Spectate repulsor: dead/extracted peer places a charge on the live player's arena. */
+export interface MatchRepulsorPayload {
   /** Arena-relative fractions (0..1), same convention as MirrorSnapshot.ship. */
   x: number;
   y: number;

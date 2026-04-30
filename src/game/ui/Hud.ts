@@ -19,10 +19,12 @@ export class Hud {
 
   private phaseText: Phaser.GameObjects.Text;
   private shieldText: Phaser.GameObjects.Text;
+  private pocketText: Phaser.GameObjects.Text;
   private missionPillRoot: Phaser.GameObjects.Container;
   private missionPills: Phaser.GameObjects.GameObject[] = [];
   private lastPhase = -1;
   private lastShield = false;
+  private pocketTimeRemainingMs: number | null = null;
   private lastMissionHash = '';
   private missionPillsHidden = false;
   private missionPillTween: Phaser.Tweens.Tween | null = null;
@@ -84,6 +86,12 @@ export class Hud {
       color: colorStr(COLORS.SHIELD),
     }).setDepth(100);
 
+    this.pocketText = scene.add.text(layout.gameWidth - 16, shieldY, '', {
+      ...minorTextStyle,
+      fontSize: readableFontSize(minorFontSize),
+      color: colorStr(COLORS.GATE),
+    }).setOrigin(1, 0).setDepth(100).setVisible(false);
+
     this.missionPillRoot = scene.add.container(0, 0).setDepth(100);
     this.updateTopHudBottom();
   }
@@ -94,6 +102,7 @@ export class Hud {
     phase: number = 1,
     hasShield = false,
     campaignLivesRemaining: number | null = null,
+    pocketTimeRemainingMs: number | null = null,
   ): void {
     const roundedScore = Math.floor(score);
     this.updateTopRowLayout(roundedScore, campaignLivesRemaining);
@@ -110,6 +119,20 @@ export class Hud {
     if (hasShield !== this.lastShield) {
       this.shieldText.setText(hasShield ? 'SHIELD' : '');
       this.lastShield = hasShield;
+    }
+
+    this.pocketTimeRemainingMs = pocketTimeRemainingMs;
+    if (pocketTimeRemainingMs !== null) {
+      const seconds = Math.max(0, Math.ceil(pocketTimeRemainingMs / 1000));
+      this.pocketText
+        .setText(`POCKET ${seconds}`)
+        .setColor(colorStr(COLORS.GATE))
+        .setPosition(getLayout().gameWidth - 16, this.shieldText.y)
+        .setVisible(true);
+      this.scoreText.setColor(colorStr(COLORS.GATE));
+    } else {
+      this.pocketText.setVisible(false);
+      this.scoreText.setColor(colorStr(COLORS.SALVAGE));
     }
 
     this.updateTopHudBottom();
@@ -216,15 +239,17 @@ export class Hud {
     this.livesText.destroy();
     this.phaseText.destroy();
     this.shieldText.destroy();
+    this.pocketText.destroy();
     this.missionPillRoot.destroy(true);
     this.missionPills = [];
   }
 
   refreshPalette(): void {
-    this.scoreText.setColor(colorStr(COLORS.SALVAGE));
+    this.scoreText.setColor(colorStr(this.pocketTimeRemainingMs !== null ? COLORS.GATE : COLORS.SALVAGE));
     this.livesText.setColor(colorStr(COLORS.SALVAGE));
     this.phaseText.setColor(colorStr(COLORS.HUD));
     this.shieldText.setColor(colorStr(COLORS.SHIELD));
+    this.pocketText.setColor(colorStr(COLORS.GATE));
     this.lastMissionHash = '';
     this.updateMissions(this.currentMissions);
   }
@@ -306,7 +331,8 @@ export class Hud {
     const livesBottom = this.livesText.text.length > 0 ? this.livesText.y + this.livesText.height : 0;
     const phaseBottom = this.phaseText.y + this.phaseText.height;
     const shieldBottom = this.shieldText.text.length > 0 ? this.shieldText.y + this.shieldText.height : 0;
-    this.topHudBottom = Math.max(scoreBottom, livesBottom, phaseBottom, shieldBottom);
+    const pocketBottom = this.pocketText.visible ? this.pocketText.y + this.pocketText.height : 0;
+    this.topHudBottom = Math.max(scoreBottom, livesBottom, phaseBottom, shieldBottom, pocketBottom);
   }
 
   private applyMissionPillVisibility(animate: boolean): void {

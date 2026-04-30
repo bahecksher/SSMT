@@ -81,19 +81,81 @@ export const VERSUS_LASER_COLLECTION_DELAY = 1500;
 export const VERSUS_LASER_SEND_COOLDOWN_MS = 5000;   // collector self-rate-limit
 export const VERSUS_LASER_WARNING_MS = 900;          // telegraph window
 export const VERSUS_LASER_LETHAL_MS = 500;           // lethal sweep window
-export const VERSUS_LASER_WIDTH = 26;
+export const VERSUS_LASER_WIDTH = 36;
 export const VERSUS_LASER_COLOR = 0xc070ff;          // violet, distinct from cyan/red
 
 // Spectator-side disruption inventory. While dead/extracted but peer is still
-// playing, the spectator can fire sabotage lasers and pings to mess with them.
+// playing, the spectator can fire sabotage lasers and repulsor charges to mess
+// with them.
 export const SPECTATE_LASER_REGEN_MS = 7000;         // 1 charge per 7s
 export const SPECTATE_LASER_MAX_CHARGES = 3;
-export const SPECTATE_PING_COOLDOWN_MS = 1000;       // 1 ping per second
+export const SPECTATE_REPULSOR_COOLDOWN_MS = 2500;
+export const SPECTATE_REPULSOR_ARM_MS = 1200;
+export const SPECTATE_REPULSOR_BLAST_MS = 420;
+export const SPECTATE_REPULSOR_RADIUS = 72;
+export const SPECTATE_REPULSOR_PLAYER_FORCE = 520;
+export const SPECTATE_REPULSOR_OBJECT_FORCE = 260;
+
+// Phase 10 boss spawn weights (must sum to 1)
+export const BOSS_SPAWN_WEIGHT_GUNSHIP = 0.5;
+export const BOSS_SPAWN_WEIGHT_HAULER = 0.5;
+export const BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MIN_MS = 12_000;
+export const BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MAX_MS = 17_000;
+export const BOSS_SHIELD_DRIFT_SPEED_MIN = 180;
+export const BOSS_SHIELD_DRIFT_SPEED_MAX = 250;
+
+// Wormhole pocket
+export const WORMHOLE_MIN_PHASE = 5;
+export const WORMHOLE_MAX_PHASE = 9;
+export const WORMHOLE_DROP_CHANCE_RARE_SALVAGE = 0.03;
+export const WORMHOLE_PICKUP_RADIUS = 16;
+export const WORMHOLE_PICKUP_LIFETIME = 18_000;
+export const WORMHOLE_SCHEDULED_RUN_CHANCE = 0.45;
+export const WORMHOLE_EVENT_SPAWN_DELAY_MS = 5_000;
+export const WORMHOLE_EVENT_PREVIEW_MS = 6_000;
+export const WORMHOLE_EVENT_ACTIVE_MS = 9_000;
+export const WORMHOLE_POCKET_DURATION_MS = 45_000;
+export const WORMHOLE_POCKET_SALVAGE_MULT = 2.5;
+export const WORMHOLE_POCKET_DRIFTER_CAP_MULT = 4.5;
+export const WORMHOLE_POCKET_SPAWN_RATE_MULT = 0.22;
+export const WORMHOLE_POCKET_SPEED_MULT = 2.25;
+export const WORMHOLE_POCKET_MINEABLE_CHANCE = 0.92;
+export const WORMHOLE_POCKET_RARE_SALVAGE_INTERVAL_MS = 2_200;
+export const WORMHOLE_POCKET_BONUS_INTERVAL_MS = 1_450;
+export const WORMHOLE_POCKET_BONUS_POINTS = 360;
+export const WORMHOLE_POCKET_BOUNDARY_END_RADIUS_MULT = 0.24;
+export const WORMHOLE_POCKET_BOUNDARY_BURN_MS = 650;
+export const WORMHOLE_POCKET_GATE_CYCLE_MS = 15_000;
+export const WORMHOLE_POCKET_GATE_PREVIEW_MS = 10_000;
+export const WORMHOLE_POCKET_GATE_DURATION_MS = 3_000;
+export const WORMHOLE_POCKET_SIZE_POOL = [
+  [0.9, 3],
+  [1.4, 4],
+  [2.2, 4],
+  [3.2, 3],
+  [4.5, 2],
+] as const;
+
+// Phase 10 boss - Slag Hauler (asteroid mothership)
+export const SLAG_HAULER_SEGMENT_COUNT = 4;
+export const SLAG_HAULER_BODY_SPEED = 66;
+export const SLAG_HAULER_BODY_HALF_LENGTH = 168;
+export const SLAG_HAULER_BODY_THICKNESS = 56;
+export const SLAG_HAULER_SEGMENT_RADIUS = 22;
+export const SLAG_HAULER_CORE_OUTER_RADIUS = 40;
+export const SLAG_HAULER_CORE_INNER_RADIUS = 17;
+export const SLAG_HAULER_VENT_INTERVAL_MIN_MS = 1400;
+export const SLAG_HAULER_VENT_INTERVAL_MAX_MS = 2400;
+export const SLAG_HAULER_VENT_CHARGE_MS = 700;
+export const SLAG_HAULER_VENT_SPEED_MIN = 90;
+export const SLAG_HAULER_VENT_SPEED_MAX = 180;
+export const SLAG_HAULER_VENT_SIZE_MIN = 1.2;
+export const SLAG_HAULER_VENT_SIZE_MAX = 2.0;
+export const SLAG_HAULER_DEBRIS_COUNT = 14;
 
 // Phase 10 boss - Regent gunship
 export const GUNSHIP_BOSS_GUN_COUNT = 5;
-export const GUNSHIP_BOSS_EDGE_PASS_MIN_MS = 10_000;
-export const GUNSHIP_BOSS_EDGE_PASS_MAX_MS = 15_000;
+export const GUNSHIP_BOSS_BODY_SPEED = 84;
 export const GUNSHIP_BOSS_BEAM_WARNING_DURATION = 1_150;
 export const GUNSHIP_BOSS_BEAM_ACTIVE_DURATION = 750;
 export const GUNSHIP_BOSS_BEAM_COOLDOWN_DURATION = 1_350;
@@ -102,7 +164,6 @@ export const GUNSHIP_BOSS_BEAM_WIDTH = 18;
 export const GUNSHIP_BOSS_GUN_RADIUS = 18;
 export const GUNSHIP_BOSS_CORE_OUTER_RADIUS = 38;
 export const GUNSHIP_BOSS_CORE_INNER_RADIUS = 17;
-export const GUNSHIP_BOSS_HULL_OFFSET = 34;
 export const GUNSHIP_BOSS_BODY_HALF_LENGTH = 188;
 export const GUNSHIP_BOSS_BODY_THICKNESS = 42;
 export const GUNSHIP_BOSS_DEBRIS_COUNT = 12;

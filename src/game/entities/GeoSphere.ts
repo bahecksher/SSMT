@@ -138,6 +138,9 @@ export class GeoSphere {
   }
 
   update(delta: number): void {
+    if (!this.graphic.visible) {
+      return;
+    }
     const dt = delta / 1000;
     this.angleY += SPIN_SPEED * dt;
     this.angleX = 0.35 + Math.sin(this.angleY * (TILT_SPEED / SPIN_SPEED)) * 0.15;
@@ -147,6 +150,10 @@ export class GeoSphere {
     }
     this.redrawAccumMs %= this.frameMs;
     this.draw();
+  }
+
+  setVisible(visible: boolean): void {
+    this.graphic.setVisible(visible);
   }
 
   private draw(): void {

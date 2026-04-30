@@ -7,6 +7,8 @@ import type { CompanyId } from '../types';
 const TAU = Math.PI * 2;
 const RING_DEBRIS_COLOR = 0xc7d2de;
 const GLOBE_SPIN_RATE = 0.006 / 1000;
+const GLOBE_ORBIT_RATE = 0.00012;
+const CHART_RING_SPIN_RATE = 0.000032;
 const DEBRIS_SPIN_RATE = 0.00006;
 const SLICE_GAP_ANGLE = 0.03;
 
@@ -33,7 +35,9 @@ export class CorporationScoreGraph {
   private readonly innerRadius: number;
   private readonly globeRadius: number;
   private readonly slices: SliceEntry[];
+  private chartSpin = 0;
   private spin = 0;
+  private orbitSpin = 0;
   private debrisSpin = 0;
 
   constructor(scene: Phaser.Scene, options: CorporationScoreGraphOptions) {
@@ -70,9 +74,13 @@ export class CorporationScoreGraph {
   }
 
   update(delta: number): void {
+    this.chartSpin += delta * CHART_RING_SPIN_RATE;
     this.spin += delta * GLOBE_SPIN_RATE;
+    this.orbitSpin += delta * GLOBE_ORBIT_RATE;
     this.debrisSpin += delta * DEBRIS_SPIN_RATE;
+    this.drawChartBase();
     this.drawDebris();
+    this.drawChartOverlay();
     this.drawGlobe();
   }
 
@@ -254,7 +262,7 @@ export class CorporationScoreGraph {
       return;
     }
 
-    let startAngle = -Math.PI / 2;
+    let startAngle = -Math.PI / 2 + this.chartSpin;
     for (const slice of this.slices) {
       const fraction = slice.totalScore / total;
       const fullSpan = fraction * TAU;
@@ -275,6 +283,9 @@ export class CorporationScoreGraph {
     const r = this.globeRadius;
     const hazard = COLORS.NPC;
     const highlight = 0xffffff;
+
+    this.drawGlobeOrbitRing(g, r * 1.22, 0.3, this.orbitSpin, 0.52, false);
+    this.drawGlobeOrbitRing(g, r * 1.34, -0.18, -this.orbitSpin * 0.72 + 0.8, 0.42, false);
 
     g.fillStyle(hazard, 0.12);
     g.fillCircle(0, 0, r);
@@ -317,5 +328,67 @@ export class CorporationScoreGraph {
     g.lineTo(-r * 0.05, r * 0.28);
     g.lineTo(r * 0.22, r * 0.2);
     g.strokePath();
+
+    this.drawGlobeOrbitRing(g, r * 1.22, 0.3, this.orbitSpin, 0.7, true);
+    this.drawGlobeOrbitRing(g, r * 1.34, -0.18, -this.orbitSpin * 0.72 + 0.8, 0.56, true);
+  }
+
+  private drawGlobeOrbitRing(
+    g: Phaser.GameObjects.Graphics,
+    radius: number,
+    axisAngle: number,
+    phase: number,
+    alpha: number,
+    front: boolean,
+  ): void {
+    const tilt = 0.32;
+    const segments = 72;
+    const color = COLORS.NPC;
+    const cosAxis = Math.cos(axisAngle);
+    const sinAxis = Math.sin(axisAngle);
+    let drawing = false;
+
+    for (let i = 0; i <= segments; i += 1) {
+      const t = (i / segments) * TAU + phase;
+      const z = Math.sin(t);
+      const visibleSide = front ? z >= -0.08 : z < 0.08;
+      const localX = Math.cos(t) * radius;
+      const localY = z * radius * tilt;
+      const x = localX * cosAxis - localY * sinAxis;
+      const y = localX * sinAxis + localY * cosAxis;
+
+      if (!visibleSide) {
+        drawing = false;
+        continue;
+      }
+
+      const sideAlpha = front
+        ? alpha * (0.42 + Math.max(0, z) * 0.58)
+        : alpha * 0.26;
+      g.lineStyle(front ? 1.15 : 0.9, color, sideAlpha);
+      if (!drawing) {
+        g.beginPath();
+        g.moveTo(x, y);
+        drawing = true;
+      } else {
+        g.lineTo(x, y);
+        g.strokePath();
+        g.beginPath();
+        g.moveTo(x, y);
+      }
+    }
+
+    if (!front) return;
+    for (let i = 0; i < 3; i += 1) {
+      const t = phase + i * (TAU / 3);
+      const z = Math.sin(t);
+      if (z < 0) continue;
+      const localX = Math.cos(t) * radius;
+      const localY = z * radius * tilt;
+      const x = localX * cosAxis - localY * sinAxis;
+      const y = localX * sinAxis + localY * cosAxis;
+      g.fillStyle(0xffffff, 0.1 + z * 0.12);
+      g.fillCircle(x, y, Math.max(1.2, this.globeRadius * 0.045));
+    }
   }
 }

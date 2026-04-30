@@ -2,9 +2,11 @@ import Phaser from 'phaser';
 import {
   applyColorPalette,
   COLORS,
+  POCKET_PALETTE_ID,
   SCENE_KEYS,
   TITLE_FONT,
   UI_FONT,
+  type RuntimePaletteId,
   readableFontSize,
 } from '../constants';
 import { GameState, CompanyId } from '../types';
@@ -32,9 +34,10 @@ import { DrifterHazard } from '../entities/DrifterHazard';
 import { ShieldPickup } from '../entities/ShieldPickup';
 import { BonusPickup } from '../entities/BonusPickup';
 import { BombPickup } from '../entities/BombPickup';
+import { WormholePickup } from '../entities/WormholePickup';
 import { VersusLaserPickup } from '../entities/VersusLaserPickup';
 import { VersusLaserStrike, type VersusLaserLane } from '../entities/VersusLaserStrike';
-import { VersusPingMarker } from '../entities/VersusPingMarker';
+import { VersusRepulsorCharge } from '../entities/VersusRepulsorCharge';
 import { ShipDebris } from '../entities/ShipDebris';
 import { ExitGate } from '../entities/ExitGate';
 import { NPCShip } from '../entities/NPCShip';
@@ -67,6 +70,7 @@ import {
   setGameplayMusicForPhase,
   setPauseMusic,
   setResultMusic,
+  setWormholeMusic,
   warmMusicCache,
 } from '../systems/MusicSystem';
 import { playSfx, playUiSelectSfx } from '../systems/SfxSystem';
@@ -85,10 +89,11 @@ import {
   type MatchExtractPayload,
   type MatchDeathPayload,
   type MatchLaserPayload,
-  type MatchPingPayload,
+  type MatchRepulsorPayload,
 } from '../systems/NetSystem';
 import {
   DRIFTER_MINING_RADIUS_MULT,
+  EXIT_GATE_HITBOX,
   EXIT_GATE_DURATION,
   EXIT_GATE_PREVIEW,
   EXIT_GATE_RADIUS,
@@ -98,8 +103,26 @@ import {
   VERSUS_LASER_WIDTH,
   SPECTATE_LASER_REGEN_MS,
   SPECTATE_LASER_MAX_CHARGES,
-  SPECTATE_PING_COOLDOWN_MS,
+  SPECTATE_REPULSOR_COOLDOWN_MS,
+  SPECTATE_REPULSOR_OBJECT_FORCE,
+  SPECTATE_REPULSOR_PLAYER_FORCE,
+  SPECTATE_REPULSOR_RADIUS,
   VERSUS_LASER_COLOR,
+  WORMHOLE_DROP_CHANCE_RARE_SALVAGE,
+  WORMHOLE_EVENT_ACTIVE_MS,
+  WORMHOLE_EVENT_PREVIEW_MS,
+  WORMHOLE_EVENT_SPAWN_DELAY_MS,
+  WORMHOLE_MAX_PHASE,
+  WORMHOLE_MIN_PHASE,
+  WORMHOLE_PICKUP_LIFETIME,
+  WORMHOLE_POCKET_BONUS_INTERVAL_MS,
+  WORMHOLE_POCKET_BONUS_POINTS,
+  WORMHOLE_POCKET_BOUNDARY_BURN_MS,
+  WORMHOLE_POCKET_BOUNDARY_END_RADIUS_MULT,
+  WORMHOLE_POCKET_DURATION_MS,
+  WORMHOLE_POCKET_RARE_SALVAGE_INTERVAL_MS,
+  WORMHOLE_POCKET_SALVAGE_MULT,
+  WORMHOLE_SCHEDULED_RUN_CHANCE,
 } from '../data/tuning';
 
 function lerpAngleShortest(from: number, to: number, alpha: number): number {
@@ -195,22 +218,29 @@ export class GameScene extends Phaser.Scene {
   private shields: ShieldPickup[] = [];
   private bonusPickups: BonusPickup[] = [];
   private bombPickups: BombPickup[] = [];
+  private wormholePickups: WormholePickup[] = [];
   private versusLaserPickups: VersusLaserPickup[] = [];
   private versusLaserStrikes: VersusLaserStrike[] = [];
   private versusLaserLastSendAt = 0;
   private versusLaserRecvDedup = new Set<number>();
-  private versusPingMarkers: VersusPingMarker[] = [];
-  private versusPingRecvDedup = new Set<number>();
+  private versusRepulsorCharges: VersusRepulsorCharge[] = [];
+  private versusRepulsorApplied = new WeakSet<VersusRepulsorCharge>();
+  private versusRepulsorRecvDedup = new Set<number>();
   private spectateLaserCharges = 0;
   private spectateLaserAccumMs = 0;
-  private spectatePingLastSendMs = 0;
+  private spectateRepulsorLastSendMs = 0;
   private spectateInventoryUi: Phaser.GameObjects.GameObject[] = [];
-  private spectateLaserChargesText: Phaser.GameObjects.Text | null = null;
+  private spectateLaserButtonText: Phaser.GameObjects.Text | null = null;
+  private spectateRepulsorButtonText: Phaser.GameObjects.Text | null = null;
   private hud!: Hud;
   private bossStatusText!: Phaser.GameObjects.Text;
   private state: GameState = GameState.PLAYING;
   private debrisRespawnTimer: Phaser.Time.TimerEvent | null = null;
   private rareSalvageTimer = 0;
+  private wormholeEventTimer = 0;
+  private wormholeEventPhase = 0;
+  private scheduledWormholePhase: number | null = null;
+  private naturalWormholeSpawnedThisRun = false;
   private countdownTimer = 0;
   private countdownDurationMs = GameScene.START_COUNTDOWN_MS;
   private starfield!: Phaser.GameObjects.Graphics;
@@ -240,6 +270,15 @@ export class GameScene extends Phaser.Scene {
   private lastGateActive = false;
   private runMode: RunMode = RunMode.ARCADE;
   private activeRunBoosts: RunBoosts | null = null;
+  private activePaletteId: RuntimePaletteId = 'blue';
+  private restorePaletteId: RuntimePaletteId = 'blue';
+  private pocketActive = false;
+  private pocketTimerMs = 0;
+  private pocketEntryPhase = 1;
+  private pocketRareSalvageTimer = 0;
+  private pocketBonusTimer = 0;
+  private pocketBoundaryGraphic: Phaser.GameObjects.Graphics | null = null;
+  private pocketBoundaryBurnMs = 0;
   private activeCommSpeaker: CommSpeaker | null = null;
   private activeCommPriority = 0;
   private activeCommVisibleUntil = 0;
@@ -313,13 +352,18 @@ export class GameScene extends Phaser.Scene {
   create(data?: MenuHandoff): void {
     this.events.once('shutdown', this.cleanup, this);
     setLayoutSize(this.scale.width, this.scale.height);
-    applyColorPalette(getSettings().paletteId);
+    const initialPaletteId = getSettings().paletteId;
+    applyColorPalette(initialPaletteId);
     warmMusicCache(this);
     const handoff = data ?? {};
     const layout = getLayout();
     this.renderTuning = getRenderTuningProfile(layout);
     this.state = GameState.COUNTDOWN;
     this.rareSalvageTimer = 0;
+    this.wormholeEventTimer = 0;
+    this.wormholeEventPhase = 0;
+    this.scheduledWormholePhase = this.rollScheduledWormholePhase();
+    this.naturalWormholeSpawnedThisRun = false;
     this.countdownTimer = GameScene.START_COUNTDOWN_MS;
     this.resultData = null;
     this.resultUi = [];
@@ -338,18 +382,29 @@ export class GameScene extends Phaser.Scene {
     this.enemyEntranceSfxPlayed = false;
     this.invulnerableTimer = 2000;
     this.bombPickups = [];
+    this.wormholePickups = [];
     this.versusLaserPickups = [];
     this.versusLaserStrikes = [];
     this.versusLaserLastSendAt = 0;
     this.versusLaserRecvDedup = new Set<number>();
-    this.versusPingMarkers = [];
-    this.versusPingRecvDedup = new Set<number>();
+    this.versusRepulsorCharges = [];
+    this.versusRepulsorApplied = new WeakSet<VersusRepulsorCharge>();
+    this.versusRepulsorRecvDedup = new Set<number>();
     this.spectateLaserCharges = 0;
     this.spectateLaserAccumMs = 0;
-    this.spectatePingLastSendMs = 0;
+    this.spectateRepulsorLastSendMs = 0;
     this.spectateInventoryUi = [];
-    this.spectateLaserChargesText = null;
+    this.spectateLaserButtonText = null;
+    this.spectateRepulsorButtonText = null;
     this.scoreRecordingBlocked = false;
+    this.activePaletteId = initialPaletteId;
+    this.restorePaletteId = initialPaletteId;
+    this.pocketActive = false;
+    this.pocketTimerMs = 0;
+    this.pocketEntryPhase = 1;
+    this.pocketRareSalvageTimer = 0;
+    this.pocketBonusTimer = 0;
+    this.pocketBoundaryBurnMs = 0;
     this.localTerminalFired = false;
     this.localOutcome = null;
     this.peerOutcome = null;
@@ -454,6 +509,7 @@ export class GameScene extends Phaser.Scene {
       this.difficultySystem.setBoosts(this.activeRunBoosts.bonusDropChanceAdd);
       this.scoreSystem.setScoreMult(this.activeRunBoosts.scoreMult);
     }
+    this.salvageSystem.setPocketYieldMult(1);
 
     // Liaison is locked to the player's selected corp affiliation. No corp = no liaison.
     this.liaisonComm = null;
@@ -566,6 +622,9 @@ export class GameScene extends Phaser.Scene {
         if (onScreen) {
           const color = d.isRare ? 0xff44ff : COLORS.SALVAGE;
           this.playerDebris.push(new ShipDebris(this, d.x, d.y, d.driftVx, d.driftVy, color, 20));
+        }
+        if (!runFrozen && d.isRare) {
+          this.maybeSpawnWormholeFromRareDebris(d, onScreen);
         }
         this.salvageSystem.removeDebris(d);
         d.destroy();
@@ -722,6 +781,27 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Versus sabotage laser pickups (versus mode only — list stays empty otherwise).
+    for (let i = this.wormholePickups.length - 1; i >= 0; i--) {
+      const wormhole = this.wormholePickups[i];
+      wormhole.update(effectiveDelta);
+      if (!wormhole.active) {
+        wormhole.destroy();
+        this.wormholePickups.splice(i, 1);
+        continue;
+      }
+
+      if (gameplayActive) {
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, wormhole.x, wormhole.y);
+        if (wormhole.isCollectable() && dist < PLAYER_RADIUS + wormhole.radius) {
+          wormhole.active = false;
+          wormhole.destroy();
+          this.wormholePickups.splice(i, 1);
+          this.enterWormholePocket();
+          break;
+        }
+      }
+    }
+
     for (let i = this.versusLaserPickups.length - 1; i >= 0; i--) {
       const pickup = this.versusLaserPickups[i];
       pickup.update(effectiveDelta);
@@ -822,6 +902,9 @@ export class GameScene extends Phaser.Scene {
         this.rareSalvageTimer = 0;
       }
     }
+
+    this.updateScheduledWormhole(currentPhase, effectiveDelta, runFrozen, paused, gameplayActive);
+    this.updatePocketLoot(effectiveDelta, runFrozen, paused, gameplayActive);
 
     // Assign salvage targets to NPCs
     const npcs = this.difficultySystem.getNPCs();
@@ -949,10 +1032,26 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Check extraction — player can extract any time they enter the active gate
-    const activeGate = this.extractionSystem.getGate();
-    if (gameplayActive && activeGate && this.bankingSystem.checkExtraction(activeGate)) {
-      this.handleExtraction();
+    if (this.pocketActive && gameplayActive) {
+      this.pocketTimerMs = Math.max(0, this.pocketTimerMs - effectiveDelta);
+      if (this.pocketTimerMs <= 0) {
+        this.exitWormholePocket('timeout');
+      }
+    }
+    if (this.updatePocketBoundary(effectiveDelta, gameplayActive, runFrozen, paused)) {
       return;
+    }
+
+    const activeGate = this.extractionSystem.getGate();
+    if (gameplayActive && activeGate) {
+      if (this.pocketActive) {
+        if (activeGate.extractable && this.isPlayerInsideGate(activeGate)) {
+          this.exitWormholePocket('gate');
+        }
+      } else if (this.bankingSystem.checkExtraction(activeGate)) {
+        this.handleExtraction();
+        return;
+      }
     }
 
     // Check collisions — shield absorbs one hit and destroys/splits the asteroid
@@ -976,9 +1075,9 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    const bossGunIndex = this.difficultySystem.getBossGunCollisionIndex(this.player.x, this.player.y, PLAYER_RADIUS);
+    const bossHardpointIndex = this.difficultySystem.getBossHardpointCollisionIndex(this.player.x, this.player.y, PLAYER_RADIUS);
     const hitBossCore = this.difficultySystem.checkBossCoreContact(this.player.x, this.player.y, PLAYER_RADIUS);
-    if (gameplayActive && !invulnerable && bossGunIndex !== null) {
+    if (gameplayActive && !invulnerable && bossHardpointIndex !== null) {
       this.missionSystem.trackDamageTaken();
       if (this.player.hasShield) {
         this.player.hasShield = false;
@@ -986,7 +1085,7 @@ export class GameScene extends Phaser.Scene {
         playSfx(this, 'playerDeath');
         this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
         invulnerable = true;
-        this.difficultySystem.destroyBossGun(bossGunIndex);
+        this.difficultySystem.destroyBossHardpoint(bossHardpointIndex);
         Overlays.shieldBreakFlash(this);
         Overlays.screenShake(this, 0.008, 180);
       } else {
@@ -1118,10 +1217,10 @@ export class GameScene extends Phaser.Scene {
     // HUD — comm triggers keyed to extractable transitions
     const gateExtractable = this.extractionSystem.isGateActive();
     const gate = this.extractionSystem.getGate();
-    if (!runFrozen && !paused && gate?.justBecameExtractable && Math.random() < 0.35) {
+    if (!this.pocketActive && !runFrozen && !paused && gate?.justBecameExtractable && Math.random() < 0.35) {
       this.tryShowGameplaySlick(getSlickLine('gateOpen'));
     }
-    if (!runFrozen && !paused && !gateExtractable && this.lastGateActive && Math.random() < 0.25) {
+    if (!this.pocketActive && !runFrozen && !paused && !gateExtractable && this.lastGateActive && Math.random() < 0.25) {
       this.tryShowGameplaySlick(getSlickLine('gateClose'), 2400);
     }
     if (!runFrozen) {
@@ -1134,6 +1233,7 @@ export class GameScene extends Phaser.Scene {
       currentPhase,
       this.player.hasShield,
       this.runMode === RunMode.CAMPAIGN ? this.saveSystem.getCampaignLivesDisplay() : null,
+      this.pocketActive ? this.pocketTimerMs : null,
     );
     this.hud.setMissionPillsHidden(
       this.isGameplayCommState()
@@ -1151,7 +1251,7 @@ export class GameScene extends Phaser.Scene {
     this.salvageSystem.addDebris(debris);
 
     // Spawn a shield pickup near the salvage (if player doesn't have one and none exists)
-    if (!this.player.hasShield && this.shields.length === 0) {
+    if (!this.pocketActive && !this.player.hasShield && this.shields.length === 0) {
       const offsetAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
       const offsetDist = debris.salvageRadius * 0.7;
       const sx = debris.x + Math.cos(offsetAngle) * offsetDist;
@@ -1163,11 +1263,11 @@ export class GameScene extends Phaser.Scene {
 
   private spawnPendingDifficultyDrops(): void {
     const shieldDrops = this.difficultySystem.consumeShieldDrops();
-    if (shieldDrops.length > 0) {
+    if (!this.pocketActive && shieldDrops.length > 0) {
       playSfx(this, 'playerDeath');
     }
     for (const drop of shieldDrops) {
-      if (this.shields.length < 3) {
+      if (!this.pocketActive && this.shields.length < 3) {
         this.shields.push(new ShieldPickup(this, drop.x, drop.y, drop.vx * 0.5, drop.vy * 0.5));
       }
     }
@@ -1210,6 +1310,146 @@ export class GameScene extends Phaser.Scene {
     });
     this.debrisList.push(debris);
     this.salvageSystem.addDebris(debris);
+  }
+
+  private spawnPocketBonus(): void {
+    const layout = getLayout();
+    const margin = 36;
+    const x = Phaser.Math.Between(layout.arenaLeft + margin, layout.arenaRight - margin);
+    const y = Phaser.Math.Between(layout.arenaTop + margin, layout.arenaBottom - margin);
+    const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    const speed = Phaser.Math.FloatBetween(35, 85);
+    this.bonusPickups.push(new BonusPickup(
+      this,
+      x,
+      y,
+      WORMHOLE_POCKET_BONUS_POINTS,
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed,
+      0,
+    ));
+  }
+
+  private updatePocketLoot(delta: number, runFrozen: boolean, paused: boolean, gameplayActive: boolean): void {
+    if (!this.pocketActive || runFrozen || paused || !gameplayActive) {
+      return;
+    }
+
+    this.pocketRareSalvageTimer += delta;
+    while (this.pocketRareSalvageTimer >= WORMHOLE_POCKET_RARE_SALVAGE_INTERVAL_MS) {
+      this.pocketRareSalvageTimer -= WORMHOLE_POCKET_RARE_SALVAGE_INTERVAL_MS;
+      this.spawnRareDebris(this.extractionSystem.getPhaseCount());
+    }
+
+    this.pocketBonusTimer += delta;
+    while (this.pocketBonusTimer >= WORMHOLE_POCKET_BONUS_INTERVAL_MS) {
+      this.pocketBonusTimer -= WORMHOLE_POCKET_BONUS_INTERVAL_MS;
+      this.spawnPocketBonus();
+    }
+  }
+
+  private updatePocketBoundary(delta: number, gameplayActive: boolean, runFrozen: boolean, paused: boolean): boolean {
+    if (!this.pocketActive) {
+      this.pocketBoundaryBurnMs = 0;
+      this.pocketBoundaryGraphic?.setVisible(false);
+      return false;
+    }
+
+    this.drawPocketBoundary();
+    if (runFrozen || paused || !gameplayActive) {
+      return false;
+    }
+
+    const layout = getLayout();
+    const radius = this.getPocketBoundaryRadius();
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, layout.centerX, layout.centerY);
+    const outside = dist + PLAYER_RADIUS > radius;
+    if (!outside) {
+      this.pocketBoundaryBurnMs = Math.max(0, this.pocketBoundaryBurnMs - delta * 1.8);
+      return false;
+    }
+
+    this.pocketBoundaryBurnMs += delta;
+    if (this.pocketBoundaryBurnMs < WORMHOLE_POCKET_BOUNDARY_BURN_MS) {
+      return false;
+    }
+
+    this.missionSystem.trackDamageTaken();
+    this.pocketBoundaryBurnMs = 0;
+    if (this.player.hasShield) {
+      this.player.hasShield = false;
+      this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
+      playSfx(this, 'shieldLoss');
+      Overlays.shieldBreakFlash(this);
+      Overlays.screenShake(this, 0.01, 220);
+      return false;
+    }
+
+    playSfx(this, 'playerDeath');
+    this.handleDeath('laser');
+    return true;
+  }
+
+  private getPocketBoundaryRadius(): number {
+    const layout = getLayout();
+    const startRadius = Math.sqrt(layout.arenaWidth * layout.arenaWidth + layout.arenaHeight * layout.arenaHeight) * 0.58;
+    const endRadius = Math.min(layout.arenaWidth, layout.arenaHeight) * WORMHOLE_POCKET_BOUNDARY_END_RADIUS_MULT;
+    const progress = 1 - Phaser.Math.Clamp(this.pocketTimerMs / WORMHOLE_POCKET_DURATION_MS, 0, 1);
+    return Phaser.Math.Linear(startRadius, endRadius, progress);
+  }
+
+  private drawPocketBoundary(): void {
+    if (!this.pocketBoundaryGraphic) {
+      this.pocketBoundaryGraphic = this.add.graphics().setDepth(7);
+    }
+
+    const layout = getLayout();
+    const g = this.pocketBoundaryGraphic;
+    const radius = this.getPocketBoundaryRadius();
+    const progress = 1 - Phaser.Math.Clamp(this.pocketTimerMs / WORMHOLE_POCKET_DURATION_MS, 0, 1);
+    const pulse = 0.5 + Math.sin(this.time.now * 0.012) * 0.5;
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, layout.centerX, layout.centerY);
+    const outside = dist + PLAYER_RADIUS > radius;
+    const burn = Phaser.Math.Clamp(this.pocketBoundaryBurnMs / WORMHOLE_POCKET_BOUNDARY_BURN_MS, 0, 1);
+
+    g.setVisible(true);
+    g.clear();
+
+    const dangerAlpha = 0.055 + progress * 0.045 + (outside ? burn * 0.075 + pulse * 0.025 : 0);
+    g.fillStyle(COLORS.BEAM, dangerAlpha);
+    g.beginPath();
+    g.moveTo(layout.arenaLeft, layout.arenaTop);
+    g.lineTo(layout.arenaRight, layout.arenaTop);
+    g.lineTo(layout.arenaRight, layout.arenaBottom);
+    g.lineTo(layout.arenaLeft, layout.arenaBottom);
+    g.closePath();
+    g.moveTo(layout.centerX + radius, layout.centerY);
+    g.arc(layout.centerX, layout.centerY, radius, 0, Math.PI * 2, true);
+    g.closePath();
+    g.fillPath();
+
+    g.lineStyle(2.5 + pulse * 1.5, outside ? COLORS.BEAM : COLORS.GATE, outside ? 0.85 : 0.55 + progress * 0.25);
+    g.strokeCircle(layout.centerX, layout.centerY, radius);
+    g.lineStyle(1, COLORS.HUD, 0.2 + pulse * 0.18);
+    g.strokeCircle(layout.centerX, layout.centerY, radius + 8 + pulse * 8);
+    g.lineStyle(1, COLORS.GATE, 0.12 + progress * 0.16);
+    g.strokeCircle(layout.centerX, layout.centerY, Math.max(8, radius - 18));
+
+    const tickCount = 24;
+    const tickLen = 8 + progress * 10;
+    const rotation = this.time.now * 0.0008;
+    g.lineStyle(1.2, outside ? COLORS.BEAM : COLORS.GATE, outside ? 0.55 : 0.28);
+    for (let i = 0; i < tickCount; i += 1) {
+      const a = rotation + i * ((Math.PI * 2) / tickCount);
+      const inner = radius - tickLen;
+      const outer = radius + tickLen * 0.35;
+      g.lineBetween(
+        layout.centerX + Math.cos(a) * inner,
+        layout.centerY + Math.sin(a) * inner,
+        layout.centerX + Math.cos(a) * outer,
+        layout.centerY + Math.sin(a) * outer,
+      );
+    }
   }
 
   private scheduleDebrisRespawn(): void {
@@ -1296,7 +1536,7 @@ export class GameScene extends Phaser.Scene {
     this.hidePauseMenu();
     this.refreshPauseUi();
     playSfx(this, 'playerDeath');
-    if (!campaignSoftRespawn) {
+    if (!campaignSoftRespawn && !this.multiplayer) {
       setResultMusic(this);
     }
     const currentPhase = this.extractionSystem.getPhaseCount();
@@ -1340,6 +1580,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private softRespawnForCampaign(): void {
+    this.exitWormholePocket('timeout');
     // Wipe arena (no kill credit — this is the cost of dying, not a clear).
     this.clearBoard(true, false);
     for (const b of this.bombPickups) b.destroy();
@@ -1372,7 +1613,10 @@ export class GameScene extends Phaser.Scene {
     this.tweens.timeScale = 1;
     this.hidePauseMenu();
     this.refreshPauseUi();
-    setResultMusic(this);
+    this.playGateTravelSfx();
+    if (!this.multiplayer) {
+      setResultMusic(this);
+    }
     const scoreRecorded = !this.scoreRecordingBlocked;
     let missionBonus = 0;
     if (scoreRecorded) {
@@ -1599,12 +1843,17 @@ export class GameScene extends Phaser.Scene {
     this.bonusPickups = [];
     for (const bomb of this.bombPickups) bomb.destroy();
     this.bombPickups = [];
+    for (const wormhole of this.wormholePickups) wormhole.destroy();
+    this.wormholePickups = [];
+    this.pocketBoundaryGraphic?.destroy();
+    this.pocketBoundaryGraphic = null;
     for (const p of this.versusLaserPickups) p.destroy();
     this.versusLaserPickups = [];
     for (const s of this.versusLaserStrikes) s.destroy();
     this.versusLaserStrikes = [];
-    for (const m of this.versusPingMarkers) m.destroy();
-    this.versusPingMarkers = [];
+    for (const charge of this.versusRepulsorCharges) charge.destroy();
+    this.versusRepulsorCharges = [];
+    this.versusRepulsorApplied = new WeakSet<VersusRepulsorCharge>();
     this.tearDownSpectateInventoryUi();
     for (const pd of this.playerDebris) pd.destroy();
     this.playerDebris = [];
@@ -1723,15 +1972,15 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    handoff.session.onBroadcast(NET_EVENT.MATCH_PING, (payload) => {
-      const p = payload as MatchPingPayload | undefined;
+    handoff.session.onBroadcast(NET_EVENT.MATCH_REPULSOR, (payload) => {
+      const p = payload as MatchRepulsorPayload | undefined;
       if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') return;
       this.notePeerSeen();
       if (typeof p.t === 'number') {
-        if (this.versusPingRecvDedup.has(p.t)) return;
-        this.versusPingRecvDedup.add(p.t);
+        if (this.versusRepulsorRecvDedup.has(p.t)) return;
+        this.versusRepulsorRecvDedup.add(p.t);
       }
-      this.spawnIncomingPing(p.x, p.y);
+      this.spawnIncomingRepulsor(p.x, p.y);
     });
 
     handoff.session.onBroadcast(NET_EVENT.MATCH_LASER, (payload) => {
@@ -1894,32 +2143,38 @@ export class GameScene extends Phaser.Scene {
     this.refreshSpectateInventoryUi();
   }
 
+  private fireSpectateRandomLaser(): void {
+    const lanes: VersusLaserLane[] = ['top', 'middle', 'bottom', 'left', 'center', 'right'];
+    this.fireSpectateLaser(lanes[Math.floor(Math.random() * lanes.length)]);
+  }
+
   /**
-   * Spectate-only: tap anywhere on the peer mirror to send a cosmetic ping
-   * marker that lights up at the same arena coord on the peer's screen. Local
-   * rate-limit only; no charge cost.
+   * Spectate-only: tap anywhere on the peer mirror to place a delayed repulsor
+   * charge that shoves nearby ships/objects on the live player's arena.
    */
-  private fireSpectatePing(arenaXFraction: number, arenaYFraction: number): void {
+  private fireSpectateRepulsor(arenaXFraction: number, arenaYFraction: number): void {
     if (!this.multiplayer) return;
     const now = Date.now();
-    if (now - this.spectatePingLastSendMs < SPECTATE_PING_COOLDOWN_MS) return;
-    this.spectatePingLastSendMs = now;
-    const payload: MatchPingPayload = {
+    if (now - this.spectateRepulsorLastSendMs < SPECTATE_REPULSOR_COOLDOWN_MS) return;
+    this.spectateRepulsorLastSendMs = now;
+    const payload: MatchRepulsorPayload = {
       x: Math.max(0, Math.min(1, arenaXFraction)),
       y: Math.max(0, Math.min(1, arenaYFraction)),
       t: now - this.matchClockStartMs,
     };
-    this.multiplayer.session.broadcast(NET_EVENT.MATCH_PING, payload).catch((err) => {
-      console.warn('[GameScene] spectate ping broadcast failed', err);
+    this.versusRepulsorRecvDedup.add(payload.t);
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_REPULSOR, payload).catch((err) => {
+      console.warn('[GameScene] spectate repulsor broadcast failed', err);
     });
+    this.spawnIncomingRepulsor(payload.x, payload.y);
   }
 
-  /** Receiver: spawn a cosmetic ping marker at peer-supplied arena coords. */
-  private spawnIncomingPing(arenaXFraction: number, arenaYFraction: number): void {
+  /** Receiver: spawn a repulsor charge at peer-supplied arena coords. */
+  private spawnIncomingRepulsor(arenaXFraction: number, arenaYFraction: number): void {
     const layout = getLayout();
     const x = layout.arenaLeft + Math.max(0, Math.min(1, arenaXFraction)) * layout.arenaWidth;
     const y = layout.arenaTop + Math.max(0, Math.min(1, arenaYFraction)) * layout.arenaHeight;
-    this.versusPingMarkers.push(new VersusPingMarker(this, x, y));
+    this.versusRepulsorCharges.push(new VersusRepulsorCharge(this, x, y));
   }
 
   private broadcastLocalTerminal(outcome: VersusOutcome): void {
@@ -2124,7 +2379,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.tickResultPeerHeartbeat(delta);
     this.tickSpectateInventory(delta);
-    this.tickPingMarkers(delta);
+    this.tickRepulsorCharges(delta);
     this.tickMirrorLaserEchoes(delta);
     const mirrorFrameMs = this.versusSpectating
       ? this.renderTuning.mirrorSpectateRenderFrameMs
@@ -2137,14 +2392,71 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private tickPingMarkers(delta: number): void {
-    for (let i = this.versusPingMarkers.length - 1; i >= 0; i--) {
-      const m = this.versusPingMarkers[i];
-      m.update(delta);
-      if (!m.active) {
-        m.destroy();
-        this.versusPingMarkers.splice(i, 1);
+  private tickRepulsorCharges(delta: number): void {
+    for (let i = this.versusRepulsorCharges.length - 1; i >= 0; i--) {
+      const charge = this.versusRepulsorCharges[i];
+      charge.update(delta);
+      if (!this.versusSpectating && charge.detonated && !this.versusRepulsorApplied.has(charge)) {
+        this.versusRepulsorApplied.add(charge);
+        this.applyRepulsorBlast(charge.x, charge.y);
       }
+      if (!charge.active) {
+        charge.destroy();
+        this.versusRepulsorCharges.splice(i, 1);
+      }
+    }
+  }
+
+  private applyRepulsorBlast(cx: number, cy: number): void {
+    const push = (
+      target: { x: number; y: number; radius?: number },
+      apply: (ix: number, iy: number) => void,
+      force: number,
+    ): void => {
+      const dx = target.x - cx;
+      const dy = target.y - cy;
+      const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      const radius = target.radius ?? 0;
+      if (dist > SPECTATE_REPULSOR_RADIUS + radius) return;
+      const falloff = 1 - Math.min(1, dist / Math.max(1, SPECTATE_REPULSOR_RADIUS + radius));
+      const impulse = force * (0.25 + falloff * 0.75);
+      apply((dx / dist) * impulse, (dy / dist) * impulse);
+    };
+
+    if (!this.player.destroyed) {
+      push(this.player, (ix, iy) => this.player.applyImpulse(ix, iy), SPECTATE_REPULSOR_PLAYER_FORCE);
+    }
+
+    for (const drifter of this.difficultySystem.getDrifters()) {
+      if (!drifter.active) continue;
+      push(drifter, (ix, iy) => {
+        drifter.vx += ix;
+        drifter.vy += iy;
+      }, SPECTATE_REPULSOR_OBJECT_FORCE);
+    }
+    for (const debris of this.debrisList) {
+      if (!debris.active) continue;
+      push(debris, (ix, iy) => {
+        const mutable = debris as unknown as { vx: number; vy: number; driftVx: number; driftVy: number };
+        mutable.vx += ix;
+        mutable.vy += iy;
+        mutable.driftVx = mutable.vx;
+        mutable.driftVy = mutable.vy;
+      }, SPECTATE_REPULSOR_OBJECT_FORCE);
+    }
+    for (const npc of this.difficultySystem.getNPCs()) {
+      if (!npc.active) continue;
+      push(npc, (ix, iy) => npc.applyImpulse(ix, iy), SPECTATE_REPULSOR_OBJECT_FORCE);
+    }
+    for (const enemy of this.difficultySystem.getEnemies()) {
+      if (!enemy.active) continue;
+      push(enemy, (ix, iy) => enemy.applyImpulse(ix, iy), SPECTATE_REPULSOR_OBJECT_FORCE);
+    }
+    for (const pickup of [...this.shields, ...this.bonusPickups, ...this.bombPickups, ...this.versusLaserPickups]) {
+      push(pickup, (ix, iy) => {
+        pickup.vx += ix;
+        pickup.vy += iy;
+      }, SPECTATE_REPULSOR_OBJECT_FORCE);
     }
   }
 
@@ -2322,7 +2634,7 @@ export class GameScene extends Phaser.Scene {
   private updateMirrorViewport(): void {
     if (!this.versusSpectating) {
       this.mirrorBg?.clear();
-      this.mirrorEntities?.clear();
+      this.updateLiveMirrorShip();
       this.mirrorLabel?.setVisible(false);
       this.mirrorWaiting?.setVisible(false);
       return;
@@ -2416,6 +2728,74 @@ export class GameScene extends Phaser.Scene {
 
     const aliveTag = newest.snap.ship.alive ? '' : 'KIA  ';
     this.mirrorLabel?.setText(`${this.getPeerPilotName()} // ${aliveTag}${newest.snap.score} // PH ${newest.snap.phase}`);
+  }
+
+  private updateLiveMirrorShip(): void {
+    const rect = this.mirrorRect;
+    const g = this.mirrorEntities;
+    if (!rect || !g) return;
+    g.setVisible(true);
+    g.clear();
+
+    if (this.peerSnapshots.length === 0 || this.state === GameState.RESULTS) {
+      return;
+    }
+
+    const newest = this.peerSnapshots[this.peerSnapshots.length - 1];
+    const older = this.peerSnapshots.length > 1 ? this.peerSnapshots[0] : newest;
+    const dt = Math.max(1, newest.snap.t - older.snap.t);
+    const localElapsed = Date.now() - newest.arr;
+    const renderT = newest.snap.t + localElapsed - GameScene.MIRROR_INTERP_BUFFER_MS;
+    let alpha = (renderT - older.snap.t) / dt;
+    if (alpha < 0) alpha = 0;
+    else if (alpha > 1) alpha = 1;
+
+    const mapX = (fx: number) => {
+      const c = fx < 0 ? 0 : fx > 1 ? 1 : fx;
+      return rect.x + c * rect.w;
+    };
+    const mapY = (fy: number) => {
+      const c = fy < 0 ? 0 : fy > 1 ? 1 : fy;
+      return rect.y + c * rect.h;
+    };
+
+    const sFx = older.snap.ship.x + (newest.snap.ship.x - older.snap.ship.x) * alpha;
+    const sFy = older.snap.ship.y + (newest.snap.ship.y - older.snap.ship.y) * alpha;
+    const sAngle = lerpAngleShortest(older.snap.ship.angle, newest.snap.ship.angle, alpha);
+    const sx = mapX(sFx);
+    const sy = mapY(sFy);
+    const shipR = GameScene.MIRROR_SHIP_RADIUS;
+
+    if (newest.snap.ship.alive) {
+      const x1 = sx + Math.cos(sAngle) * shipR;
+      const y1 = sy + Math.sin(sAngle) * shipR;
+      const x2 = sx + Math.cos(sAngle + (Math.PI * 2) / 3) * shipR;
+      const y2 = sy + Math.sin(sAngle + (Math.PI * 2) / 3) * shipR;
+      const x3 = sx + Math.cos(sAngle - (Math.PI * 2) / 3) * shipR;
+      const y3 = sy + Math.sin(sAngle - (Math.PI * 2) / 3) * shipR;
+      g.lineStyle(1.3, COLORS.PLAYER, 0.38);
+      g.fillStyle(COLORS.PLAYER, 0.1);
+      g.beginPath();
+      g.moveTo(x1, y1);
+      g.lineTo(x2, y2);
+      g.lineTo(x3, y3);
+      g.closePath();
+      g.fillPath();
+      g.strokePath();
+      if (newest.snap.ship.shielded) {
+        g.lineStyle(1, COLORS.SHIELD, 0.24);
+        g.strokeCircle(sx, sy, shipR * 1.6);
+      }
+    } else {
+      const markR = shipR * 0.7;
+      g.lineStyle(1.15, COLORS.HAZARD, 0.28);
+      g.beginPath();
+      g.moveTo(sx - markR, sy - markR);
+      g.lineTo(sx + markR, sy + markR);
+      g.moveTo(sx + markR, sy - markR);
+      g.lineTo(sx - markR, sy + markR);
+      g.strokePath();
+    }
   }
 
   private updateMirrorBackdrop(): void {
@@ -3379,7 +3759,7 @@ export class GameScene extends Phaser.Scene {
     // Reset spectate inventory state and start the regen timer.
     this.spectateLaserCharges = 0;
     this.spectateLaserAccumMs = 0;
-    this.spectatePingLastSendMs = 0;
+    this.spectateRepulsorLastSendMs = 0;
     this.showVersusWaitingUi();
     this.buildSpectateInventoryUi();
   }
@@ -3402,90 +3782,70 @@ export class GameScene extends Phaser.Scene {
   private buildSpectateInventoryUi(): void {
     this.tearDownSpectateInventoryUi();
     const layout = getLayout();
-    const btnW = 64;
-    const btnH = 36;
-    const arenaTop = layout.arenaTop;
-    const arenaH = layout.arenaHeight;
-    const arenaW = layout.arenaWidth;
+    const btnGap = 10;
+    const btnH = 34;
+    const sidePad = Math.max(18, Math.round(layout.gameWidth * 0.06));
+    const btnW = Math.floor((layout.gameWidth - sidePad * 2 - btnGap) / 2);
+    const gutterH = Math.max(1, layout.gameHeight - layout.arenaBottom);
+    const controlsY = Math.min(
+      layout.gameHeight - btnH / 2 - 8,
+      layout.arenaBottom + Phaser.Math.Clamp(Math.round(gutterH * 0.45), 20, 34),
+    );
 
-    const drawLaneButton = (cx: number, cy: number, label: string, lane: VersusLaserLane): void => {
+    const drawControlButton = (
+      cx: number,
+      label: string,
+      onPress?: () => void,
+    ): Phaser.GameObjects.Text => {
       const bg = this.add.graphics().setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH);
       bg.fillStyle(COLORS.BG, 0.65);
-      bg.fillRoundedRect(cx - btnW / 2, cy - btnH / 2, btnW, btnH, 8);
+      bg.fillRoundedRect(cx - btnW / 2, controlsY - btnH / 2, btnW, btnH, 8);
       bg.lineStyle(1.5, 0xc070ff, 0.7);
-      bg.strokeRoundedRect(cx - btnW / 2, cy - btnH / 2, btnW, btnH, 8);
+      bg.strokeRoundedRect(cx - btnW / 2, controlsY - btnH / 2, btnW, btnH, 8);
       this.spectateInventoryUi.push(bg);
-      const labelText = this.add.text(cx, cy, label, {
+      const labelText = this.add.text(cx, controlsY, label, {
         fontFamily: UI_FONT,
-        fontSize: readableFontSize(13),
+        fontSize: readableFontSize(12),
         color: '#c070ff',
         align: 'center',
       }).setOrigin(0.5).setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH + 1);
       this.spectateInventoryUi.push(labelText);
-      const hit = this.add.zone(cx - btnW / 2, cy - btnH / 2, btnW, btnH)
-        .setOrigin(0, 0)
-        .setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH + 2)
-        .setInteractive({ useHandCursor: true });
-      hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-        event.stopPropagation();
-        if (this.spectateLaserCharges <= 0) return;
-        playUiSelectSfx(this);
-        this.fireSpectateLaser(lane);
-      });
-      this.spectateInventoryUi.push(hit);
+      if (onPress) {
+        const hit = this.add.zone(cx - btnW / 2, controlsY - btnH / 2, btnW, btnH)
+          .setOrigin(0, 0)
+          .setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH + 2)
+          .setInteractive({ useHandCursor: true });
+        hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+          event.stopPropagation();
+          if (this.spectateLaserCharges <= 0) return;
+          playUiSelectSfx(this);
+          onPress();
+        });
+        this.spectateInventoryUi.push(hit);
+      }
+      return labelText;
     };
 
-    // Right-edge column: horizontal sweeps (TOP / MID / BOT bands).
-    const horizontalCx = layout.arenaRight - btnW / 2 - 18;
-    const horizontalYs = [arenaTop + arenaH * 0.25, arenaTop + arenaH * 0.5, arenaTop + arenaH * 0.75];
-    const horizontalLanes: { lane: VersusLaserLane; label: string }[] = [
-      { lane: 'top', label: 'TOP' },
-      { lane: 'middle', label: 'MID' },
-      { lane: 'bottom', label: 'BOT' },
-    ];
-    horizontalLanes.forEach((entry, i) => drawLaneButton(horizontalCx, horizontalYs[i], entry.label, entry.lane));
-
-    // Top-edge row: vertical sweeps (LEFT / CTR / RIGHT bands).
-    const verticalCy = arenaTop + btnH / 2 + 18;
-    const verticalXs = [
-      layout.arenaLeft + arenaW * 0.25,
-      layout.arenaLeft + arenaW * 0.5,
-      layout.arenaLeft + arenaW * 0.75,
-    ];
-    const verticalLanes: { lane: VersusLaserLane; label: string }[] = [
-      { lane: 'left', label: 'LEFT' },
-      { lane: 'center', label: 'CTR' },
-      { lane: 'right', label: 'RIGHT' },
-    ];
-    verticalLanes.forEach((entry, i) => drawLaneButton(verticalXs[i], verticalCy, entry.label, entry.lane));
-
-    // Charge counter + regen tick label, anchored low-left of arena where
-    // it doesn't collide with either button strip.
-    const chargesText = this.add.text(layout.arenaLeft + 18, layout.arenaBottom - 26, '', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(12),
-      color: '#c070ff',
-      align: 'left',
-      stroke: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
-      strokeThickness: 3,
-    }).setOrigin(0, 0).setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH + 1);
-    this.spectateInventoryUi.push(chargesText);
-    this.spectateLaserChargesText = chargesText;
+    const laserX = sidePad + btnW / 2;
+    const repulsorX = laserX + btnW + btnGap;
+    this.spectateLaserButtonText = drawControlButton(laserX, 'LASER', () => {
+      this.fireSpectateRandomLaser();
+    });
+    this.spectateRepulsorButtonText = drawControlButton(repulsorX, 'REPULSOR');
 
     // Mirror tap zone: tap anywhere on the peer arena (except the lane button
-    // strip) to send a ping. Lower depth than the lane buttons so they
-    // intercept their own taps first.
-    const pingZone = this.add.zone(layout.arenaLeft, layout.arenaTop, layout.arenaWidth, layout.arenaHeight)
+    // strip) to place a repulsor charge.
+    const repulsorZone = this.add.zone(layout.arenaLeft, layout.arenaTop, layout.arenaWidth, layout.arenaHeight)
       .setOrigin(0, 0)
       .setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH - 1)
       .setInteractive({ useHandCursor: true });
-    pingZone.on('pointerdown', (pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+    repulsorZone.on('pointerdown', (pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       const fx = (pointer.x - layout.arenaLeft) / Math.max(1, layout.arenaWidth);
       const fy = (pointer.y - layout.arenaTop) / Math.max(1, layout.arenaHeight);
-      this.fireSpectatePing(fx, fy);
+      this.fireSpectateRepulsor(fx, fy);
     });
-    this.spectateInventoryUi.push(pingZone);
+    this.spectateInventoryUi.push(repulsorZone);
 
     this.refreshSpectateInventoryUi();
   }
@@ -3493,18 +3853,31 @@ export class GameScene extends Phaser.Scene {
   private tearDownSpectateInventoryUi(): void {
     for (const obj of this.spectateInventoryUi) obj.destroy();
     this.spectateInventoryUi = [];
-    this.spectateLaserChargesText = null;
+    this.spectateLaserButtonText = null;
+    this.spectateRepulsorButtonText = null;
   }
 
   private refreshSpectateInventoryUi(): void {
-    if (!this.spectateLaserChargesText) return;
     const charges = this.spectateLaserCharges;
-    if (charges < SPECTATE_LASER_MAX_CHARGES) {
-      const remainMs = Math.max(0, SPECTATE_LASER_REGEN_MS - this.spectateLaserAccumMs);
-      const secs = Math.ceil(remainMs / 1000);
-      this.spectateLaserChargesText.setText(`LASER ×${charges} // +1 IN ${secs}s`);
+    if (this.spectateLaserButtonText) {
+      if (charges < SPECTATE_LASER_MAX_CHARGES) {
+        const remainMs = Math.max(0, SPECTATE_LASER_REGEN_MS - this.spectateLaserAccumMs);
+        const secs = Math.ceil(remainMs / 1000);
+        this.spectateLaserButtonText.setText(`LASER x${charges}\n+1 IN ${secs}s`);
+        this.spectateLaserButtonText.setAlpha(charges > 0 ? 1 : 0.58);
+      } else {
+        this.spectateLaserButtonText.setText(`LASER x${charges}\nREADY`);
+        this.spectateLaserButtonText.setAlpha(1);
+      }
+    }
+    if (!this.spectateRepulsorButtonText) return;
+    const repulsorRemainMs = Math.max(0, SPECTATE_REPULSOR_COOLDOWN_MS - (Date.now() - this.spectateRepulsorLastSendMs));
+    if (repulsorRemainMs > 0) {
+      this.spectateRepulsorButtonText.setText(`REPULSOR\n${Math.ceil(repulsorRemainMs / 1000)}s`);
+      this.spectateRepulsorButtonText.setAlpha(0.58);
     } else {
-      this.spectateLaserChargesText.setText(`LASER ×${charges} // MAX`);
+      this.spectateRepulsorButtonText.setText('REPULSOR\nTAP ARENA');
+      this.spectateRepulsorButtonText.setAlpha(1);
     }
   }
 
@@ -3585,14 +3958,11 @@ export class GameScene extends Phaser.Scene {
     } else {
       // Local died and never extracted. We can no longer win — best case is a
       // DRAW if peer also dies. No auto-resolution timer; wait for peer.
-      statusText.setText(`NO EXTRACT // BEST CASE DRAW IF ${peerName} ALSO FALLS`);
+      statusText.setVisible(false);
     }
 
-    // MENU button at bottom (player can bail out instead of watching).
-    const buttonHeight = 40;
-    const buttonWidth = Math.min(layout.gameWidth - 64, 280);
-    const menuY = layout.gameHeight - 28 - buttonHeight / 2;
-    this.createResultButton('MENU', centerX, menuY, buttonWidth, buttonHeight, COLORS.HUD, () => {
+    // Keep the bottom gutter reserved for spectate disruption controls.
+    this.createResultButton('MENU', layout.gameWidth - 52, 28, 84, 30, COLORS.HUD, () => {
       this.scene.start(SCENE_KEYS.MENU);
     });
   }
@@ -3603,6 +3973,7 @@ export class GameScene extends Phaser.Scene {
     this.versusResultRendered = true;
     this.cancelVersusPeerWait();
     this.endVersusSpectate();
+    setResultMusic(this);
     const peer: VersusOutcome = this.peerOutcome ?? {
       cause: 'survived',
       score: this.getLatestPeerScore(),
@@ -3996,6 +4367,12 @@ export class GameScene extends Phaser.Scene {
     }
     this.bombPickups = [];
 
+    for (const wormhole of this.wormholePickups) {
+      this.playerDebris.push(new ShipDebris(this, wormhole.x, wormhole.y, wormhole.vx, wormhole.vy, COLORS.GATE, wormhole.radius));
+      wormhole.destroy();
+    }
+    this.wormholePickups = [];
+
     for (const p of this.versusLaserPickups) p.destroy();
     this.versusLaserPickups = [];
     for (const s of this.versusLaserStrikes) s.destroy();
@@ -4026,6 +4403,289 @@ export class GameScene extends Phaser.Scene {
 
   // Wires Shift+1..9 / Shift+0 → debugJumpToPhase and exposes the same hook on
   // window so devtools can trigger it. No visible UI; safe to ship.
+  private updateScheduledWormhole(
+    currentPhase: number,
+    delta: number,
+    runFrozen: boolean,
+    paused: boolean,
+    gameplayActive: boolean,
+  ): void {
+    if (this.naturalWormholeSpawnedThisRun || this.scheduledWormholePhase === null || currentPhase !== this.scheduledWormholePhase) {
+      return;
+    }
+
+    if (this.wormholeEventPhase !== currentPhase) {
+      this.wormholeEventPhase = currentPhase;
+      this.wormholeEventTimer = 0;
+    }
+
+    if (runFrozen || paused || !gameplayActive || this.pocketActive || this.multiplayer) {
+      return;
+    }
+
+    if (currentPhase < WORMHOLE_MIN_PHASE || currentPhase > WORMHOLE_MAX_PHASE) {
+      return;
+    }
+
+    if (this.wormholePickups.length > 0) {
+      return;
+    }
+
+    if (this.extractionSystem.getGate() || this.extractionSystem.getClosingGate()) {
+      return;
+    }
+
+    this.wormholeEventTimer += delta;
+    if (this.wormholeEventTimer < WORMHOLE_EVENT_SPAWN_DELAY_MS) {
+      return;
+    }
+
+    this.wormholeEventTimer = -999_999;
+    this.naturalWormholeSpawnedThisRun = true;
+    this.spawnGateLikeWormhole();
+  }
+
+  private maybeSpawnWormholeFromRareDebris(debris: SalvageDebris, onScreen: boolean): void {
+    const currentPhase = this.extractionSystem.getPhaseCount();
+    if (!onScreen || !this.canSpawnWormholeThisPhase(currentPhase)) {
+      return;
+    }
+
+    if (Math.random() >= WORMHOLE_DROP_CHANCE_RARE_SALVAGE) {
+      return;
+    }
+
+    this.naturalWormholeSpawnedThisRun = true;
+    this.spawnWormholePickup(
+      debris.x,
+      debris.y,
+      debris.driftVx * 0.45,
+      debris.driftVy * 0.45,
+    );
+  }
+
+  private canSpawnWormholeThisPhase(phase: number): boolean {
+    if (this.multiplayer || this.pocketActive || this.naturalWormholeSpawnedThisRun) {
+      return false;
+    }
+
+    if (phase < WORMHOLE_MIN_PHASE || phase > WORMHOLE_MAX_PHASE) {
+      return false;
+    }
+
+    if (this.wormholePickups.length > 0) {
+      return false;
+    }
+
+    return !this.extractionSystem.getGate() && !this.extractionSystem.getClosingGate();
+  }
+
+  private rollScheduledWormholePhase(): number | null {
+    if (Math.random() >= WORMHOLE_SCHEDULED_RUN_CHANCE) {
+      return null;
+    }
+
+    return Phaser.Math.Between(WORMHOLE_MIN_PHASE, WORMHOLE_MAX_PHASE);
+  }
+
+  private spawnWormholePickup(
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+    previewTime = 0,
+    activeTime = WORMHOLE_PICKUP_LIFETIME,
+  ): void {
+    if (this.wormholePickups.length > 0) {
+      return;
+    }
+
+    this.wormholePickups.push(new WormholePickup(this, x, y, vx, vy, previewTime, activeTime));
+  }
+
+  private spawnGateLikeWormhole(): void {
+    const layout = getLayout();
+    const inset = EXIT_GATE_RADIUS + 18;
+    const x = Phaser.Math.Between(layout.arenaLeft + inset, layout.arenaRight - inset);
+    const y = Phaser.Math.Between(layout.arenaTop + inset, layout.arenaBottom - inset);
+    this.spawnWormholePickup(x, y, 0, 0, WORMHOLE_EVENT_PREVIEW_MS, WORMHOLE_EVENT_ACTIVE_MS);
+  }
+
+  private spawnDebugWormhole(): void {
+    if (this.multiplayer || this.pocketActive) {
+      return;
+    }
+
+    this.scoreRecordingBlocked = true;
+    this.destroyAllWormholes();
+    this.spawnGateLikeWormhole();
+  }
+
+  private getDebugPickupPosition(offsetY = -44): { x: number; y: number } {
+    const layout = getLayout();
+    return {
+      x: Phaser.Math.Clamp(this.player.x, layout.arenaLeft + 40, layout.arenaRight - 40),
+      y: Phaser.Math.Clamp(this.player.y + offsetY, layout.arenaTop + 40, layout.arenaBottom - 40),
+    };
+  }
+
+  private spawnDebugShield(): void {
+    this.scoreRecordingBlocked = true;
+    const p = this.getDebugPickupPosition(-44);
+    this.shields.push(new ShieldPickup(this, p.x, p.y, 0, 0));
+  }
+
+  private spawnDebugBomb(): void {
+    this.scoreRecordingBlocked = true;
+    const p = this.getDebugPickupPosition(-44);
+    this.bombPickups.push(new BombPickup(this, p.x, p.y, 0, 0));
+  }
+
+  private spawnDebugBonus(): void {
+    this.scoreRecordingBlocked = true;
+    const p = this.getDebugPickupPosition(-44);
+    this.bonusPickups.push(new BonusPickup(this, p.x, p.y, 500, 0, 0, 0));
+  }
+
+  private destroyAllWormholes(): void {
+    for (const wormhole of this.wormholePickups) {
+      wormhole.destroy();
+    }
+    this.wormholePickups = [];
+  }
+
+  private enterWormholePocket(): void {
+    if (this.pocketActive || this.multiplayer) {
+      return;
+    }
+
+    this.pocketEntryPhase = this.extractionSystem.getPhaseCount();
+    this.destroyAllWormholes();
+    this.clearBoard(true, false);
+    this.naturalWormholeSpawnedThisRun = true;
+    this.pocketActive = true;
+    this.pocketTimerMs = WORMHOLE_POCKET_DURATION_MS;
+    this.pocketRareSalvageTimer = WORMHOLE_POCKET_RARE_SALVAGE_INTERVAL_MS;
+    this.pocketBonusTimer = WORMHOLE_POCKET_BONUS_INTERVAL_MS;
+    this.pocketBoundaryBurnMs = 0;
+    this.restorePaletteId = this.activePaletteId === POCKET_PALETTE_ID
+      ? getSettings().paletteId
+      : this.activePaletteId;
+    this.lastGateActive = false;
+    this.extractionSystem.enterPocketMode();
+    this.difficultySystem.setPocketActive(true);
+    this.salvageSystem.setPocketYieldMult(WORMHOLE_POCKET_SALVAGE_MULT);
+    this.clearPocketThreats();
+    this.geoSphere.setVisible(false);
+    this.applyRuntimePalette(POCKET_PALETTE_ID);
+    setWormholeMusic(this);
+    playSfx(this, 'pickup');
+    playSfx(this, 'bomb');
+    Overlays.bombFlash(this);
+    Overlays.screenShake(this, 0.012, 260);
+  }
+
+  private exitWormholePocket(reason: 'gate' | 'timeout'): void {
+    if (!this.pocketActive) {
+      return;
+    }
+
+    const targetPhase = this.pickPostPocketPhase();
+    this.pocketActive = false;
+    this.pocketTimerMs = 0;
+    this.pocketRareSalvageTimer = 0;
+    this.pocketBonusTimer = 0;
+    this.pocketBoundaryBurnMs = 0;
+    this.pocketBoundaryGraphic?.setVisible(false);
+    this.lastGateActive = false;
+    this.extractionSystem.exitPocketMode();
+    this.difficultySystem.setPocketActive(false);
+    this.salvageSystem.setPocketYieldMult(1);
+    this.clearBoard(true, false);
+    this.extractionSystem.debugSetPhase(targetPhase);
+    this.difficultySystem.debugSetPhase(targetPhase);
+    this.missionSystem.trackPhaseReached(targetPhase);
+    this.regentIntroduced = targetPhase >= 3;
+    this.regentEnemyAnnounced = targetPhase >= 5;
+    this.regentBeamAnnounced = targetPhase >= 7;
+    this.regentLastPhase = targetPhase;
+    this.enemyEntranceSfxPlayed = targetPhase >= 5;
+    setGameplayMusicForPhase(this, targetPhase);
+    this.geoSphere.setVisible(true);
+    this.applyRuntimePalette(this.restorePaletteId);
+    this.destroyAllWormholes();
+    if (reason === 'gate') {
+      this.playGateTravelSfx();
+      Overlays.screenShake(this, 0.01, 200);
+    }
+  }
+
+  private playGateTravelSfx(): void {
+    playSfx(this, 'bomb', { volumeScale: 0.75 });
+  }
+
+  private pickPostPocketPhase(): number {
+    const fromPhase = Phaser.Math.Clamp(Math.floor(this.pocketEntryPhase), 1, 9);
+    const minPhase = Math.min(10, fromPhase + 1);
+    return Phaser.Math.Between(minPhase, 10);
+  }
+
+  private clearPocketThreats(): void {
+    const beams = this.difficultySystem.getBeams();
+    for (const beam of beams) {
+      beam.destroy();
+    }
+    beams.length = 0;
+
+    const enemies = this.difficultySystem.getEnemies();
+    for (const enemy of enemies) {
+      this.playerDebris.push(new ShipDebris(this, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), COLORS.ENEMY, enemy.radius));
+      enemy.destroy();
+    }
+    enemies.length = 0;
+
+    const npcs = this.difficultySystem.getNPCs();
+    for (const npc of npcs) {
+      this.playerDebris.push(new ShipDebris(this, npc.x, npc.y, npc.vx, npc.vy, npc.getHullColor(), npc.radius));
+      npc.destroy();
+    }
+    npcs.length = 0;
+
+    const boss = this.difficultySystem.getBoss();
+    if (boss) {
+      const center = boss.getCenter();
+      this.playerDebris.push(new ShipDebris(this, center.x, center.y, 0, 0, COLORS.ENEMY, 34));
+      this.difficultySystem.clearBoss();
+    }
+  }
+
+  private isPlayerInsideGate(gate: ExitGate): boolean {
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, gate.x, gate.y);
+    return dist < PLAYER_RADIUS + EXIT_GATE_HITBOX;
+  }
+
+  private applyRuntimePalette(paletteId: RuntimePaletteId): void {
+    this.activePaletteId = paletteId;
+    applyColorPalette(paletteId);
+    for (const star of this.starfieldStars) {
+      if (star.color !== 0xffffff) {
+        star.color = COLORS.PLAYER;
+      }
+    }
+    this.drawStarfield();
+    this.redrawArenaBorder();
+    this.hud.refreshPalette();
+    if (this.countdownText) {
+      this.countdownText.setColor(`#${COLORS.HUD.toString(16).padStart(6, '0')}`);
+      this.countdownText.setStroke(`#${COLORS.GRID.toString(16).padStart(6, '0')}`, 2);
+    }
+    if (this.state === GameState.PAUSED) {
+      this.showPauseMenu();
+    }
+    this.refreshPauseUi();
+    this.updateBossStatusUi();
+  }
+
   private installDebugPhaseShortcuts(): void {
     const keyboard = this.input.keyboard;
     if (keyboard) {
@@ -4035,7 +4695,28 @@ export class GameScene extends Phaser.Scene {
         let phase = 0;
         if (code.startsWith('Digit')) phase = Number(code.slice(5));
         else if (code.startsWith('Numpad')) phase = Number(code.slice(6));
-        else return;
+        else {
+          switch (code) {
+            case 'KeyW':
+              event.preventDefault();
+              this.spawnDebugWormhole();
+              return;
+            case 'KeyS':
+              event.preventDefault();
+              this.spawnDebugShield();
+              return;
+            case 'KeyB':
+              event.preventDefault();
+              this.spawnDebugBomb();
+              return;
+            case 'KeyC':
+              event.preventDefault();
+              this.spawnDebugBonus();
+              return;
+            default:
+              return;
+          }
+        }
         if (!Number.isFinite(phase)) return;
         const target = phase === 0 ? 10 : phase;
         if (target < 1 || target > 10) return;
@@ -4044,11 +4725,33 @@ export class GameScene extends Phaser.Scene {
       });
     }
     if (typeof window !== 'undefined') {
-      (window as unknown as { bitpJumpToPhase?: (n: number) => void }).bitpJumpToPhase = (n: number) => this.debugJumpToPhase(n);
+      const debugWindow = window as unknown as {
+        bitpJumpToPhase?: (n: number) => void;
+        bitpSpawnWormhole?: () => void;
+        bitpSpawnShield?: () => void;
+        bitpSpawnBomb?: () => void;
+        bitpSpawnBonus?: () => void;
+      };
+      debugWindow.bitpJumpToPhase = (n: number) => this.debugJumpToPhase(n);
+      debugWindow.bitpSpawnWormhole = () => this.spawnDebugWormhole();
+      debugWindow.bitpSpawnShield = () => this.spawnDebugShield();
+      debugWindow.bitpSpawnBomb = () => this.spawnDebugBomb();
+      debugWindow.bitpSpawnBonus = () => this.spawnDebugBonus();
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (typeof window !== 'undefined') {
-        delete (window as unknown as { bitpJumpToPhase?: (n: number) => void }).bitpJumpToPhase;
+        const debugWindow = window as unknown as {
+          bitpJumpToPhase?: (n: number) => void;
+          bitpSpawnWormhole?: () => void;
+          bitpSpawnShield?: () => void;
+          bitpSpawnBomb?: () => void;
+          bitpSpawnBonus?: () => void;
+        };
+        delete debugWindow.bitpJumpToPhase;
+        delete debugWindow.bitpSpawnWormhole;
+        delete debugWindow.bitpSpawnShield;
+        delete debugWindow.bitpSpawnBomb;
+        delete debugWindow.bitpSpawnBonus;
       }
     });
   }
@@ -4061,9 +4764,13 @@ export class GameScene extends Phaser.Scene {
    */
   private applyPhaseState(phase: number, blockScoreRecording: boolean): void {
     const targetPhase = Phaser.Math.Clamp(Math.floor(phase), 1, 10);
+    this.exitWormholePocket('timeout');
+    this.destroyAllWormholes();
     this.extractionSystem.debugSetPhase(targetPhase);
     this.difficultySystem.debugSetPhase(targetPhase);
     this.lastGateActive = false;
+    this.wormholeEventTimer = 0;
+    this.wormholeEventPhase = targetPhase;
     this.regentIntroduced = targetPhase >= 3;
     this.regentEnemyAnnounced = targetPhase >= 5;
     this.regentBeamAnnounced = targetPhase >= 7;
@@ -4137,7 +4844,11 @@ export class GameScene extends Phaser.Scene {
     this.hidePauseMenu();
     this.inputSystem.clear();
     this.state = this.pausedFromState;
-    setGameplayMusicForPhase(this, this.extractionSystem.getPhaseCount());
+    if (this.pocketActive) {
+      setWormholeMusic(this);
+    } else {
+      setGameplayMusicForPhase(this, this.extractionSystem.getPhaseCount());
+    }
     this.refreshPauseUi();
   }
 
