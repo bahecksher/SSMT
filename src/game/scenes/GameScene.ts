@@ -88,6 +88,18 @@ import {
   type MatchPingPayload,
 } from '../systems/NetSystem';
 import {
+  SharedVersusClient,
+  getSharedVersusHost,
+  isSharedVersusEnabled,
+} from '../systems/SharedVersusClient';
+import type {
+  SharedDrifterState,
+  SharedLaserState,
+  SharedSalvageState,
+  SharedServerMessage,
+  SharedWorldSnapshot,
+} from '../sharedVersus/types';
+import {
   DRIFTER_MINING_RADIUS_MULT,
   EXIT_GATE_DURATION,
   EXIT_GATE_PREVIEW,
@@ -305,6 +317,17 @@ export class GameScene extends Phaser.Scene {
   private lastPeerSeenAt = 0;
   private resultPulseAccumMs = 0;
   private versusSpectating = false;
+  private sharedVersusClient: SharedVersusClient | null = null;
+  private sharedVersusSnapshot: SharedWorldSnapshot | null = null;
+  private sharedVersusActive = false;
+  private sharedVersusPoseAccumMs = 0;
+  private sharedVersusExtractRequested = false;
+  private sharedVersusTerminalHandled = false;
+  private sharedVersusGraphics: Phaser.GameObjects.Graphics | null = null;
+  private sharedDrifterViews = new Map<string, DrifterHazard>();
+  private sharedSalvageViews = new Map<string, SalvageDebris>();
+  private sharedScoreFloatAccum = 0;
+  private sharedScoreFloatLastAt = 0;
 
   constructor() {
     super(SCENE_KEYS.GAME);
@@ -367,6 +390,17 @@ export class GameScene extends Phaser.Scene {
     this.mirrorRenderAccumMs = 0;
     this.mirrorNeedsRedraw = false;
     this.mirrorLaserEchoes = [];
+    this.sharedVersusClient = null;
+    this.sharedVersusSnapshot = null;
+    this.sharedVersusActive = false;
+    this.sharedVersusPoseAccumMs = 0;
+    this.sharedVersusExtractRequested = false;
+    this.sharedVersusTerminalHandled = false;
+    this.sharedVersusGraphics = null;
+    this.sharedDrifterViews = new Map();
+    this.sharedSalvageViews = new Map();
+    this.sharedScoreFloatAccum = 0;
+    this.sharedScoreFloatLastAt = 0;
 
     this.saveSystem = new SaveSystem();
     this.runMode = handoff.multiplayer
@@ -553,6 +587,11 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.player.graphic.setAlpha(1);
       }
+    }
+
+    if (this.sharedVersusActive) {
+      this.updateSharedVersusMode(effectiveDelta, gameplayActive, countdownActive, paused, runFrozen);
+      return;
     }
 
     // Update all debris
@@ -1653,6 +1692,8 @@ export class GameScene extends Phaser.Scene {
     this.mirrorRenderAccumMs = 0;
     this.mirrorNeedsRedraw = true;
 
+    this.setupSharedVersus(handoff);
+
     handoff.session.onBroadcast(NET_EVENT.SNAPSHOT, (payload) => {
       const snap = payload as MirrorSnapshot | undefined;
       if (!snap || typeof snap.t !== 'number') return;
@@ -1764,6 +1805,350 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.createMirrorViewport();
+  }
+
+  private setupSharedVersus(handoff: MultiplayerHandoff): void {
+    if (!isSharedVersusEnabled()) return;
+    this.sharedVersusActive = true;
+    this.clearLocalSharedWorldEntities();
+    this.sharedVersusGraphics = this.add.graphics().setDepth(9);
+    const client = new SharedVersusClient({
+      host: getSharedVersusHost(),
+      room: `${handoff.session.roomCode}-${handoff.matchId}`,
+      matchId: handoff.matchId,
+      playerId: handoff.session.playerId,
+      playerName: handoff.session.playerName,
+    });
+    this.sharedVersusClient = client;
+    client.onMessage((message) => this.handleSharedVersusMessage(message));
+    client.onStatus((status) => {
+      if (status === 'error' || status === 'closed') {
+        // Preserve the existing mirrored-versus path as fallback if the PartyKit
+        // server is unavailable during development.
+        this.sharedVersusActive = false;
+        this.sharedVersusSnapshot = null;
+        this.sharedVersusGraphics?.clear();
+      }
+    });
+    client.connect();
+  }
+
+  private handleSharedVersusMessage(message: SharedServerMessage): void {
+    if (!this.multiplayer) return;
+    if (message.type === 'world_snapshot') {
+      this.sharedVersusSnapshot = message;
+      this.notePeerSeen();
+      return;
+    }
+    if (message.type === 'score_delta' && message.playerId === this.multiplayer.session.playerId) {
+      const previousScore = this.scoreSystem.getUnbanked();
+      this.scoreSystem.setUnbanked(message.totalScore);
+      this.showSharedScoreFeedback(Math.max(0, message.totalScore - previousScore), message.mining > message.salvage);
+      return;
+    }
+    if (message.type === 'player_terminal') {
+      this.notePeerSeen();
+      if (message.playerId === this.multiplayer.session.playerId) {
+        this.handleLocalSharedTerminal(message);
+        return;
+      }
+      if (this.peerOutcome) return;
+      this.peerOutcome = {
+        cause: message.status === 'extracted' ? 'extract' : 'death',
+        score: Math.round(message.score),
+        time: message.timeMs,
+        phase: this.sharedVersusSnapshot?.phase ?? this.getLatestPeerPhase(),
+        deathCause: message.cause,
+      };
+      this.onPeerTerminal();
+      return;
+    }
+    if (message.type === 'peer_left') {
+      this.notePeerSeen();
+      this.peerLeft = true;
+      this.peerRematch = false;
+      this.refreshRematchUi();
+    }
+  }
+
+  private handleLocalSharedTerminal(message: Extract<SharedServerMessage, { type: 'player_terminal' }>): void {
+    if (this.sharedVersusTerminalHandled) return;
+    this.sharedVersusTerminalHandled = true;
+    if (message.status === 'extracted') {
+      this.scoreSystem.setUnbanked(message.score);
+      this.scoreSystem.bankScore();
+      this.handleExtraction();
+      return;
+    }
+    this.handleDeath(message.cause ?? 'asteroid');
+  }
+
+  private showSharedScoreFeedback(gained: number, miningDominant: boolean): void {
+    if (gained <= 0) return;
+    this.sharedScoreFloatAccum += gained;
+    if (this.sharedScoreFloatAccum < 1 || this.time.now - this.sharedScoreFloatLastAt < 450) return;
+    const color = miningDominant
+      ? '#ffaa00'
+      : `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`;
+    this.salvageSystem.spawnRewardText(
+      `+${Math.max(1, Math.round(this.sharedScoreFloatAccum))}`,
+      this.player.x,
+      this.player.y - 22,
+      color,
+    );
+    this.sharedScoreFloatAccum = 0;
+    this.sharedScoreFloatLastAt = this.time.now;
+  }
+
+  private clearLocalSharedWorldEntities(): void {
+    for (const debris of this.debrisList) {
+      this.salvageSystem.removeDebris(debris);
+      debris.destroy();
+    }
+    this.debrisList = [];
+    const drifters = this.difficultySystem.getDrifters();
+    for (const drifter of drifters) drifter.destroy();
+    drifters.length = 0;
+    for (const enemy of this.difficultySystem.getEnemies()) enemy.destroy();
+    this.difficultySystem.getEnemies().length = 0;
+    for (const npc of this.difficultySystem.getNPCs()) npc.destroy();
+    this.difficultySystem.getNPCs().length = 0;
+    for (const beam of this.difficultySystem.getBeams()) beam.destroy();
+    this.difficultySystem.getBeams().length = 0;
+  }
+
+  private updateSharedVersusMode(
+    delta: number,
+    gameplayActive: boolean,
+    countdownActive: boolean,
+    paused: boolean,
+    runFrozen: boolean,
+  ): void {
+    this.sharedVersusPoseAccumMs += delta;
+    const snapshot = this.sharedVersusSnapshot;
+    if (snapshot) {
+      this.applySharedWorldSnapshot(snapshot);
+      this.renderSharedWorldOverlay(snapshot);
+    }
+    if (gameplayActive && !paused && this.sharedVersusPoseAccumMs >= 50) {
+      this.sharedVersusPoseAccumMs = 0;
+      this.sharedVersusClient?.sendPose(
+        this.normalizeArenaX(this.player.x),
+        this.normalizeArenaY(this.player.y),
+        this.player.getHeading(),
+        this.player.hasShield,
+      );
+    }
+    if (gameplayActive && snapshot?.gate?.extractable && !this.sharedVersusExtractRequested) {
+      const gateX = this.denormalizeArenaX(snapshot.gate.x);
+      const gateY = this.denormalizeArenaY(snapshot.gate.y);
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, gateX, gateY);
+      if (dist < PLAYER_RADIUS + 20) {
+        this.sharedVersusExtractRequested = true;
+        this.sharedVersusClient?.requestExtraction();
+      }
+    }
+
+    for (let i = this.playerDebris.length - 1; i >= 0; i--) {
+      this.playerDebris[i].update(delta);
+      if (!this.playerDebris[i].active) {
+        this.playerDebris[i].destroy();
+        this.playerDebris.splice(i, 1);
+      }
+    }
+    this.updateStarfield(delta);
+    this.geoSphere.update(delta);
+    if (countdownActive) {
+      this.updateCountdown(delta, paused);
+    }
+    this.hologramOverlay.update(delta);
+    this.cursor.update(this, !paused && !this.resultData ? this.player.x : undefined, !paused && !this.resultData ? this.player.y : undefined);
+    const phase = snapshot?.phase ?? this.extractionSystem.getPhaseCount();
+    this.hud.update(
+      this.scoreSystem.getUnbanked(),
+      this.scoreSystem.getBest(),
+      phase,
+      this.player.hasShield,
+      null,
+    );
+    this.hud.updateMissions(this.missionSystem.getActiveMissions());
+    this.tickMultiplayer(delta);
+    if (runFrozen) {
+      this.sharedVersusClient?.acknowledgeTerminal();
+    }
+  }
+
+  private applySharedWorldSnapshot(snapshot: SharedWorldSnapshot): void {
+    this.syncLocalSharedPlayer(snapshot);
+    this.syncSharedDrifters(snapshot.drifters);
+    this.syncSharedSalvage(snapshot.salvage);
+  }
+
+  private syncLocalSharedPlayer(snapshot: SharedWorldSnapshot): void {
+    const localPlayerId = this.multiplayer?.session.playerId;
+    if (!localPlayerId) return;
+    const serverPlayer = snapshot.players.find((p) => p.id === localPlayerId);
+    if (!serverPlayer) return;
+    if (this.player.hasShield && !serverPlayer.shielded) {
+      this.player.hasShield = false;
+      playSfx(this, 'shieldLoss');
+      this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
+      Overlays.shieldBreakFlash(this);
+    }
+  }
+
+  private syncSharedDrifters(drifters: SharedDrifterState[]): void {
+    const seen = new Set<string>();
+    for (const state of drifters) {
+      seen.add(state.id);
+      let view = this.sharedDrifterViews.get(state.id);
+      const x = this.denormalizeArenaX(state.x);
+      const y = this.denormalizeArenaY(state.y);
+      const vx = this.scaleSharedVx(state.vx);
+      const vy = this.scaleSharedVy(state.vy);
+      if (!view) {
+        view = DrifterHazard.createFragment(this, x, y, vx, vy, state.radiusScale, state.mineable);
+        this.sharedDrifterViews.set(state.id, view);
+        this.difficultySystem.getDrifters().push(view);
+      }
+      view.x = x;
+      view.y = y;
+      view.vx = vx;
+      view.vy = vy;
+      view.hp = state.hp;
+      view.maxHp = state.maxHp;
+      view.depleted = state.depleted;
+      view.active = true;
+      view.update(0);
+    }
+    for (const [id, view] of this.sharedDrifterViews) {
+      if (seen.has(id)) continue;
+      view.destroy();
+      this.sharedDrifterViews.delete(id);
+      const driftersList = this.difficultySystem.getDrifters();
+      const idx = driftersList.indexOf(view);
+      if (idx >= 0) driftersList.splice(idx, 1);
+    }
+  }
+
+  private syncSharedSalvage(salvage: SharedSalvageState[]): void {
+    const seen = new Set<string>();
+    for (const state of salvage) {
+      seen.add(state.id);
+      let view = this.sharedSalvageViews.get(state.id);
+      const x = this.denormalizeArenaX(state.x);
+      const y = this.denormalizeArenaY(state.y);
+      const vx = this.scaleSharedVx(state.vx);
+      const vy = this.scaleSharedVy(state.vy);
+      if (!view) {
+        const radiusScale = Math.max(0.2, (state.radius * Math.min(getLayout().arenaWidth, getLayout().arenaHeight)) / 80);
+        view = SalvageDebris.createAt(this, x, y, vx, vy, {
+          isRare: state.rare,
+          pointsMultiplier: state.rare ? 3 : 1,
+          radiusScale,
+        });
+        this.sharedSalvageViews.set(state.id, view);
+        this.debrisList.push(view);
+        this.salvageSystem.addDebris(view);
+      }
+      view.x = x;
+      view.y = y;
+      view.hp = state.hp;
+      view.depleted = state.depleted;
+      view.active = true;
+      view.graphic.setPosition(x, y);
+      view.radiusGraphic.setPosition(x, y);
+      view.update(0);
+    }
+    for (const [id, view] of this.sharedSalvageViews) {
+      if (seen.has(id)) continue;
+      this.salvageSystem.removeDebris(view);
+      view.destroy();
+      this.sharedSalvageViews.delete(id);
+      const idx = this.debrisList.indexOf(view);
+      if (idx >= 0) this.debrisList.splice(idx, 1);
+    }
+  }
+
+  private renderSharedWorldOverlay(snapshot: SharedWorldSnapshot): void {
+    const g = this.sharedVersusGraphics;
+    if (!g) return;
+    g.clear();
+    const layout = getLayout();
+    if (snapshot.gate) {
+      const gate = snapshot.gate;
+      const x = this.denormalizeArenaX(gate.x);
+      const y = this.denormalizeArenaY(gate.y);
+      const radius = Math.max(16, gate.radius * Math.min(layout.arenaWidth, layout.arenaHeight));
+      g.lineStyle(gate.extractable ? 2 : 1.4, COLORS.GATE, gate.extractable ? 0.9 : 0.32);
+      g.strokeCircle(x, y, gate.extractable ? radius * 0.55 : radius * 1.8);
+      g.fillStyle(COLORS.GATE, gate.extractable ? 0.09 : 0.03);
+      g.fillCircle(x, y, radius * 0.55);
+    }
+    this.renderSharedLasers(g, snapshot.lasers);
+    for (const peer of snapshot.players) {
+      if (peer.id === this.multiplayer?.session.playerId || peer.status !== 'active') continue;
+      const x = this.denormalizeArenaX(peer.x);
+      const y = this.denormalizeArenaY(peer.y);
+      const r = 11;
+      g.lineStyle(1.7, COLORS.HUD, 0.82);
+      g.fillStyle(COLORS.HUD, 0.1);
+      g.beginPath();
+      g.moveTo(x + Math.cos(peer.angle) * r, y + Math.sin(peer.angle) * r);
+      g.lineTo(x + Math.cos(peer.angle + Math.PI * 2 / 3) * r, y + Math.sin(peer.angle + Math.PI * 2 / 3) * r);
+      g.lineTo(x + Math.cos(peer.angle - Math.PI * 2 / 3) * r, y + Math.sin(peer.angle - Math.PI * 2 / 3) * r);
+      g.closePath();
+      g.fillPath();
+      g.strokePath();
+      if (peer.shielded) {
+        g.lineStyle(1.2, COLORS.SHIELD, 0.5);
+        g.strokeCircle(x, y, r * 1.7);
+      }
+    }
+  }
+
+  private renderSharedLasers(g: Phaser.GameObjects.Graphics, lasers: SharedLaserState[]): void {
+    const layout = getLayout();
+    for (const laser of lasers) {
+      const width = Math.max(2, laser.width * Math.min(layout.arenaWidth, layout.arenaHeight));
+      const color = VERSUS_LASER_COLOR;
+      const x1 = laser.axis === 'h' ? layout.arenaLeft : this.denormalizeArenaX(laser.pos);
+      const y1 = laser.axis === 'h' ? this.denormalizeArenaY(laser.pos) : layout.arenaTop;
+      const x2 = laser.axis === 'h' ? layout.arenaRight : this.denormalizeArenaX(laser.pos);
+      const y2 = laser.axis === 'h' ? this.denormalizeArenaY(laser.pos) : layout.arenaBottom;
+      g.lineStyle(width * (laser.lethal ? 1.8 : 0.8), color, laser.lethal ? 0.18 : 0.08);
+      g.lineBetween(x1, y1, x2, y2);
+      g.lineStyle(width * (laser.lethal ? 0.9 : 0.25), color, laser.lethal ? 0.82 : 0.4);
+      g.lineBetween(x1, y1, x2, y2);
+    }
+  }
+
+  private normalizeArenaX(x: number): number {
+    const layout = getLayout();
+    return Phaser.Math.Clamp((x - layout.arenaLeft) / layout.arenaWidth, 0, 1);
+  }
+
+  private normalizeArenaY(y: number): number {
+    const layout = getLayout();
+    return Phaser.Math.Clamp((y - layout.arenaTop) / layout.arenaHeight, 0, 1);
+  }
+
+  private denormalizeArenaX(x: number): number {
+    const layout = getLayout();
+    return layout.arenaLeft + Phaser.Math.Clamp(x, 0, 1) * layout.arenaWidth;
+  }
+
+  private denormalizeArenaY(y: number): number {
+    const layout = getLayout();
+    return layout.arenaTop + Phaser.Math.Clamp(y, 0, 1) * layout.arenaHeight;
+  }
+
+  private scaleSharedVx(vx: number): number {
+    return vx * getLayout().arenaWidth;
+  }
+
+  private scaleSharedVy(vy: number): number {
+    return vy * getLayout().arenaHeight;
   }
 
   private getLatestPeerPhase(): number {
@@ -2088,6 +2473,14 @@ export class GameScene extends Phaser.Scene {
 
   private teardownMultiplayer(): void {
     this.cancelVersusPeerWait();
+    this.sharedVersusClient?.close();
+    this.sharedVersusClient = null;
+    this.sharedVersusSnapshot = null;
+    this.sharedVersusActive = false;
+    this.sharedVersusGraphics?.destroy();
+    this.sharedVersusGraphics = null;
+    this.sharedDrifterViews.clear();
+    this.sharedSalvageViews.clear();
     this.mirrorBg?.destroy(); this.mirrorBg = null;
     this.mirrorEntities?.destroy(); this.mirrorEntities = null;
     this.mirrorLabel?.destroy(); this.mirrorLabel = null;

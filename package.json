@@ -4,8 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --configLoader native",
+    "dev": "node scripts/dev.mjs --host 127.0.0.1 --clearScreen false",
+    "dev:vite": "vite --configLoader native",
     "build": "tsc && vite build",
+    "test": "node --experimental-strip-types test/sharedVersusSimulation.test.ts",
+    "partykit:dev": "partykit dev",
+    "partykit:deploy": "partykit deploy",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -13,6 +17,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",
+    "partykit": "^0.0.115",
     "typescript": "~5.9.3",
     "vite": "^8.0.1"
   },

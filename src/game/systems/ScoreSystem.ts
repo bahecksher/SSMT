@@ -16,6 +16,10 @@ export class ScoreSystem {
     this.unbanked += points;
   }
 
+  setUnbanked(points: number): void {
+    this.unbanked = Math.max(0, points);
+  }
+
   getUnbanked(): number {
     return this.unbanked;
   }
