@@ -1,70 +1,74 @@
 # State
-_Last updated: 2026-04-29 2119_
+_Last updated: 2026-04-29 2153_
 
 ## Current focus
-Session wrap. Menu chrome unified across Menu, MissionSelect, VersusLobby, HowToPlay via shared `src/game/ui/menuLayout.ts`. Pause-menu palette swap and music `*BETA*` tags removed. Corp leaderboard now shows all 4 corps with full names, smaller donut on compact viewports, and a recolored donut globe matching the background `GeoSphere`. Stray divider line cutting through CAMPAIGN high score hidden in non-arcade modes. Arcade pilot board cap raised so phone shows more than just #1. Pushed as `7f2bea4` on `origin/main`.
+Session wrap. Tutorial onboarding and the arcade corporation leaderboard both received polish this session, and the repo is being left documented and synced for the next handoff.
 
 ## What's working
-- `src/game/ui/menuLayout.ts`: shared top-nav metrics (`getTopNavMetrics`) + bottom-action metrics (`getPrimaryActionMetrics`).
-- `src/game/ui/CorporationScoreGraph.ts`: donut globe uses `COLORS.NPC` (matches background GeoSphere body).
+- `src/game/scenes/TutorialArenaScene.ts`:
+  - tutorial header shows section title only
+  - Slick gives an intro during the entry-warp wait
+  - tutorial-only comms stay up longer for readability
+  - shield lesson teaches enemy first, asteroid second
+  - shielded asteroid hits split like live gameplay
+- `src/game/data/slickLines.ts`:
+  - shield tutorial comms explicitly say enemy first, asteroid second
+  - tutorial intro line added for the gate-drop wait
 - `src/game/scenes/MenuScene.ts`:
-  - HOW TO PLAY (left, full label always) + SETTINGS (right) read from shared helper.
-  - TAP TO START y matches shared bottom anchor.
-  - Arcade pilot leaderboard: tighter font (11/14) + rowHeight (18/24), row cap raised to 10.
-  - Corp leaderboard: all four corps via `buildFullCorpEntries`; full company names; tighter font (11/14) + rowHeight (18/24); donut radius clamps `28-42` compact / `48-70` desktop; donut sits flush under divider; row gap below donut `6/10`.
-  - Leaderboard divider hides in CAMPAIGN / VERSUS via `leaderboardSectionUi`.
-  - Music `*BETA*` removed.
-- `src/game/scenes/MissionSelectScene.ts`: MENU + SETTINGS shared metrics; DEPLOY shares bottom anchor; music `*BETA*` removed.
-- `src/game/scenes/VersusLobbyScene.ts`: BACK button shared metrics.
-- `src/game/scenes/HowToPlayScene.ts`: BACK button shared metrics.
-- `src/game/scenes/GameScene.ts`: pause palette swap removed; music `*BETA*` removed; orphaned `applyActivePalette` / `refreshCountdownPalette` deleted; constrained live versus still skips peer enemy ghost rendering and live mirror tint fill.
-- `src/game/data/renderTuning.ts`: constrained-vs-default render profile.
-- `src/game/entities/{GeoSphere,DrifterHazard,SalvageDebris}.ts`: lighter detail on constrained phone-sized viewports.
-- Existing versus flow remains intact.
+  - corporation board keeps the full four-corp standings
+  - donut chart sits with more breathing room above the rows
+  - corporation rows use fixed rank / name / score columns
+  - corporation names and scores now sit closer together after two tightening passes
 - `npm.cmd run build`: passes.
-- `git status`: clean. `main` at `7f2bea4`, synced with `origin/main`.
+- `origin/main`: synced with the wrapped session state after docs push.
 
 ## In progress
 - Nothing in flight — session wrapped.
 
 ## Known issues
-- VersusLobbyScene has no SETTINGS panel; only BACK occupies the top row.
+- Tutorial surfaces still need a live feel-check:
+  - intro handoff into `MOVE`
+  - longer comm timeout on compact phone-sized viewport
+  - shield lesson pacing with random edge spawns
+- Corporation board still needs a live visual check on compact phones to confirm the donut gap and tightened columns feel balanced above Slick's comm panel.
 - TutorialArenaScene BACK still sits top-right, not aligned to the shared top-left corner pattern.
-- Title hero sizing still varies by design between Menu, MissionSelect, VersusLobby.
-- Versus mirror framerate fix is build-verified only; no fresh phone verification.
-- Versus flow missing fresh two-window manual playtest after the cumulative chrome / pause-menu / corp-board / pilot-board changes.
+- Versus mirror framerate fix is still build-verified only; no fresh phone verification.
+- Versus flow still needs a fresh two-window manual playtest after the cumulative chrome / spectate / framerate changes.
 - Spectate lane buttons still sit on arena edges and may crowd ships or hazards.
 - Manual Supabase SQL migration for `mode` / `company_id` columns still pending (`docs/sql/2026-04-28 1403 mode and company_id columns.sql`).
-- Restored arcade/campaign company buffs not manually verified.
 - Soft respawn keeps rep-flux income accumulators across lives.
 - Rep-flux tuning placeholders remain in `tuning.ts`.
-- Earlier in this session a log file was edited after creation rather than spawned as a separate log; minor AGENTS.md append-only nit.
 
 ## Next actions
-1. Live iPhone 13 mini pass:
-   - Top-left HOW TO PLAY label fits without overflow.
-   - Corp board: full names, smaller donut, donut globe matches background, no Slick comm overlap.
-   - Campaign view: no divider line through high score.
-   - Arcade pilot board: ≥6-8 rows visible.
-   - Pause menu: SHAKE / SCAN / MUSIC stack tight, no PALETTE row, no `*BETA*`.
-2. Two-window versus pass to confirm cumulative changes did not regress lobby -> deploy -> spectate -> result -> rematch loop.
-3. Decide whether to unify TutorialArena BACK and add a SETTINGS panel mirror to VersusLobby.
+1. Live HOW TO PLAY pass on desktop and iPhone 13 mini-sized viewport:
+   - Slick intro during entry wait
+   - no `STEP #/#`
+   - comm timing feels readable
+   - shield lesson still resolves enemy first, asteroid second
+2. Live main-menu `CORPS` pass on desktop and iPhone 13 mini-sized viewport:
+   - donut/row spacing feels right
+   - fixed columns feel uniform
+   - names/scores no longer feel too spread out
+3. Resume the outstanding versus/mobile manual verification work next session.
 
 ## Active plan
-docs/plans/2026-04-29 1930 Plan - Unified Top Nav Layout.md
+docs/plans/2026-04-29 2150 Plan revision - Tutorial Arena Intro and Comms.md
 
 ## How to verify
 1. `npm.cmd run build`
-2. `npm.cmd run dev`, open at iPhone 13 mini-sized viewport (~375x812).
-3. Walk through Menu, MissionSelect, VersusLobby, HowToPlay. Confirm corner buttons mirror placement + size + font; HOW TO PLAY label is full; TAP TO START / DEPLOY share the same bottom y.
-4. Menu → ARCADE → PILOTS: confirm more than #1 renders. Switch to CORPS: full names, smaller donut, matching globe color. Switch to CAMPAIGN: no stray divider line.
-5. Start a run, hit pause: SHAKE / SCAN / MUSIC, no PALETTE, no `*BETA*`.
-6. Two-window versus and confirm flow still works.
+2. `npm.cmd run dev`
+3. Launch `HOW TO PLAY` and confirm:
+   - Slick intro appears during the entry gate / warp wait
+   - the top-center header shows only the section title
+   - tutorial comms remain visible long enough to read comfortably
+   - shield lesson still runs enemy first, asteroid second
+4. Open the main menu, switch to `CORPS`, and confirm:
+   - more space between the donut chart and corporation rows
+   - uniform fixed rank / name / score columns
+   - corporation names and scores feel tighter than the first fixed-column pass
 
 ## Recent logs
-- docs/log/2026-04-29 2119 Session Wrap Menu Polish.md - session wrap covering top-nav unification, pause palette removal, corp/pilot board polish, and push.
-- docs/log/2026-04-29 2110 Arcade Pilot Board More Rows.md - tighter font + rowHeight + cap raised to 10 so the arcade pilot board shows more than just the leader.
-- docs/log/2026-04-29 2107 Corp Board Full Names and Globe Recolor.md - full corp names, smaller donut on compact, donut globe color matches background.
-- docs/log/2026-04-29 2101 Corp Board Tightening and Campaign Divider Hide.md - tightened corp row spacing + donut top gap, hid leaderboard divider in non-arcade modes, kept HOW TO PLAY full label.
-- docs/log/2026-04-29 2027 Pause Palette Removed and Corp Board Full Roster.md - dropped pause-menu palette swap + music `*BETA*` tags; corp leaderboard now always shows all four corps.
-- docs/log/2026-04-29 1948 Unified Top Nav Layout.md - shared corner-button + bottom-action metrics across Menu, MissionSelect, VersusLobby, and HowToPlay.
+- docs/log/2026-04-29 2153 Session Wrap Tutorial and Menu Polish.md - session wrap covering tutorial onboarding/comms polish and corporation board layout cleanup.
+- docs/log/2026-04-29 2150 Tutorial Header and Intro Comms.md - removed the tutorial step counter, slowed tutorial comm fade timing, and added a pre-spawn Slick intro.
+- docs/log/2026-04-29 2148 Corporation Board Column Tightening Pass 2.md - tightened the corporation name/score spacing one more step.
+- docs/log/2026-04-29 2145 Corporation Board Spacing and Alignment.md - added more donut-to-row breathing room and converted corporation rows to fixed columns.
