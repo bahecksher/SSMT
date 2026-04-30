@@ -1,10 +1,15 @@
 # State
-_Last updated: 2026-04-29 2153_
+_Last updated: 2026-04-29 2247_
 
 ## Current focus
-Session wrap. Tutorial onboarding and the arcade corporation leaderboard both received polish this session, and the repo is being left documented and synced for the next handoff.
+Documentation handoff cleanup. `AGENTS.md` now keeps logs as an archive while avoiding automatic full-history context loads.
 
 ## What's working
+- `AGENTS.md`:
+  - startup now reads `state.md`, skims/searches `decisions.md` only as needed, checks active plans, and opens only linked logs
+  - docs tree and examples use ASCII-safe punctuation
+- `docs/decisions.md`:
+  - header now tells agents to skim/search instead of loading the whole growing file by default
 - `src/game/scenes/TutorialArenaScene.ts`:
   - tutorial header shows section title only
   - Slick gives an intro during the entry-warp wait
@@ -23,7 +28,7 @@ Session wrap. Tutorial onboarding and the arcade corporation leaderboard both re
 - `origin/main`: synced with the wrapped session state after docs push.
 
 ## In progress
-- Nothing in flight — session wrapped.
+- Nothing in flight - documentation cleanup wrapped.
 
 ## Known issues
 - Tutorial surfaces still need a live feel-check:
@@ -68,7 +73,6 @@ docs/plans/2026-04-29 2150 Plan revision - Tutorial Arena Intro and Comms.md
    - corporation names and scores feel tighter than the first fixed-column pass
 
 ## Recent logs
+- docs/log/2026-04-29 2247 Documentation Handoff Cleanup.md - clarified agent startup context rules and kept logs as linked archive material.
 - docs/log/2026-04-29 2153 Session Wrap Tutorial and Menu Polish.md - session wrap covering tutorial onboarding/comms polish and corporation board layout cleanup.
 - docs/log/2026-04-29 2150 Tutorial Header and Intro Comms.md - removed the tutorial step counter, slowed tutorial comm fade timing, and added a pre-spawn Slick intro.
-- docs/log/2026-04-29 2148 Corporation Board Column Tightening Pass 2.md - tightened the corporation name/score spacing one more step.
-- docs/log/2026-04-29 2145 Corporation Board Spacing and Alignment.md - added more donut-to-row breathing room and converted corporation rows to fixed columns.

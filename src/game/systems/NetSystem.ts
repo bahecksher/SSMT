@@ -83,6 +83,45 @@ export interface MultiplayerHandoff {
   startAt: number;
 }
 
+export interface MirrorDrifterSnapshot {
+  x: number;
+  y: number;
+  radius: number;
+  mineable: boolean;
+}
+
+export interface MirrorSalvageSnapshot {
+  x: number;
+  y: number;
+  radius: number;
+  rare: boolean;
+}
+
+export interface MirrorLaserSnapshot {
+  axis: 'h' | 'v';
+  pos: number;
+  width: number;
+  lethal: boolean;
+  kind: 'hazard' | 'versus';
+}
+
+export interface MirrorNpcSnapshot {
+  x: number;
+  y: number;
+  radius: number;
+  angle: number;
+  shielded: boolean;
+  salvaging: boolean;
+}
+
+export interface MirrorGateSnapshot {
+  x: number;
+  y: number;
+  radius: number;
+  extractable: boolean;
+  timeRemaining: number;
+}
+
 export interface MirrorSnapshot {
   /**
    * Sender's match-start wall clock in ms (sender's matchClockStartMs). Stable
@@ -108,6 +147,16 @@ export interface MirrorSnapshot {
   };
   /** Enemy x/y are arena-relative fractions, same convention as ship. */
   enemies: Array<{ x: number; y: number; type: number }>;
+  /** Asteroids rendered as simplified ghost circles/rings. */
+  drifters: MirrorDrifterSnapshot[];
+  /** Salvage blobs rendered as simplified ghost salvage silhouettes/rings. */
+  salvage: MirrorSalvageSnapshot[];
+  /** Standard beam hazards + versus sabotage lanes visible on the peer board. */
+  lasers: MirrorLaserSnapshot[];
+  /** NPC ships visible on the peer board. */
+  npcs: MirrorNpcSnapshot[];
+  /** Active extraction preview/window visible on the peer board, if any. */
+  gate: MirrorGateSnapshot | null;
   score: number;
   phase: number;
   extracted: boolean;

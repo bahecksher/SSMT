@@ -6,6 +6,7 @@ import {
   VERSUS_LASER_WIDTH,
   VERSUS_LASER_COLOR,
 } from '../data/tuning';
+import { playSfx } from '../systems/SfxSystem';
 
 // Six lanes: three horizontal (top/middle/bottom = vertical position bands)
 // and three vertical (left/center/right = horizontal position bands).
@@ -33,8 +34,10 @@ export class VersusLaserStrike {
   readonly y1: number;
   readonly x2: number;
   readonly y2: number;
+  private readonly scene: Phaser.Scene;
 
   constructor(scene: Phaser.Scene, lane: VersusLaserLane) {
+    this.scene = scene;
     const layout = getLayout();
     this.width = VERSUS_LASER_WIDTH;
     this.isHorizontal = HORIZONTAL_LANES.has(lane);
@@ -65,6 +68,7 @@ export class VersusLaserStrike {
     }
     this.totalDuration = VERSUS_LASER_WARNING_MS + VERSUS_LASER_LETHAL_MS;
     this.graphic = scene.add.graphics().setDepth(7);
+    playSfx(this.scene, 'beamCharge', { volumeScale: 0.6, rate: 1.28, detune: 1050 });
   }
 
   update(delta: number): void {
@@ -74,7 +78,11 @@ export class VersusLaserStrike {
       this.active = false;
       return;
     }
+    const wasLethal = this.lethal;
     this.lethal = this.elapsed >= VERSUS_LASER_WARNING_MS;
+    if (this.lethal && !wasLethal) {
+      playSfx(this.scene, 'beamFire', { volumeScale: 1.05, rate: 0.84, detune: -450 });
+    }
     this.draw();
   }
 

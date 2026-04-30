@@ -32,9 +32,9 @@ Use this command every time you need a timestamp. Do not guess the time or omit 
 
 ## On an existing project
 
-1. Read `docs/state.md` — current focus, what's working, what's next.
-2. Read `docs/decisions.md` — don't re-litigate what's already been decided.
-3. Check `docs/plans/` for any active plan. Follow it unless you have a specific reason not to (and if you don't, log the reason — don't silently diverge).
+1. Read `docs/state.md` - current focus, what's working, what's next.
+2. Skim the top/recent entries in `docs/decisions.md`, then search it for decisions relevant to the current task. Do not load the full file unless the task needs broad project history.
+3. Check `docs/plans/` for any active plan. Follow it unless you have a specific reason not to (and if you don't, log the reason - don't silently diverge).
 4. Only open a log file if `state.md` links you to one.
 
 ---
@@ -43,11 +43,11 @@ Use this command every time you need a timestamp. Do not guess the time or omit 
 
 ```
 docs/
-├── spec/          Versioned specs. Most recent file is current truth.
-├── state.md       Single file, rewritten each session. Current snapshot.
-├── decisions.md   Append-only. One entry per decision.
-├── log/           Append-only. One file per session.
-└── plans/         Append-only. One file per plan or plan revision.
+|-- spec/          Versioned specs. Most recent file is current truth.
+|-- state.md       Single file, rewritten each session. Current snapshot.
+|-- decisions.md   Append-only. One entry per decision.
+|-- log/           Append-only. One file per session.
+`-- plans/         Append-only. One file per plan or plan revision.
 ```
 
 ---
@@ -84,7 +84,7 @@ docs/plans/YYYY-MM-DD HHMM Plan - Subject.md
 
 
 ## Recent logs
-- docs/log/YYYY-MM-DD HHMM Subject.md — one line summary
+- docs/log/YYYY-MM-DD HHMM Subject.md - one line summary
 ```
 
 ---
@@ -93,19 +93,19 @@ docs/plans/YYYY-MM-DD HHMM Plan - Subject.md
 
 Versioned files in `docs/spec/`. The most recent file is the source of truth.
 
-When the spec changes meaningfully (not typos — real scope or direction changes), create a new file rather than editing the existing one. Name it:
+When the spec changes meaningfully (not typos - real scope or direction changes), create a new file rather than editing the existing one. Name it:
 
 ```
 docs/spec/YYYY-MM-DD HHMM Spec - Subject.md
 ```
 
-The first spec in a project can just be `Spec - Initial.md` or timestamped — either works.
+The first spec in a project can just be `Spec - Initial.md` or timestamped - either works.
 
 ---
 
 ## Plans
 
-Plans live in `docs/plans/`. They are append-only — once written, don't edit them.
+Plans live in `docs/plans/`. They are append-only - once written, don't edit them.
 
 **Creating a plan:**
 
@@ -165,7 +165,7 @@ Update `state.md` to point to the most recent plan or revision.
 
 ## Logs
 
-One file per session. Append-only — never edit old logs.
+One file per session. Append-only - never edit old logs.
 
 ```
 docs/log/YYYY-MM-DD HHMM Subject.md
@@ -214,7 +214,7 @@ Format:
 
 ## End of every session
 
-Do these in order. If you might not get to finish, write state and log first, then make your final change. Defensive ordering — don't leave the project without documentation.
+Do these in order. If you might not get to finish, write state and log first, then make your final change. Defensive ordering - don't leave the project without documentation.
 
 1. Rewrite `docs/state.md`
 2. Write a new log file in `docs/log/`

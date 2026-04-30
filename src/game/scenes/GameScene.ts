@@ -76,6 +76,11 @@ import { RunMode } from '../types';
 import {
   NET_EVENT,
   type MirrorSnapshot,
+  type MirrorDrifterSnapshot,
+  type MirrorSalvageSnapshot,
+  type MirrorLaserSnapshot,
+  type MirrorNpcSnapshot,
+  type MirrorGateSnapshot,
   type MultiplayerHandoff,
   type MatchExtractPayload,
   type MatchDeathPayload,
@@ -83,10 +88,18 @@ import {
   type MatchPingPayload,
 } from '../systems/NetSystem';
 import {
+  DRIFTER_MINING_RADIUS_MULT,
+  EXIT_GATE_DURATION,
+  EXIT_GATE_PREVIEW,
+  EXIT_GATE_RADIUS,
   VERSUS_LASER_SEND_COOLDOWN_MS,
+  VERSUS_LASER_WARNING_MS,
+  VERSUS_LASER_LETHAL_MS,
+  VERSUS_LASER_WIDTH,
   SPECTATE_LASER_REGEN_MS,
   SPECTATE_LASER_MAX_CHARGES,
   SPECTATE_PING_COOLDOWN_MS,
+  VERSUS_LASER_COLOR,
 } from '../data/tuning';
 
 function lerpAngleShortest(from: number, to: number, alpha: number): number {
@@ -142,6 +155,10 @@ interface VersusOutcome {
   time: number;
   phase: number;
   deathCause?: DeathCause;
+}
+interface MirrorLaserEcho {
+  laser: MirrorLaserSnapshot;
+  elapsed: number;
 }
 type CommSpeaker = 'slick' | 'regent' | 'liaison';
 
@@ -245,13 +262,13 @@ export class GameScene extends Phaser.Scene {
   private static readonly MIRROR_BG_DEPTH = -0.25;
   private static readonly MIRROR_ENTITY_DEPTH = -0.1;
   private static readonly MIRROR_TEXT_DEPTH = 0.25;
-  // Spectate-mode mirror depths: above the result-screen backing (205) and
-  // below the title bar (208) / buttons (210) so the peer's arena is the
-  // dominant readable layer while local frozen gameplay objects fade away.
+  // Spectate-mode mirror depths: above the local-run backing and below the
+  // title bar/buttons so the peer's arena is the only readable playfield.
   private static readonly MIRROR_SPECTATE_BG_DEPTH = 204;
+  private static readonly MIRROR_SPECTATE_GEOSPHERE_DEPTH = 203.5;
   private static readonly MIRROR_SPECTATE_ENTITY_DEPTH = 207;
   private static readonly MIRROR_SPECTATE_TEXT_DEPTH = 211;
-  private static readonly MIRROR_SPECTATE_BG_ALPHA = 0.78;
+  private static readonly MIRROR_SPECTATE_BG_ALPHA = 1;
   private static readonly MIRROR_SPECTATE_ENEMY_RADIUS = 8;
   private static readonly MIRROR_SPECTATE_SHIP_RADIUS = 14;
   private static readonly MIRROR_LABEL_INSET_PX = 12;
@@ -274,6 +291,7 @@ export class GameScene extends Phaser.Scene {
   private mirrorWaiting: Phaser.GameObjects.Text | null = null;
   private mirrorRenderAccumMs = 0;
   private mirrorNeedsRedraw = false;
+  private mirrorLaserEchoes: MirrorLaserEcho[] = [];
   private localTerminalFired = false;
   private localOutcome: VersusOutcome | null = null;
   private peerOutcome: VersusOutcome | null = null;
@@ -348,6 +366,7 @@ export class GameScene extends Phaser.Scene {
     this.starfieldAccumMs = 0;
     this.mirrorRenderAccumMs = 0;
     this.mirrorNeedsRedraw = false;
+    this.mirrorLaserEchoes = [];
 
     this.saveSystem = new SaveSystem();
     this.runMode = handoff.multiplayer
@@ -1654,6 +1673,7 @@ export class GameScene extends Phaser.Scene {
       if (last && snap.t < last.snap.t) return;
       this.peerSnapshots.push({ snap, arr: Date.now() });
       if (this.peerSnapshots.length > 2) this.peerSnapshots.shift();
+      this.reconcileMirrorLaserEchoes(snap.lasers ?? []);
       this.mirrorNeedsRedraw = true;
     });
 
@@ -1786,6 +1806,7 @@ export class GameScene extends Phaser.Scene {
       lane,
       t: now - this.matchClockStartMs,
     };
+    this.addSentLaserMirrorEcho(lane);
     this.multiplayer.session.broadcast(NET_EVENT.MATCH_LASER, payload).catch((err) => {
       console.warn('[GameScene] match_laser broadcast failed', err);
     });
@@ -1866,6 +1887,7 @@ export class GameScene extends Phaser.Scene {
       lane,
       t: Date.now() - this.matchClockStartMs,
     };
+    this.addSentLaserMirrorEcho(lane);
     this.multiplayer.session.broadcast(NET_EVENT.MATCH_LASER, payload).catch((err) => {
       console.warn('[GameScene] spectate laser broadcast failed', err);
     });
@@ -2035,6 +2057,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(GameScene.MIRROR_TEXT_DEPTH)
       .setAlpha(0.28);
     this.refreshMirrorPalette();
+    this.setMirrorVisible(false);
   }
 
   private drawMirrorBg(): void {
@@ -2079,6 +2102,7 @@ export class GameScene extends Phaser.Scene {
       this.multiplayer = null;
     }
     this.peerSnapshots = [];
+    this.mirrorLaserEchoes = [];
   }
 
   private setMirrorVisible(visible: boolean): void {
@@ -2101,6 +2125,7 @@ export class GameScene extends Phaser.Scene {
     this.tickResultPeerHeartbeat(delta);
     this.tickSpectateInventory(delta);
     this.tickPingMarkers(delta);
+    this.tickMirrorLaserEchoes(delta);
     const mirrorFrameMs = this.versusSpectating
       ? this.renderTuning.mirrorSpectateRenderFrameMs
       : this.renderTuning.mirrorRenderFrameMs;
@@ -2121,6 +2146,58 @@ export class GameScene extends Phaser.Scene {
         this.versusPingMarkers.splice(i, 1);
       }
     }
+  }
+
+  private tickMirrorLaserEchoes(delta: number): void {
+    if (this.mirrorLaserEchoes.length === 0) return;
+    const totalMs = VERSUS_LASER_WARNING_MS + VERSUS_LASER_LETHAL_MS;
+    for (let i = this.mirrorLaserEchoes.length - 1; i >= 0; i--) {
+      const echo = this.mirrorLaserEchoes[i];
+      echo.elapsed += delta;
+      echo.laser.lethal = echo.elapsed >= VERSUS_LASER_WARNING_MS;
+      if (echo.elapsed >= totalMs) {
+        this.mirrorLaserEchoes.splice(i, 1);
+      }
+    }
+    this.mirrorNeedsRedraw = true;
+  }
+
+  private addSentLaserMirrorEcho(lane: VersusLaserLane): void {
+    this.mirrorLaserEchoes.push({
+      laser: this.createMirrorLaserFromLane(lane),
+      elapsed: 0,
+    });
+    this.mirrorNeedsRedraw = true;
+  }
+
+  private createMirrorLaserFromLane(lane: VersusLaserLane): MirrorLaserSnapshot {
+    const layout = getLayout();
+    const sizeBasis = Math.max(1, Math.min(layout.arenaWidth, layout.arenaHeight));
+    const isHorizontal = lane === 'top' || lane === 'middle' || lane === 'bottom';
+    const posByLane: Record<VersusLaserLane, number> = {
+      top: 0.25,
+      middle: 0.5,
+      bottom: 0.75,
+      left: 0.25,
+      center: 0.5,
+      right: 0.75,
+    };
+    return {
+      axis: isHorizontal ? 'h' : 'v',
+      pos: posByLane[lane],
+      width: Math.round((VERSUS_LASER_WIDTH / sizeBasis) * 10000) / 10000,
+      lethal: false,
+      kind: 'versus',
+    };
+  }
+
+  private reconcileMirrorLaserEchoes(peerLasers: MirrorLaserSnapshot[]): void {
+    if (this.mirrorLaserEchoes.length === 0) return;
+    this.mirrorLaserEchoes = this.mirrorLaserEchoes.filter((echo) => !peerLasers.some((laser) => (
+      laser.kind === 'versus' &&
+      laser.axis === echo.laser.axis &&
+      Math.abs(laser.pos - echo.laser.pos) < 0.001
+    )));
   }
 
   private tickResultPeerHeartbeat(delta: number): void {
@@ -2156,8 +2233,13 @@ export class GameScene extends Phaser.Scene {
     const ah = layout.arenaHeight || 1;
     const al = layout.arenaLeft;
     const at = layout.arenaTop;
+    const sizeBasis = Math.max(1, Math.min(aw, ah));
     const round4 = (n: number) => Math.round(n * 10000) / 10000;
     const enemies = this.difficultySystem.getEnemies();
+    const npcs = this.difficultySystem.getNPCs();
+    const drifters = this.difficultySystem.getDrifters();
+    const beams = this.difficultySystem.getBeams();
+    const gate = this.extractionSystem.getGate();
     const snapshot: MirrorSnapshot = {
       epoch: this.matchClockStartMs,
       t: Date.now() - this.matchClockStartMs,
@@ -2173,6 +2255,61 @@ export class GameScene extends Phaser.Scene {
         y: round4((e.y - at) / ah),
         type: 0,
       })),
+      drifters: drifters
+        .filter((d) => d.active)
+        .map((d) => ({
+          x: round4((d.x - al) / aw),
+          y: round4((d.y - at) / ah),
+          radius: round4(d.radius / sizeBasis),
+          mineable: d.isMineable,
+        })),
+      salvage: this.debrisList
+        .filter((d) => d.active)
+        .map((d) => ({
+          x: round4((d.x - al) / aw),
+          y: round4((d.y - at) / ah),
+          radius: round4(d.salvageRadius / sizeBasis),
+          rare: d.isRare,
+        })),
+      lasers: [
+        ...beams
+          .filter((b) => b.active)
+          .map<MirrorLaserSnapshot>((b) => ({
+            axis: b.isHorizontal ? 'h' : 'v',
+            pos: round4(b.isHorizontal ? (b.y1 - at) / ah : (b.x1 - al) / aw),
+            width: round4(b.width / sizeBasis),
+            lethal: b.isLethal(),
+            kind: 'hazard' as const,
+          })),
+        ...this.versusLaserStrikes
+          .filter((s) => s.active)
+          .map<MirrorLaserSnapshot>((s) => ({
+            axis: s.isHorizontal ? 'h' : 'v',
+            pos: round4(s.isHorizontal ? (s.y1 - at) / ah : (s.x1 - al) / aw),
+            width: round4(s.width / sizeBasis),
+            lethal: s.isLethal(),
+            kind: 'versus' as const,
+          })),
+      ],
+      npcs: npcs
+        .filter((n) => n.active)
+        .map((n) => ({
+          x: round4((n.x - al) / aw),
+          y: round4((n.y - at) / ah),
+          radius: round4(n.radius / sizeBasis),
+          angle: Math.round(Math.atan2(n.vy, n.vx) * 1000) / 1000,
+          shielded: n.hasShield,
+          salvaging: n.isSalvaging(),
+        })),
+      gate: gate && gate.active
+        ? {
+          x: round4((gate.x - al) / aw),
+          y: round4((gate.y - at) / ah),
+          radius: round4(EXIT_GATE_RADIUS / sizeBasis),
+          extractable: gate.extractable,
+          timeRemaining: Math.round(gate.getTimeRemaining()),
+        }
+        : null,
       score: Math.round(this.scoreSystem.getBanked() + this.scoreSystem.getUnbanked()),
       phase: this.difficultySystem.getConfig().phaseNumber,
       extracted: this.state === GameState.EXTRACTING || this.state === GameState.RESULTS,
@@ -2183,6 +2320,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateMirrorViewport(): void {
+    if (!this.versusSpectating) {
+      this.mirrorBg?.clear();
+      this.mirrorEntities?.clear();
+      this.mirrorLabel?.setVisible(false);
+      this.mirrorWaiting?.setVisible(false);
+      return;
+    }
     this.updateMirrorBackdrop();
     return;
     const rect = this.mirrorRect!;
@@ -2307,8 +2451,33 @@ export class GameScene extends Phaser.Scene {
       const c = fy < 0 ? 0 : fy > 1 ? 1 : fy;
       return rect.y + c * rect.h;
     };
+    const mapSize = (fraction: number) => Math.max(1, fraction * Math.min(rect.w, rect.h));
 
     const spectate = this.versusSpectating;
+    this.drawMirrorDrifters(
+      g,
+      newest.snap.drifters ?? [],
+      mapX,
+      mapY,
+      mapSize,
+      spectate,
+    );
+    this.drawMirrorSalvage(
+      g,
+      newest.snap.salvage ?? [],
+      mapX,
+      mapY,
+      mapSize,
+      spectate,
+    );
+    this.drawMirrorGate(
+      g,
+      newest.snap.gate ?? null,
+      mapX,
+      mapY,
+      mapSize,
+      spectate,
+    );
     const renderEnemies = spectate || this.renderTuning.mirrorLiveRenderEnemies;
     const enemyR = spectate ? GameScene.MIRROR_SPECTATE_ENEMY_RADIUS : GameScene.MIRROR_ENEMY_RADIUS;
     const shipR = spectate ? GameScene.MIRROR_SPECTATE_SHIP_RADIUS : GameScene.MIRROR_SHIP_RADIUS;
@@ -2332,6 +2501,27 @@ export class GameScene extends Phaser.Scene {
         g.strokeCircle(mapX(ne.x), mapY(ne.y), enemyR);
       }
     }
+    this.drawMirrorNpcs(
+      g,
+      newest.snap.npcs ?? [],
+      mapX,
+      mapY,
+      mapSize,
+      spectate,
+    );
+    const mirrorLasers = [
+      ...(newest.snap.lasers ?? []),
+      ...this.mirrorLaserEchoes.map((echo) => echo.laser),
+    ];
+    this.drawMirrorLasers(
+      g,
+      mirrorLasers,
+      rect,
+      mapX,
+      mapY,
+      mapSize,
+      spectate,
+    );
 
     const sFx = older.snap.ship.x + (newest.snap.ship.x - older.snap.ship.x) * alpha;
     const sFy = older.snap.ship.y + (newest.snap.ship.y - older.snap.ship.y) * alpha;
@@ -2367,6 +2557,193 @@ export class GameScene extends Phaser.Scene {
 
     const aliveTag = newest.snap.ship.alive ? '' : 'KIA  ';
     this.mirrorLabel?.setText(`${this.getPeerPilotName()} // ${aliveTag}${newest.snap.score} // PH ${newest.snap.phase}`);
+  }
+
+  private drawMirrorDrifters(
+    g: Phaser.GameObjects.Graphics,
+    drifters: MirrorDrifterSnapshot[],
+    mapX: (fx: number) => number,
+    mapY: (fy: number) => number,
+    mapSize: (fraction: number) => number,
+    spectate: boolean,
+  ): void {
+    for (const drifter of drifters) {
+      const x = mapX(drifter.x);
+      const y = mapY(drifter.y);
+      const radius = Math.max(2, mapSize(drifter.radius));
+      const color = drifter.mineable ? COLORS.ASTEROID : COLORS.ASTEROID_INERT;
+      if (drifter.mineable) {
+        const miningRadius = radius * DRIFTER_MINING_RADIUS_MULT;
+        g.fillStyle(0xffdd44, spectate ? 0.07 : 0.025);
+        g.fillCircle(x, y, miningRadius);
+        g.lineStyle(spectate ? 1.1 : 0.8, 0xffdd44, spectate ? 0.22 : 0.09);
+        g.strokeCircle(x, y, miningRadius);
+      }
+      g.fillStyle(color, spectate ? 0.16 : 0.06);
+      g.fillCircle(x, y, radius);
+      g.lineStyle(spectate ? 1.4 : 1, color, spectate ? 0.55 : 0.24);
+      g.strokeCircle(x, y, radius);
+      g.fillStyle(color, spectate ? 0.28 : 0.12);
+      g.fillCircle(x, y, radius * 0.22);
+    }
+  }
+
+  private drawMirrorSalvage(
+    g: Phaser.GameObjects.Graphics,
+    salvage: MirrorSalvageSnapshot[],
+    mapX: (fx: number) => number,
+    mapY: (fy: number) => number,
+    mapSize: (fraction: number) => number,
+    spectate: boolean,
+  ): void {
+    for (const entry of salvage) {
+      const x = mapX(entry.x);
+      const y = mapY(entry.y);
+      const radius = Math.max(4, mapSize(entry.radius));
+      const ringColor = entry.rare ? 0xff44ff : COLORS.SALVAGE_RADIUS;
+      const bodyColor = entry.rare ? 0xff44ff : COLORS.SALVAGE;
+      const barW = radius * 0.92;
+      const barH = Math.max(2, radius * 0.22);
+
+      g.fillStyle(ringColor, spectate ? 0.05 : 0.02);
+      g.fillCircle(x, y, radius);
+      g.lineStyle(spectate ? 1.1 : 0.8, ringColor, spectate ? 0.24 : 0.1);
+      g.strokeCircle(x, y, radius);
+
+      g.fillStyle(bodyColor, spectate ? 0.14 : 0.05);
+      g.fillRect(x - barW / 2, y - barH / 2, barW, barH);
+      g.fillRect(x - barH / 2, y - barW / 2, barH, barW);
+      g.lineStyle(spectate ? 1.2 : 0.9, bodyColor, spectate ? 0.55 : 0.24);
+      g.strokeRect(x - barW / 2, y - barH / 2, barW, barH);
+      g.strokeRect(x - barH / 2, y - barW / 2, barH, barW);
+      g.fillStyle(bodyColor, spectate ? 0.32 : 0.12);
+      g.fillCircle(x, y, Math.max(1.5, radius * 0.08));
+    }
+  }
+
+  private drawMirrorGate(
+    g: Phaser.GameObjects.Graphics,
+    gate: MirrorGateSnapshot | null,
+    mapX: (fx: number) => number,
+    mapY: (fy: number) => number,
+    mapSize: (fraction: number) => number,
+    spectate: boolean,
+  ): void {
+    if (!gate) return;
+    const x = mapX(gate.x);
+    const y = mapY(gate.y);
+    const radius = Math.max(10, mapSize(gate.radius));
+    const alpha = spectate ? 0.78 : 0.24;
+
+    if (gate.extractable) {
+      const remaining = Phaser.Math.Clamp(gate.timeRemaining / EXIT_GATE_DURATION, 0, 1);
+      g.lineStyle(spectate ? 2 : 1.2, COLORS.GATE, alpha);
+      g.strokeCircle(x, y, radius * 0.55);
+      g.fillStyle(COLORS.GATE, spectate ? 0.12 : 0.04);
+      g.fillCircle(x, y, radius * 0.55);
+      g.lineStyle(spectate ? 2 : 1.2, COLORS.GATE, spectate ? 0.58 : 0.18);
+      g.beginPath();
+      g.arc(x, y, radius + 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * remaining, false);
+      g.strokePath();
+    } else {
+      const previewRemaining = Math.max(0, gate.timeRemaining - EXIT_GATE_DURATION);
+      const previewProgress = 1 - Phaser.Math.Clamp(previewRemaining / EXIT_GATE_PREVIEW, 0, 1);
+      const closingRadius = radius * (6 - 5.45 * previewProgress);
+      g.lineStyle(spectate ? 1.5 : 1, COLORS.GATE, spectate ? 0.36 : 0.12);
+      g.strokeCircle(x, y, closingRadius);
+      g.lineStyle(spectate ? 1.8 : 1.1, COLORS.GATE, alpha * 0.7);
+      g.strokeCircle(x, y, radius * 0.55);
+    }
+
+    const diamond = radius * 0.25;
+    g.lineStyle(spectate ? 1.3 : 0.9, 0xffffff, spectate ? 0.5 : 0.16);
+    g.beginPath();
+    g.moveTo(x, y - diamond);
+    g.lineTo(x + diamond, y);
+    g.lineTo(x, y + diamond);
+    g.lineTo(x - diamond, y);
+    g.closePath();
+    g.strokePath();
+  }
+
+  private drawMirrorNpcs(
+    g: Phaser.GameObjects.Graphics,
+    npcs: MirrorNpcSnapshot[],
+    mapX: (fx: number) => number,
+    mapY: (fy: number) => number,
+    mapSize: (fraction: number) => number,
+    spectate: boolean,
+  ): void {
+    const color = COLORS.ENEMY;
+    for (const npc of npcs) {
+      const x = mapX(npc.x);
+      const y = mapY(npc.y);
+      const radius = Math.max(spectate ? 7 : 4, mapSize(npc.radius));
+      const triR = radius * 1.2;
+      const angle = npc.angle;
+      const x1 = x + Math.cos(angle) * triR;
+      const y1 = y + Math.sin(angle) * triR;
+      const x2 = x + Math.cos(angle + Math.PI * 0.75) * triR;
+      const y2 = y + Math.sin(angle + Math.PI * 0.75) * triR;
+      const x3 = x + Math.cos(angle - Math.PI * 0.75) * triR;
+      const y3 = y + Math.sin(angle - Math.PI * 0.75) * triR;
+
+      g.lineStyle(spectate ? 1.6 : 1, color, spectate ? 0.82 : 0.24);
+      g.fillStyle(color, spectate ? 0.26 : 0.08);
+      g.beginPath();
+      g.moveTo(x1, y1);
+      g.lineTo(x2, y2);
+      g.lineTo(x3, y3);
+      g.closePath();
+      g.fillPath();
+      g.strokePath();
+
+      if (npc.shielded) {
+        g.lineStyle(spectate ? 1.3 : 0.9, COLORS.SHIELD, spectate ? 0.58 : 0.24);
+        g.strokeCircle(x, y, radius * 1.9);
+      }
+      if (npc.salvaging) {
+        g.lineStyle(spectate ? 1.1 : 0.8, color, spectate ? 0.34 : 0.12);
+        g.strokeCircle(x, y, radius * 3);
+      }
+    }
+  }
+
+  private drawMirrorLasers(
+    g: Phaser.GameObjects.Graphics,
+    lasers: MirrorLaserSnapshot[],
+    rect: { x: number; y: number; w: number; h: number },
+    mapX: (fx: number) => number,
+    mapY: (fy: number) => number,
+    mapSize: (fraction: number) => number,
+    spectate: boolean,
+  ): void {
+    for (const laser of lasers) {
+      const color = laser.kind === 'versus' ? VERSUS_LASER_COLOR : COLORS.ENEMY;
+      const width = Math.max(2, mapSize(laser.width));
+      const glowAlpha = laser.lethal
+        ? (spectate ? 0.18 : 0.08)
+        : (spectate ? 0.1 : 0.04);
+      const coreAlpha = laser.lethal
+        ? (spectate ? 0.82 : 0.34)
+        : (spectate ? 0.45 : 0.18);
+      const centerAlpha = laser.lethal
+        ? (spectate ? 0.7 : 0.24)
+        : 0;
+      const x1 = laser.axis === 'h' ? rect.x : mapX(laser.pos);
+      const y1 = laser.axis === 'h' ? mapY(laser.pos) : rect.y;
+      const x2 = laser.axis === 'h' ? rect.x + rect.w : mapX(laser.pos);
+      const y2 = laser.axis === 'h' ? mapY(laser.pos) : rect.y + rect.h;
+
+      g.lineStyle(width * (laser.lethal ? 1.8 : 1.2), color, glowAlpha);
+      g.lineBetween(x1, y1, x2, y2);
+      g.lineStyle(width * (laser.lethal ? 1 : 0.35), color, coreAlpha);
+      g.lineBetween(x1, y1, x2, y2);
+      if (centerAlpha > 0) {
+        g.lineStyle(Math.max(1, width * 0.28), 0xffffff, centerAlpha);
+        g.lineBetween(x1, y1, x2, y2);
+      }
+    }
   }
 
   private updateStarfield(delta: number): void {
@@ -2987,6 +3364,7 @@ export class GameScene extends Phaser.Scene {
 
   private beginVersusSpectate(): void {
     this.versusSpectating = true;
+    this.geoSphere.setDepth(GameScene.MIRROR_SPECTATE_GEOSPHERE_DEPTH);
     this.drawMirrorBg();
     this.setMirrorVisible(true);
     this.mirrorRenderAccumMs = this.renderTuning.mirrorSpectateRenderFrameMs;
@@ -3012,6 +3390,7 @@ export class GameScene extends Phaser.Scene {
     this.drawMirrorBg();
     this.mirrorRenderAccumMs = this.renderTuning.mirrorRenderFrameMs;
     this.mirrorNeedsRedraw = true;
+    this.geoSphere.setDepth(GeoSphere.DEFAULT_DEPTH);
     this.mirrorBg?.setDepth(GameScene.MIRROR_BG_DEPTH);
     this.mirrorEntities?.setDepth(GameScene.MIRROR_ENTITY_DEPTH);
     this.mirrorLabel?.setDepth(GameScene.MIRROR_TEXT_DEPTH);

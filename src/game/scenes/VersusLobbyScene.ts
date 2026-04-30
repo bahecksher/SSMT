@@ -386,14 +386,14 @@ export class VersusLobbyScene extends Phaser.Scene {
     this.session
       .broadcast(NET_EVENT.MATCH_START, payload)
       .catch((err) => console.warn('[VersusLobby] match_start broadcast failed', err));
-    this.beginCountdown(matchId);
+    this.beginCountdown(matchId, COUNTDOWN_MS);
   }
 
   private handleMatchStart(payload: MatchStartPayload): void {
     if (!this.session) return;
     if (this.state !== 'WAITING') return;
     if (this.session.isHost()) return;
-    this.beginCountdown(payload.matchId);
+    this.beginCountdown(payload.matchId, payload.delayMs);
   }
 
   private handleMatchCancel(): void {
@@ -403,14 +403,20 @@ export class VersusLobbyScene extends Phaser.Scene {
     }
   }
 
-  private beginCountdown(matchId: string): void {
+  private beginCountdown(matchId: string, delayMs = COUNTDOWN_MS): void {
     if (!this.session) return;
+    this.cancelCountdown();
     this.setState('COUNTDOWN');
-    const startAt = Date.now() + COUNTDOWN_MS;
-    let remaining = Math.ceil(COUNTDOWN_MS / 1000);
+    const durationMs = Math.max(0, delayMs);
+    const startAt = Date.now() + durationMs;
+    let remaining = Math.ceil(durationMs / 1000);
     this.showCountdownNumber(remaining);
 
-    this.cancelCountdown();
+    if (durationMs <= 0) {
+      this.fireMatchStart(matchId);
+      return;
+    }
+
     this.countdownTimer = this.time.addEvent({
       delay: 250,
       loop: true,

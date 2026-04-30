@@ -2,6 +2,8 @@
 
 Append-only. One entry per decision.
 
+For session startup, skim recent entries and search this file for decisions relevant to the current task. Do not load the whole file into context unless broad project history is needed.
+
 ---
 
 ### 2026-03-25 — Virtual resolution: 540x960 portrait

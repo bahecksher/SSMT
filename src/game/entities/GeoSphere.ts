@@ -102,6 +102,8 @@ function rotateX(v: Vec3, angle: number): Vec3 {
 }
 
 export class GeoSphere {
+  static readonly DEFAULT_DEPTH = -0.5;
+
   private graphic: Phaser.GameObjects.Graphics;
   private baseVerts: Vec3[];
   private edges: [number, number][];
@@ -131,7 +133,7 @@ export class GeoSphere {
     this.originX = layout.gameWidth + this.radius * 0.35;
     this.originY = layout.gameHeight + this.radius * 0.25;
 
-    this.graphic = scene.add.graphics().setDepth(-0.5);
+    this.graphic = scene.add.graphics().setDepth(GeoSphere.DEFAULT_DEPTH);
     this.draw();
   }
 
@@ -337,6 +339,10 @@ export class GeoSphere {
     drawRingSegments(ringOuter, true, RING_COLOR);
     drawRingSegments(ringInner, true, RING_COLOR);
     drawRingDebris(true);
+  }
+
+  setDepth(depth: number): void {
+    this.graphic.setDepth(depth);
   }
 
   destroy(): void {
