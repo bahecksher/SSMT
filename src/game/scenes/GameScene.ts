@@ -2,13 +2,10 @@ import Phaser from 'phaser';
 import {
   applyColorPalette,
   COLORS,
-  getNextPaletteId,
-  PALETTE_LABELS,
   SCENE_KEYS,
   TITLE_FONT,
   UI_FONT,
   readableFontSize,
-  type PaletteId,
 } from '../constants';
 import { GameState, CompanyId } from '../types';
 import type { ActiveMission, RunBoosts } from '../types';
@@ -2528,38 +2525,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private refreshCountdownPalette(): void {
-    if (!this.countdownText) {
-      return;
-    }
-
-    this.countdownText.setColor(`#${COLORS.HUD.toString(16).padStart(6, '0')}`);
-    this.countdownText.setStroke(`#${COLORS.GRID.toString(16).padStart(6, '0')}`, 2);
-    this.countdownText.setShadow(0, 0, 'transparent', 0, false, false);
-  }
-
-  private applyActivePalette(paletteId: PaletteId): void {
-    applyColorPalette(paletteId);
-
-    for (const star of this.starfieldStars) {
-      if (star.color !== 0xffffff) {
-        star.color = COLORS.PLAYER;
-      }
-    }
-
-    this.drawStarfield();
-    this.redrawArenaBorder();
-    this.refreshMirrorPalette();
-    this.hud.refreshPalette();
-    this.updateBossStatusUi();
-    this.refreshCountdownPalette();
-    this.refreshPauseUi();
-
-    if (this.state === GameState.PAUSED) {
-      this.showPauseMenu();
-    }
-  }
-
   private enterResultsState(): void {
     if (!this.resultData) return;
 
@@ -3898,8 +3863,7 @@ export class GameScene extends Phaser.Scene {
     const settingRowGap = densePause ? 22 : 26;
     const shakeY = settingsY + (densePause ? 24 : 30);
     const scanY = shakeY + settingRowGap;
-    const paletteY = scanY + settingRowGap;
-    const musicY = paletteY + settingRowGap;
+    const musicY = scanY + settingRowGap;
     const musicVolumeLabelY = musicY + (densePause ? 24 : 32);
     const musicVolumeY = musicVolumeLabelY + (densePause ? 12 : 14);
     const fxVolumeLabelY = musicVolumeY + (densePause ? 14 : 18);
@@ -3950,43 +3914,6 @@ export class GameScene extends Phaser.Scene {
     );
     this.pauseUi.push(scanText);
 
-    const paletteButtonWidth = densePause ? 104 : 112;
-    const paletteButtonHeight = densePause ? 24 : 26;
-    const paletteButtonLeft = centerX - paletteButtonWidth / 2;
-    const paletteButtonTop = paletteY - paletteButtonHeight / 2;
-    const paletteButtonBg = this.add.graphics().setDepth(221);
-    paletteButtonBg.fillStyle(COLORS.BG, 0.92);
-    paletteButtonBg.lineStyle(1.1, COLORS.HUD, 0.5);
-    paletteButtonBg.fillRoundedRect(paletteButtonLeft, paletteButtonTop, paletteButtonWidth, paletteButtonHeight, 8);
-    paletteButtonBg.strokeRoundedRect(paletteButtonLeft, paletteButtonTop, paletteButtonWidth, paletteButtonHeight, 8);
-    paletteButtonBg.fillStyle(COLORS.HUD, 0.08);
-    paletteButtonBg.fillRoundedRect(paletteButtonLeft + 4, paletteButtonTop + 4, paletteButtonWidth - 8, paletteButtonHeight - 8, 6);
-    this.pauseUi.push(paletteButtonBg);
-
-    const paletteText = this.add.text(centerX, paletteY, PALETTE_LABELS[settings.paletteId], {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(densePause ? 11 : 12),
-      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(222).setAlpha(0.9);
-    this.pauseUi.push(paletteText);
-
-    const paletteHit = this.add.zone(paletteButtonLeft, paletteButtonTop, paletteButtonWidth, paletteButtonHeight)
-      .setData('cornerRadius', 8)
-      .setOrigin(0, 0)
-      .setDepth(223)
-      .setInteractive({ useHandCursor: true });
-    paletteHit.on(
-      'pointerdown',
-      (_pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-        event.stopPropagation();
-        playUiSelectSfx(this);
-        const updated = updateSettings({ paletteId: getNextPaletteId(getSettings().paletteId) });
-        this.applyActivePalette(updated.paletteId);
-      },
-    );
-    this.pauseUi.push(paletteHit);
-
     const musicText = this.add.text(centerX, musicY, `MUSIC: ${settings.musicEnabled ? 'ON' : 'OFF'}`, {
       fontFamily: UI_FONT,
       fontSize: readableFontSize(densePause ? 13 : 14),
@@ -4007,14 +3934,6 @@ export class GameScene extends Phaser.Scene {
       },
     );
     this.pauseUi.push(musicText);
-
-    const musicBetaText = this.add.text(centerX, musicY + (densePause ? 13 : 16), '*BETA*', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(densePause ? 9 : 10),
-      color: `#${COLORS.HAZARD.toString(16).padStart(6, '0')}`,
-      align: 'center',
-    }).setOrigin(0.5).setDepth(221).setAlpha(0.82);
-    this.pauseUi.push(musicBetaText);
 
     const musicVolumeLabel = this.add.text(centerX, musicVolumeLabelY, 'MUSIC VOL', {
       fontFamily: UI_FONT,

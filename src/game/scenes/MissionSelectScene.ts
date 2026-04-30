@@ -12,6 +12,7 @@ import {
 } from '../constants';
 import { colorStr } from '../utils/geometry';
 import { getLayout, isNarrowViewport, isShortViewport, setLayoutSize } from '../layout';
+import { getPrimaryActionMetrics, getTopNavMetrics } from '../ui/menuLayout';
 import { loadOrGenerateMissions, loadMissionSave, MAX_REROLLS, saveMissionSelection } from '../systems/MissionSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { generateMission } from '../data/missionCatalog';
@@ -305,7 +306,7 @@ export class MissionSelectScene extends Phaser.Scene {
     const repGridTop = repHeaderY + headerToGridGap;
     const deployButtonWidth = veryCompact ? 170 : compact ? 184 : 200;
     const deployButtonHeight = veryCompact ? 36 : compact ? 40 : 46;
-    const deployY = layout.gameHeight - (veryCompact ? 26 : compact ? 34 : 50);
+    const deployY = getPrimaryActionMetrics(layout).centerY;
     const repRowWidth = cardWidth;
     const repToDeployGap = veryCompact ? 8 : tight ? 10 : compact ? 14 : 16;
     const repRowsAvailableHeight = Math.floor((deployY - deployButtonHeight / 2) - repToDeployGap - repGridTop);
@@ -585,11 +586,11 @@ export class MissionSelectScene extends Phaser.Scene {
     for (const obj of this.navUi) obj.destroy();
     this.navUi = [];
 
-    const briefing = this.getBriefingLayoutConfig();
-    const btnWidth = briefing.veryCompact ? 60 : briefing.compact ? 68 : 76;
-    const btnHeight = briefing.veryCompact ? 26 : briefing.compact ? 28 : 30;
-    const btnX = briefing.cardMarginX + btnWidth / 2 - 4;
-    const btnY = briefing.veryCompact ? 22 : briefing.compact ? 24 : 28;
+    const nav = getTopNavMetrics();
+    const btnWidth = nav.width;
+    const btnHeight = nav.height;
+    const btnX = nav.leftCenterX;
+    const btnY = nav.centerY;
 
     const bg = this.add.graphics().setDepth(10);
     bg.fillStyle(COLORS.BG, 0.84);
@@ -600,7 +601,7 @@ export class MissionSelectScene extends Phaser.Scene {
 
     const label = this.add.text(btnX, btnY, 'MENU', {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(briefing.veryCompact ? 9 : briefing.compact ? 10 : 11),
+      fontSize: readableFontSize(nav.fontSizePx),
       color: colorStr(COLORS.HUD),
       align: 'center',
     }).setOrigin(0.5).setDepth(11).setAlpha(0.82);
@@ -623,11 +624,12 @@ export class MissionSelectScene extends Phaser.Scene {
   private createSettingsUi(): void {
     const layout = getLayout();
     const briefing = this.getBriefingLayoutConfig();
+    const nav = getTopNavMetrics(layout);
     const showPaletteSettings = this.runMode !== RunMode.VERSUS;
     const hudColor = colorStr(COLORS.HUD);
-    const buttonWidth = briefing.veryCompact ? 86 : briefing.compact ? 92 : 102;
-    const buttonCenterX = layout.gameWidth - briefing.cardMarginX - buttonWidth / 2 + 4;
-    const buttonCenterY = briefing.veryCompact ? 24 : briefing.compact ? 26 : 30;
+    const buttonWidth = nav.width;
+    const buttonCenterX = nav.rightCenterX;
+    const buttonCenterY = nav.centerY;
     const panelWidth = briefing.veryCompact ? 208 : briefing.compact ? 216 : 228;
     const panelHeight = briefing.veryCompact
       ? (showPaletteSettings ? 236 : 206)
@@ -653,10 +655,10 @@ export class MissionSelectScene extends Phaser.Scene {
       buttonCenterX,
       buttonCenterY,
       buttonWidth,
-      briefing.veryCompact ? 26 : briefing.compact ? 28 : 32,
+      nav.height,
       'SETTINGS',
       11,
-      readableFontSize(10),
+      readableFontSize(nav.fontSizePx),
       () => this.setSettingsOpen(!this.settingsOpen),
     );
 
@@ -716,13 +718,6 @@ export class MissionSelectScene extends Phaser.Scene {
       color: hudColor,
       align: 'left',
     }).setOrigin(0, 0.5).setDepth(20);
-
-    const musicBetaLabel = this.add.text(panelLeft + 48, rowThreeY, '*BETA*', {
-      fontFamily: UI_FONT,
-      fontSize: readableFontSize(9),
-      color: colorStr(COLORS.HAZARD),
-      align: 'left',
-    }).setOrigin(0, 0.5).setDepth(20).setAlpha(0.9);
 
     const musicVolumeLabel = this.add.text(panelLeft + 14, musicVolumeLabelY, 'MUSIC VOL', {
       fontFamily: UI_FONT,
@@ -787,7 +782,6 @@ export class MissionSelectScene extends Phaser.Scene {
       shakeLabel,
       scanLabel,
       musicLabel,
-      musicBetaLabel,
       musicVolumeLabel,
       fxVolumeLabel,
       this.shakeOnButton.bg,

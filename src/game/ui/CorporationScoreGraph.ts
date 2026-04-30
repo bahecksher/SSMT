@@ -273,7 +273,7 @@ export class CorporationScoreGraph {
     g.clear();
 
     const r = this.globeRadius;
-    const hazard = COLORS.HAZARD;
+    const hazard = COLORS.NPC;
     const highlight = 0xffffff;
 
     g.fillStyle(hazard, 0.12);

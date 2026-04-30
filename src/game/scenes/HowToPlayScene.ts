@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { COLORS, SCENE_KEYS, TITLE_FONT, UI_FONT, applyColorPalette, readableFontSize } from '../constants';
 import { getLayout, isNarrowViewport, isShortViewport, setLayoutSize } from '../layout';
+import { getTopNavMetrics } from '../ui/menuLayout';
 import { getSettings } from '../systems/SettingsSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
 import { HologramOverlay } from '../ui/HologramOverlay';
@@ -115,12 +116,9 @@ export class HowToPlayScene extends Phaser.Scene {
       this.scene.start(SCENE_KEYS.TUTORIAL_ARENA, { returnPageIndex: this.pageIndex });
     });
 
-    // Back button top-left
-    const backW = compact ? 80 : 100;
-    const backH = compact ? 28 : 32;
-    const backX = sideMargin + backW / 2;
-    const backY = 24 + backH / 2;
-    const backButton = this.createButton(backX, backY, backW, backH, 'BACK', () => this.exit());
+    // Back button top-left — shared corner-button metrics
+    const nav = getTopNavMetrics(layout);
+    const backButton = this.createButton(nav.leftCenterX, nav.centerY, nav.width, nav.height, 'BACK', () => this.exit(), nav.fontSizePx);
     this.backButtonBg = backButton.bg;
     this.backButtonLabel = backButton.label;
     this.backButtonHit = backButton.hit;
@@ -215,12 +213,13 @@ export class HowToPlayScene extends Phaser.Scene {
     height: number,
     label: string,
     onClick: () => void,
+    fontSizePx = 13,
   ): { bg: Phaser.GameObjects.Graphics; label: Phaser.GameObjects.Text; hit: Phaser.GameObjects.Zone } {
     const bg = this.add.graphics().setDepth(10);
     this.drawButton(bg, x, y, width, height, true);
     const labelText = this.add.text(x, y, label, {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(13),
+      fontSize: readableFontSize(fontSizePx),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(11);

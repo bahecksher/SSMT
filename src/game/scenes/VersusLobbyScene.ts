@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { COLORS, SCENE_KEYS, TITLE_FONT, UI_FONT, applyColorPalette, readableFontSize } from '../constants';
 import { getLayout, isNarrowViewport, isShortViewport, setLayoutSize } from '../layout';
+import { getTopNavMetrics } from '../ui/menuLayout';
 import { getSettings } from '../systems/SettingsSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { playUiSelectSfx } from '../systems/SfxSystem';
@@ -193,12 +194,8 @@ export class VersusLobbyScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5).setDepth(11).setAlpha(0);
 
-    const sideMargin = Math.max(24, Math.round(layout.gameWidth * 0.06));
-    const backW = compact ? 80 : 100;
-    const backH = compact ? 28 : 32;
-    const backX = sideMargin + backW / 2;
-    const backY = 24 + backH / 2;
-    this.makeButton(backX, backY, backW, backH, 'BACK', () => this.exitToMenu());
+    const nav = getTopNavMetrics(layout);
+    this.makeButton(nav.leftCenterX, nav.centerY, nav.width, nav.height, 'BACK', () => this.exitToMenu(), true, nav.fontSizePx);
 
     this.renderState();
 
@@ -692,11 +689,12 @@ export class VersusLobbyScene extends Phaser.Scene {
     label: string,
     onClick: () => void,
     enabled = true,
+    fontSizePx = 13,
   ): LobbyButton {
     const bg = this.add.graphics().setDepth(10);
     const labelText = this.add.text(x, y, label, {
       fontFamily: UI_FONT,
-      fontSize: readableFontSize(13),
+      fontSize: readableFontSize(fontSizePx),
       color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
       align: 'center',
     }).setOrigin(0.5).setDepth(11);

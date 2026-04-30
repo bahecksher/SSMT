@@ -1,48 +1,65 @@
 # State
-_Last updated: 2026-04-29 1915_
+_Last updated: 2026-04-29 2110_
 
 ## Current focus
-The strongest suspected iPhone 13 mini regression path has now been cut more directly: on constrained narrow/short viewports, live versus no longer repaints the peer's full enemy ghost field behind gameplay. The lighter shared render profile is still in place, but the bigger change is that constrained live play now keeps only the peer ship/status while full-detail peer rendering remains available in spectate.
+Corp leaderboard polish: full corp names always shown, donut chart shrinks on constrained viewports so all four rows fit, donut globe color matches the background `GeoSphere` (NPC color, not HAZARD). Top-nav unification and pause-menu palette cleanup from earlier in the session still in place.
 
 ## What's working
-- `src/game/data/renderTuning.ts`: central constrained-vs-default render profile now covers shared visual density plus live-mirror behavior (`mirrorLiveBgAlpha`, `mirrorLiveRenderEnemies`, live/spectate mirror cadence).
-- `src/game/scenes/GameScene.ts`: constrained live versus now skips peer enemy ghost rendering, skips live mirror tint fill, redraws live mirror at snapshot cadence, and still restores richer peer presentation in spectate.
-- `src/game/entities/GeoSphere.ts`: shared globe still lowers mesh/ring detail and redraw cadence automatically on constrained phone-sized viewports.
-- `src/game/entities/DrifterHazard.ts` and `src/game/entities/SalvageDebris.ts`: repeated dashed-ring effects still use lighter segment counts on constrained phones.
-- Existing versus flow remains intact: MissionSelect briefing lock-in, extract-required win, sabotage lane sweeps, fullscreen spectate, spectator regen at 7s, stale-epoch rematch protection.
+- `src/game/ui/menuLayout.ts`: shared corner-button metrics + bottom-action y/font.
+- `src/game/ui/CorporationScoreGraph.ts`: donut globe now uses `COLORS.NPC` (matches background GeoSphere body).
+- `src/game/scenes/MenuScene.ts`:
+  - HOW TO PLAY (left, full label always) + SETTINGS (right) read from the shared helper.
+  - TAP TO START y matches shared bottom anchor.
+  - Arcade pilot leaderboard now uses dedicated tighter font + rowHeight (font 11/14, row 18/24) and a row cap of 10, so up to the full API top-10 fits instead of just the leader.
+  - Corp leaderboard renders all four corps via `buildFullCorpEntries`, full company names (no more `leaderboardTag` collapse), dedicated tighter font + rowHeight, smaller donut on constrained viewports.
+  - Leaderboard divider hides in CAMPAIGN / VERSUS modes.
+  - Music `*BETA*` removed.
+- `src/game/scenes/MissionSelectScene.ts`: MENU + SETTINGS shared metrics; DEPLOY shares bottom anchor; music `*BETA*` removed.
+- `src/game/scenes/VersusLobbyScene.ts`: BACK button shared metrics.
+- `src/game/scenes/HowToPlayScene.ts`: BACK button shared metrics.
+- `src/game/scenes/GameScene.ts`: pause palette swap + music `*BETA*` removed; constrained live versus skips peer enemy ghost rendering and live mirror tint fill.
+- `src/game/data/renderTuning.ts`: constrained-vs-default render profile.
+- `src/game/entities/GeoSphere.ts`, `DrifterHazard.ts`, `SalvageDebris.ts`: lighter detail on constrained phone-sized viewports.
+- Existing versus flow remains intact.
 - `npm.cmd run build`: passes.
 
 ## In progress
-- Live iPhone 13 mini playcheck of normal gameplay and live versus after the direct mirror-cost cut.
-- Manual two-window versus pass after the recent spectate / sabotage / briefing / backdrop / mirror-framerate changes.
-- Readability check on the new constrained live mirror, since it now favors framerate over full ghost detail.
+- Live iPhone 13 mini playcheck of corp leaderboard (smaller donut, full names, matching globe color), campaign leaderboard, and HOW TO PLAY full label.
+- Two-window versus pass after the cumulative chrome / pause-menu / corp-board changes.
 
 ## Known issues
-- This direct versus-mirror framerate fix is still build-verified only; no fresh live phone verification yet on iPhone 13 mini.
-- Current versus flow is still missing a fresh two-window manual playtest after the spectate disruption, lobby backdrop, receiver-side strike-clear, spectate regen/telegraph tuning, briefing auto-unlock, palette lockout, and now the mobile mirror simplification.
-- Spectate lane buttons still sit on arena edges and may crowd ships or hazards during live play.
-- Manual Supabase SQL migration for `mode` / `company_id` columns is still pending (`docs/sql/2026-04-28 1403 mode and company_id columns.sql`).
-- Restored arcade/campaign company buffs are still not manually verified or balance-tested.
+- VersusLobbyScene has no SETTINGS panel; only BACK occupies the top row.
+- TutorialArenaScene BACK still sits top-right, not aligned to the shared top-left corner pattern.
+- Title hero sizing still varies by design between Menu, MissionSelect, VersusLobby.
+- Versus mirror framerate fix is build-verified only; no fresh phone verification.
+- Versus flow missing fresh two-window manual playtest.
+- Spectate lane buttons still sit on arena edges and may crowd ships or hazards.
+- Manual Supabase SQL migration for `mode` / `company_id` columns still pending (`docs/sql/2026-04-28 1403 mode and company_id columns.sql`).
+- Restored arcade/campaign company buffs not manually verified.
 - Soft respawn keeps rep-flux income accumulators across lives.
 - Rep-flux tuning placeholders remain in `tuning.ts`.
+- Earlier in this session a log file was edited after creation rather than spawned as a separate log; minor AGENTS.md append-only nit.
 
 ## Next actions
-1. Run the latest build on iPhone 13 mini and check whether live versus is now smooth enough during active play.
-2. Run a two-window versus session on a phone-sized viewport and confirm the ship/status-only live mirror still feels useful while spectate remains readable.
-3. If the phone still chugs, decide whether the next cut is gameplay-only geo-sphere reduction, lighter menu/briefing background simulation, or removing more live mirror work on constrained screens.
+1. Live iPhone 13 mini pass: corp leaderboard reads with all four full names + smaller donut + matching globe color. Confirm Slick comm fits cleanly below.
+2. Two-window versus pass to confirm cumulative changes did not regress lobby -> deploy -> spectate -> result -> rematch loop.
+3. Decide whether to unify TutorialArena BACK and add a SETTINGS panel mirror to VersusLobby.
 
 ## Active plan
-docs/plans/2026-04-29 1915 Plan revision - Mobile Framerate Prioritization.md
+docs/plans/2026-04-29 1930 Plan - Unified Top Nav Layout.md
 
 ## How to verify
 1. `npm.cmd run build`
-2. `npm.cmd run dev`, open on an iPhone 13 mini-sized viewport, enter versus, and play active live gameplay long enough to stress asteroids, enemies, beams, and the live peer mirror.
-3. During live play on the constrained viewport, confirm the peer status and ship still render, but the full peer enemy ghost field is no longer present behind gameplay.
-4. End a run and enter spectate; confirm the richer peer mirror still appears there with the expected larger presentation.
-5. Open two browser windows for versus and confirm the rest of the existing flow still works: lobby -> MissionSelect lock-in -> deploy -> sabotage -> spectate -> result -> rematch.
+2. `npm.cmd run dev`, open at iPhone 13 mini-sized viewport (~375x812).
+3. Menu: top-left button reads "HOW TO PLAY". Switch to ARCADE → CORPS: donut is smaller than before, globe inside donut shares the background GeoSphere color, four full corp names render under the donut.
+4. Switch to CAMPAIGN: no horizontal divider line cuts through the LOCAL HIGH SCORE row.
+5. Start a run, hit pause: SHAKE / SCAN / MUSIC stack tight, no PALETTE row, no `*BETA*`.
+6. Open settings panels in main menu and mission select: music row clean.
+7. Open two browser windows for versus and confirm flow still works.
 
 ## Recent logs
-- docs/log/2026-04-29 1915 Versus Mirror Live-Play Cost Cut.md - cut the most suspicious versus-specific render path by simplifying constrained live mirror rendering.
-- docs/log/2026-04-29 1909 Mobile Framerate Prioritization.md - added constrained-viewport render tuning to cut recurring vector redraw cost on phone-sized screens.
-- docs/log/2026-04-29 1810 Session Wrap and Spectator Regen Clarification.md - aligned the spectator regen comment/docs with the actual 7-second behavior and prepared the session for push.
-- docs/log/2026-04-29 1656 Spectator Laser Regen to 7s.md - retuned spectator laser charge regen from 5s to 7s to slow versus disruption cadence.
+- docs/log/2026-04-29 2110 Arcade Pilot Board More Rows.md - tighter font + rowHeight + cap raised to 10 so the arcade pilot board shows more than just the leader.
+- docs/log/2026-04-29 2107 Corp Board Full Names and Globe Recolor.md - full corp names, smaller donut on compact, donut globe color matches background.
+- docs/log/2026-04-29 2101 Corp Board Tightening and Campaign Divider Hide.md - tightened corp row spacing + donut top gap, hid leaderboard divider in non-arcade modes, kept HOW TO PLAY full label.
+- docs/log/2026-04-29 2027 Pause Palette Removed and Corp Board Full Roster.md - dropped pause-menu palette swap + music `*BETA*` tags; corp leaderboard now always shows all four corps.
+- docs/log/2026-04-29 1948 Unified Top Nav Layout.md - shared corner-button + bottom-action metrics across Menu, MissionSelect, VersusLobby, and HowToPlay.
