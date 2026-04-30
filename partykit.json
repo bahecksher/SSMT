@@ -1,0 +1,6 @@
+{
+  "$schema": "https://www.partykit.io/schema.json",
+  "main": "partykit/shared-versus.ts",
+  "name": "ssmt-shared-versus",
+  "compatibilityDate": "2026-04-30"
+}

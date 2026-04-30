@@ -307,3 +307,6 @@ Phone-sized narrow/short viewports now automatically use a reduced render profil
 
 ### 2026-04-29 - Constrained live versus mirror favors framerate over full ghost detail
 On narrow/short phone-sized viewports, live versus no longer renders the peer's full enemy ghost field or the live arena tint behind gameplay. The peer ship and status remain, and full-detail peer rendering still returns during spectate. This keeps the core versus read while cutting the heaviest newly introduced render path on constrained mobile.
+
+### 2026-04-29 - Shared versus uses PartyKit host-authoritative rooms
+Shared-world versus is being introduced as a PartyKit-hosted, server-authoritative room keyed by room code plus match id. Supabase remains for existing lobby/presence/leaderboard plumbing, while the active shared match gets one authority for resource HP, gate timing, score deltas, and sabotage laser outcomes. The first implementation is behind a feature flag and keeps mirrored versus as fallback until two-window manual testing proves the shared path stable.

@@ -346,8 +346,9 @@ export class SalvageDebris {
     y: number,
     vx: number,
     vy: number,
+    config?: SalvageDebrisConfig,
   ): SalvageDebris {
-    const d = new SalvageDebris(scene);
+    const d = new SalvageDebris(scene, config);
     // Override spawn position and velocity
     d.x = x;
     d.y = y;
