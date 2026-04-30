@@ -1333,24 +1333,43 @@ export class MenuScene extends Phaser.Scene {
     const rowHeight = compactMenu ? 18 : 24;
     // Always render every corp so the board reflects the full standings, even
     // if some corps have no runs yet this period.
-    const startY = this.corpScoreGraph.getBottomY() + (compactMenu ? 6 : 10);
+    const startY = this.corpScoreGraph.getBottomY() + (compactMenu ? 14 : 20);
     const visibleEntries = fullEntries;
+    const rowWidth = Math.min(layout.gameWidth - (compactMenu ? 76 : 112), compactMenu ? 212 : 276);
+    const rowLeftX = centerX - rowWidth / 2;
+    const rankX = rowLeftX;
+    const nameX = rowLeftX + (compactMenu ? 18 : 24);
+    const scoreX = rowLeftX + rowWidth;
 
     for (let i = 0; i < visibleEntries.length; i++) {
       const entry = visibleEntries[i];
       const y = startY + i * rowHeight;
       const company = COMPANIES[entry.companyId];
       const score = `${Math.floor(entry.totalScore)}c`;
-      const line = `${i + 1}. ${company.name}  ${score}`;
+      const color = `#${company.color.toString(16).padStart(6, '0')}`;
 
-      const text = this.add.text(centerX, y, line, {
+      const rankText = this.add.text(rankX, y, `${i + 1}.`, {
         fontFamily: UI_FONT,
         fontSize: corpFontSize,
-        color: `#${company.color.toString(16).padStart(6, '0')}`,
-        align: 'center',
-      }).setOrigin(0.5).setDepth(uiDepth);
+        color,
+        align: 'left',
+      }).setOrigin(0, 0.5).setDepth(uiDepth);
 
-      this.leaderboardTexts.push(text);
+      const nameText = this.add.text(nameX, y, company.name, {
+        fontFamily: UI_FONT,
+        fontSize: corpFontSize,
+        color,
+        align: 'left',
+      }).setOrigin(0, 0.5).setDepth(uiDepth);
+
+      const scoreText = this.add.text(scoreX, y, score, {
+        fontFamily: UI_FONT,
+        fontSize: corpFontSize,
+        color,
+        align: 'right',
+      }).setOrigin(1, 0.5).setDepth(uiDepth);
+
+      this.leaderboardTexts.push(rankText, nameText, scoreText);
     }
 
     this.positionMenuComm();

@@ -11,6 +11,7 @@ export type SlickLineKey =
   | 'extraction'
   | 'death'
   | 'gameOverRetry'
+  | 'tutIntro'
   | 'tutMove'
   | 'tutMoveNudge'
   | 'tutMoveDone'
@@ -94,6 +95,9 @@ const SLICK_LINES: Record<SlickLineKey, string[]> = {
     "You've still got a point to prove. Get to it.",
     'Get back in the seat, pilot.',
   ],
+  tutIntro: [
+    "Slick Ops. I'm dropping your frame into a clean tutorial lane now. Hold for gate release.",
+  ],
   tutMove: [
     "Drag or hold the screen to move. Release and your ship will coast.",
   ],
@@ -125,16 +129,16 @@ const SLICK_LINES: Record<SlickLineKey, string[]> = {
     "Your ship was destroyed. Respawning.",
   ],
   tutShield: [
-    "Pick up the shield. It absorbs one hit before breaking. Use it on the asteroid to feel how it works.",
+    "Pick up the shield. Spend the first one on the enemy ship, not the asteroid. Then grab the second shield and split the asteroid.",
   ],
   tutShieldNudge: [
-    "Grab the shield, then ram the asteroid. The shield will break instead of your ship.",
+    "Wrong target, wrong lesson. First shield into the enemy. Second shield into the asteroid.",
   ],
   tutShieldHit: [
-    "That's a shield absorbing a hit. Grab the next shield and try again.",
+    "Enemy cleared. Now grab the second shield and split the asteroid.",
   ],
   tutShieldDone: [
-    "Shields buy you one mistake each. Don't rely on having one.",
+    "That's the shield contract. Enemy first, asteroid second, one hit per shield.",
   ],
   tutExtract: [
     "Credits are unbanked until you extract. The gate is warming up - fly through it once it goes live to bank.",

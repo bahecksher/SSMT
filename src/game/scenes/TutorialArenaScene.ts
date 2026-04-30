@@ -36,6 +36,7 @@ import { SlickComm } from '../ui/SlickComm';
 import { getSlickLine, type SlickLineKey } from '../data/slickLines';
 
 type SectionId = 'move' | 'score' | 'danger' | 'shield' | 'extract';
+type ShieldPhase = 'awaitPickup1' | 'awaitEnemyHit' | 'awaitPickup2' | 'awaitDrifterHit';
 
 type SceneButton = {
   bg: Phaser.GameObjects.Graphics;
@@ -60,6 +61,8 @@ const STARFIELD_COUNT = 170;
 const NUDGE_DELAY_MS = 3500;
 const ADVANCE_DELAY_MS = 1100;
 const RESET_DELAY_MS = 900;
+const TUTORIAL_COMM_AUTO_HIDE_MS = 9000;
+const TUTORIAL_COMPLETE_AUTO_HIDE_MS = 11000;
 
 const MOVE_MIN_DISTANCE = 240;
 const MOVE_MIN_TIME_MS = 4000;
@@ -68,9 +71,6 @@ const SCORE_MIN_CARRY = 30;
 const SCORE_MIN_TIME_MS = 1500;
 
 const DANGER_SURVIVE_MS = 7500;
-const SHIELD_RESPAWN_CAP = 2;
-const SHIELD_LOSS_TRIGGER = 2;
-const SHIELD_TIMEOUT_MS = 10000;
 
 const EXTRACT_PRELOAD = 60;
 const EXTRACT_PREVIEW_MS = 2200;
@@ -151,8 +151,8 @@ export class TutorialArenaScene extends Phaser.Scene {
   private miningTouched = false;
   private scoreReadyTime = 0;
 
-  // SHIELD state — count of shield losses this section. Auto-advance at SHIELD_LOSS_TRIGGER or SHIELD_TIMEOUT_MS.
-  private shieldLossCount = 0;
+  // SHIELD state — explicit scripted sequence: shield -> enemy, shield -> asteroid.
+  private shieldPhase: ShieldPhase = 'awaitPickup1';
 
   // EXTRACT state
   private extractLiveAnnounced = false;
@@ -163,9 +163,6 @@ export class TutorialArenaScene extends Phaser.Scene {
   // Respawn-fallback timer (ms)
   private respawnCheckTimer = 0;
   private playerSoftDown = false;
-
-  // SHIELD section: how many extra shields the fallback has spawned (cap = SHIELD_RESPAWN_CAP).
-  private shieldRespawnCount = 0;
 
   constructor() {
     super(SCENE_KEYS.TUTORIAL_ARENA);
@@ -262,7 +259,7 @@ export class TutorialArenaScene extends Phaser.Scene {
     this.salvageSystem = new SalvageSystem(this, this.player, this.scoreSystem);
     this.collisionSystem = new CollisionSystem(this.player);
 
-    this.slickComm = new SlickComm(this, { width: Math.min(layout.gameWidth - 40, 420), autoHideMs: 5500 });
+    this.slickComm = new SlickComm(this, { width: Math.min(layout.gameWidth - 40, 420), autoHideMs: TUTORIAL_COMM_AUTO_HIDE_MS });
     this.slickComm.setBottomPinnedLayout(8, 200);
 
     this.startEntryWarp(spawnX, spawnY);
@@ -365,6 +362,7 @@ export class TutorialArenaScene extends Phaser.Scene {
     this.playerSoftDown = false;
     this.inputSystem.clear();
     this.spawnGate(spawnX, spawnY, ENTRY_WARP_MS, EXIT_GATE_DURATION);
+    this.speak('tutIntro');
   }
 
   /** Enter a section without clearing arena state — preserves continuous play across advances. */
@@ -379,8 +377,7 @@ export class TutorialArenaScene extends Phaser.Scene {
     this.salvageTouched = false;
     this.miningTouched = false;
     this.scoreReadyTime = 0;
-    this.shieldLossCount = 0;
-    this.shieldRespawnCount = 0;
+    this.shieldPhase = 'awaitPickup1';
     this.extractLiveAnnounced = false;
 
     this.lastPlayerX = this.player.x;
@@ -406,8 +403,10 @@ export class TutorialArenaScene extends Phaser.Scene {
         this.speak('tutDanger');
         break;
       case 'shield':
+        this.clearShieldLessonActors();
+        this.player.hasShield = false;
+        this.refreshShieldObjective();
         this.spawnShieldFromEdge();
-        this.spawnDrifterFromEdge(40, 1.55, false);
         this.speak('tutShield');
         break;
       case 'extract': {
@@ -471,9 +470,6 @@ export class TutorialArenaScene extends Phaser.Scene {
 
     if (sectionId === 'shield') {
       this.maybeNudge('tutShieldNudge', 4500);
-      if (this.shieldLossCount >= SHIELD_LOSS_TRIGGER || this.sectionTime >= SHIELD_TIMEOUT_MS) {
-        this.advanceSection('tutShieldDone');
-      }
       return;
     }
 
@@ -537,17 +533,23 @@ export class TutorialArenaScene extends Phaser.Scene {
     }
 
     if (sectionId === 'shield') {
-      // Keep a shield available if the player has none — capped so they can't farm forever.
-      if (!this.player.hasShield) {
-        const has = this.shields.some(s => s.active && inArena(s.x, s.y));
-        if (!has && this.shieldRespawnCount < SHIELD_RESPAWN_CAP) {
-          this.spawnShieldFromEdge();
-          this.shieldRespawnCount += 1;
+      if (this.shieldPhase === 'awaitPickup1' || this.shieldPhase === 'awaitPickup2') {
+        const hasShield = this.shields.some(s => s.active && inArena(s.x, s.y));
+        if (!this.player.hasShield && !hasShield) this.spawnShieldFromEdge();
+      }
+
+      if (this.shieldPhase === 'awaitEnemyHit') {
+        const hasEnemy = this.enemies.some(e => e.active && inArena(e.x, e.y));
+        if (!hasEnemy) {
+          this.spawnEnemy();
+          playSfx(this, 'enemyEntrance');
         }
       }
-      // Keep a drifter on the board so the player has something to ram while shielded.
-      const hasDrifter = this.drifters.some(d => d.active && !d.depleted && !d.isMineable && inArena(d.x, d.y));
-      if (!hasDrifter) this.spawnDrifterFromEdge(40, 1.55, false);
+
+      if (this.shieldPhase === 'awaitDrifterHit') {
+        const hasDrifter = this.drifters.some(d => d.active && !d.depleted && !d.isMineable && inArena(d.x, d.y));
+        if (!hasDrifter) this.spawnDrifterFromEdge(40, 1.55, false);
+      }
     }
   }
 
@@ -630,7 +632,7 @@ export class TutorialArenaScene extends Phaser.Scene {
     if (this.tutorialComplete) return;
     this.tutorialComplete = true;
     this.sectionLocked = true;
-    this.speak('tutComplete', 9000);
+    this.speak('tutComplete', TUTORIAL_COMPLETE_AUTO_HIDE_MS);
     this.showCompletionOverlay();
   }
 
@@ -656,6 +658,21 @@ export class TutorialArenaScene extends Phaser.Scene {
           shield.active = false;
           shield.destroy();
           this.shields.splice(i, 1);
+
+          if (SECTIONS[this.sectionIndex] === 'shield') {
+            if (this.shieldPhase === 'awaitPickup1') {
+              this.shieldPhase = 'awaitEnemyHit';
+              this.refreshShieldObjective();
+              this.resetPromptTimer();
+              this.spawnEnemy();
+              playSfx(this, 'enemyEntrance');
+            } else if (this.shieldPhase === 'awaitPickup2') {
+              this.shieldPhase = 'awaitDrifterHit';
+              this.refreshShieldObjective();
+              this.resetPromptTimer();
+              this.spawnDrifterFromEdge(40, 1.55, false);
+            }
+          }
         }
       }
     }
@@ -734,17 +751,15 @@ export class TutorialArenaScene extends Phaser.Scene {
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y);
       if (dist >= NPC_BUMP_RADIUS || dist <= 0.1) continue;
 
-      const sectionId = SECTIONS[this.sectionIndex];
-
       if (this.player.hasShield) {
         this.player.hasShield = false;
         playSfx(this, 'shieldLoss');
         playSfx(this, 'playerDeath');
+        Overlays.shieldBreakFlash(this);
         this.cameras.main.shake(160, 0.004);
         npc.active = false;
         npc.destroy();
         this.npcs.splice(i, 1);
-        if (sectionId === 'shield') this.shieldLossCount += 1;
       } else {
         this.softRespawnPlayer('tutDangerReset');
       }
@@ -762,9 +777,10 @@ export class TutorialArenaScene extends Phaser.Scene {
     if (this.player.hasShield) {
       this.player.hasShield = false;
       playSfx(this, 'shieldLoss');
+      Overlays.shieldBreakFlash(this);
       if (hitDrifter) {
         playSfx(this, 'asteroidCollision');
-        this.destroyDrifter(hitDrifter);
+        this.shieldDestroyDrifter(hitDrifter);
       }
       if (hitEnemy) {
         hitEnemy.active = false;
@@ -772,8 +788,15 @@ export class TutorialArenaScene extends Phaser.Scene {
         this.enemies = this.enemies.filter((enemy) => enemy !== hitEnemy);
       }
       if (sectionId === 'shield') {
-        this.shieldLossCount += 1;
-        if (this.shieldLossCount === 1) this.speak('tutShieldHit');
+        if (hitEnemy && this.shieldPhase === 'awaitEnemyHit') {
+          this.shieldPhase = 'awaitPickup2';
+          this.refreshShieldObjective();
+          this.resetPromptTimer();
+          this.spawnShieldFromEdge();
+          this.speak('tutShieldHit');
+        } else if (hitDrifter && this.shieldPhase === 'awaitDrifterHit') {
+          this.advanceSection('tutShieldDone');
+        }
       }
       this.cameras.main.shake(140, 0.004);
       return;
@@ -787,6 +810,39 @@ export class TutorialArenaScene extends Phaser.Scene {
     drifter.active = false;
     drifter.destroy();
     this.drifters = this.drifters.filter((entry) => entry !== drifter);
+  }
+
+  private shieldDestroyDrifter(target: DrifterHazard): void {
+    const childScale = target.radiusScale * 0.55;
+
+    if (childScale >= DrifterHazard.MIN_SPLIT_SCALE) {
+      const speed = Math.sqrt(target.vx * target.vx + target.vy * target.vy);
+      const scatter = speed * 0.8;
+      const angle = Math.atan2(target.vy, target.vx);
+      const perpX = -Math.sin(angle);
+      const perpY = Math.cos(angle);
+
+      this.drifters.push(DrifterHazard.createFragment(
+        this,
+        target.x + perpX * target.radius * 0.5,
+        target.y + perpY * target.radius * 0.5,
+        target.vx + perpX * scatter,
+        target.vy + perpY * scatter,
+        childScale,
+        target.isMineable,
+      ));
+      this.drifters.push(DrifterHazard.createFragment(
+        this,
+        target.x - perpX * target.radius * 0.5,
+        target.y - perpY * target.radius * 0.5,
+        target.vx - perpX * scatter,
+        target.vy - perpY * scatter,
+        childScale,
+        target.isMineable,
+      ));
+    }
+
+    this.destroyDrifter(target);
   }
 
   // ---------------------------------------------------------------------
@@ -853,7 +909,11 @@ export class TutorialArenaScene extends Phaser.Scene {
 
   private applySectionCopy(sectionId: SectionId): void {
     const copy = SECTION_COPY[sectionId];
-    this.sectionText.setText(`STEP ${this.sectionIndex + 1}/${SECTIONS.length} // ${copy.title}`);
+    this.sectionText.setText(copy.title);
+    if (sectionId === 'shield') {
+      this.refreshShieldObjective();
+      return;
+    }
     this.objectiveText.setText(copy.objective);
   }
 
@@ -864,6 +924,30 @@ export class TutorialArenaScene extends Phaser.Scene {
 
   private speak(key: SlickLineKey, autoHideMs?: number): void {
     this.slickComm.show(getSlickLine(key), autoHideMs);
+  }
+
+  private refreshShieldObjective(): void {
+    let objective = 'PICK UP THE SHIELD';
+    switch (this.shieldPhase) {
+      case 'awaitEnemyHit':
+        objective = 'DESTROY THE ENEMY WITH SHIELD';
+        break;
+      case 'awaitPickup2':
+        objective = 'PICK UP THE SECOND SHIELD';
+        break;
+      case 'awaitDrifterHit':
+        objective = 'SPLIT THE ASTEROID WITH SHIELD';
+        break;
+      default:
+        objective = 'PICK UP THE SHIELD';
+        break;
+    }
+    this.objectiveText.setText(objective);
+  }
+
+  private resetPromptTimer(): void {
+    this.sectionTime = 0;
+    this.nudgeFired = false;
   }
 
   // ---------------------------------------------------------------------
@@ -928,6 +1012,17 @@ export class TutorialArenaScene extends Phaser.Scene {
   private spawnGate(x: number, y: number, previewTime: number, extractDuration: number): void {
     this.gate?.destroy();
     this.gate = new ExitGate(this, { x, y }, previewTime, extractDuration);
+  }
+
+  private clearShieldLessonActors(): void {
+    for (const drifter of this.drifters) drifter.destroy();
+    for (const shield of this.shields) shield.destroy();
+    for (const npc of this.npcs) npc.destroy();
+    for (const enemy of this.enemies) enemy.destroy();
+    this.drifters = [];
+    this.shields = [];
+    this.npcs = [];
+    this.enemies = [];
   }
 
   private clearActors(recreateSalvageSystem = true): void {
