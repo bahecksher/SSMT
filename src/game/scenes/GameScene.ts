@@ -115,6 +115,9 @@ import {
   WORMHOLE_MAX_PHASE,
   WORMHOLE_MIN_PHASE,
   WORMHOLE_PICKUP_LIFETIME,
+  POST_BOSS_COLLAPSE_DURATION_MS,
+  POST_BOSS_ESCAPE_GATE_DURATION_MS,
+  POST_BOSS_EXTRACT_DELAY_MS,
   WORMHOLE_POCKET_BONUS_INTERVAL_MS,
   WORMHOLE_POCKET_BONUS_POINTS,
   WORMHOLE_POCKET_BOUNDARY_BURN_MS,
@@ -279,6 +282,10 @@ export class GameScene extends Phaser.Scene {
   private pocketBonusTimer = 0;
   private pocketBoundaryGraphic: Phaser.GameObjects.Graphics | null = null;
   private pocketBoundaryBurnMs = 0;
+  private postBossEscapePending = false;
+  private postBossEscapeTimerMs = 0;
+  private postBossCollapseActive = false;
+  private postBossCollapseTimerMs = 0;
   private activeCommSpeaker: CommSpeaker | null = null;
   private activeCommPriority = 0;
   private activeCommVisibleUntil = 0;
@@ -587,6 +594,7 @@ export class GameScene extends Phaser.Scene {
     if (gameplayActive) {
       const target = paused ? null : (this.inputSystem.update(), this.inputSystem.getTarget());
       const swipe = paused ? null : this.inputSystem.getSwipe();
+      this.applyBossForceToPlayer(effectiveDelta);
       this.player.update(effectiveDelta, target, swipe);
       if (this.debugInvulnerable) {
         const blink = Math.sin(this.time.now * 0.01) > 0;
@@ -1031,6 +1039,9 @@ export class GameScene extends Phaser.Scene {
     if (this.updatePocketBoundary(effectiveDelta, gameplayActive, runFrozen, paused)) {
       return;
     }
+    if (this.updatePostBossEscape(effectiveDelta, gameplayActive, runFrozen, paused)) {
+      return;
+    }
 
     const activeGate = this.extractionSystem.getGate();
     if (gameplayActive && activeGate) {
@@ -1050,11 +1061,13 @@ export class GameScene extends Phaser.Scene {
         this.player.x,
         this.player.y,
         PLAYER_RADIUS,
-        this.player.hasShield,
+        this.player.hasShield || this.debugInvulnerable,
       );
       if (breachedBossCore) {
-        this.player.hasShield = false;
-        playSfx(this, 'shieldLoss');
+        if (this.player.hasShield) {
+          this.player.hasShield = false;
+          playSfx(this, 'shieldLoss');
+        }
         playSfx(this, 'playerDeath');
         this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
         invulnerable = true;
@@ -1067,11 +1080,14 @@ export class GameScene extends Phaser.Scene {
 
     const bossHardpointIndex = this.difficultySystem.getBossHardpointCollisionIndex(this.player.x, this.player.y, PLAYER_RADIUS);
     const hitBossCore = this.difficultySystem.checkBossCoreContact(this.player.x, this.player.y, PLAYER_RADIUS);
-    if (gameplayActive && bossHardpointIndex !== null && (!invulnerable || this.player.hasShield)) {
+    const debugShielded = this.debugInvulnerable;
+    if (gameplayActive && bossHardpointIndex !== null && (!invulnerable || this.player.hasShield || debugShielded)) {
       this.missionSystem.trackDamageTaken();
-      if (this.player.hasShield) {
-        this.player.hasShield = false;
-        playSfx(this, 'shieldLoss');
+      if (this.player.hasShield || debugShielded) {
+        if (this.player.hasShield) {
+          this.player.hasShield = false;
+          playSfx(this, 'shieldLoss');
+        }
         playSfx(this, 'playerDeath');
         this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
         invulnerable = true;
@@ -1106,6 +1122,7 @@ export class GameScene extends Phaser.Scene {
       }
       if (bossEvents.destroyed) {
         this.tryShowGameplaySlick(getSlickLine('bossDestroyed'), 3400);
+        this.startPostBossEscapeSequence();
       }
     }
     this.updateBossStatusUi();
@@ -1115,14 +1132,18 @@ export class GameScene extends Phaser.Scene {
     const hitEnemy = this.collisionSystem.checkEnemies(this.difficultySystem.getEnemies());
     const hitBossBeam = this.difficultySystem.checkBossBeamHit(this.player.x, this.player.y, PLAYER_RADIUS);
     invulnerable = this.isPlayerInvulnerable();
-    if (gameplayActive && (!invulnerable || this.player.hasShield) && (hitDrifter || hitBeam || hitEnemy || hitBossBeam)) {
+    if (gameplayActive && (!invulnerable || this.player.hasShield || debugShielded) && (hitDrifter || hitBeam || hitEnemy || hitBossBeam)) {
       this.missionSystem.trackDamageTaken();
-      if (this.player.hasShield) {
-        this.player.hasShield = false;
+      if (this.player.hasShield || debugShielded) {
+        if (this.player.hasShield) {
+          this.player.hasShield = false;
+        }
         if (hitDrifter) {
           playSfx(this, 'asteroidCollision');
         }
-        playSfx(this, 'shieldLoss');
+        if (!debugShielded) {
+          playSfx(this, 'shieldLoss');
+        }
         this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
         // Shield destroys or splits the asteroid it hit
         if (hitDrifter) {
@@ -1156,6 +1177,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (gameplayActive) {
+      this.applyBossSalvageMultiplier();
       this.salvageSystem.update(delta, this.difficultySystem.getDrifters());
       // Mission tracking for income sources and credit thresholds
       const frameSalvage = this.salvageSystem.getLastFrameSalvageIncome();
@@ -1283,6 +1305,26 @@ export class GameScene extends Phaser.Scene {
   private updateBossStatusUi(): void {
   }
 
+  private applyBossForceToPlayer(delta: number): void {
+    const boss = this.difficultySystem.getBoss();
+    if (!boss?.getForceField) return;
+    const force = boss.getForceField(this.player.x, this.player.y, delta);
+    const dt = delta / 1000;
+    const ix = force.ax * dt + force.ix;
+    const iy = force.ay * dt + force.iy;
+    if (ix !== 0 || iy !== 0) {
+      this.player.applyImpulse(ix, iy);
+    }
+  }
+
+  private applyBossSalvageMultiplier(): void {
+    const boss = this.difficultySystem.getBoss();
+    const mult = boss?.getSalvageMultiplier
+      ? boss.getSalvageMultiplier(this.player.x, this.player.y)
+      : 1;
+    this.salvageSystem.setBossYieldMult(mult);
+  }
+
   private spawnRareDebris(phase: number): void {
     const debris = new SalvageDebris(this, {
       isRare: true,
@@ -1344,36 +1386,7 @@ export class GameScene extends Phaser.Scene {
     const layout = getLayout();
     const radius = this.getPocketBoundaryRadius();
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, layout.centerX, layout.centerY);
-    const outside = dist + PLAYER_RADIUS > radius;
-    if (!outside) {
-      this.pocketBoundaryBurnMs = Math.max(0, this.pocketBoundaryBurnMs - delta * 1.8);
-      return false;
-    }
-
-    this.pocketBoundaryBurnMs += delta;
-    if (this.pocketBoundaryBurnMs < WORMHOLE_POCKET_BOUNDARY_BURN_MS) {
-      return false;
-    }
-
-    this.missionSystem.trackDamageTaken();
-    this.pocketBoundaryBurnMs = 0;
-    if (this.player.hasShield) {
-      this.player.hasShield = false;
-      this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
-      playSfx(this, 'shieldLoss');
-      Overlays.shieldBreakFlash(this);
-      Overlays.screenShake(this, 0.01, 220);
-      return false;
-    }
-
-    if (this.debugInvulnerable) {
-      Overlays.screenShake(this, 0.006, 160);
-      return false;
-    }
-
-    playSfx(this, 'playerDeath');
-    this.handleDeath('laser');
-    return true;
+    return this.updateCollapsingBoundaryBurn(delta, dist + PLAYER_RADIUS > radius);
   }
 
   private getPocketBoundaryRadius(): number {
@@ -1385,14 +1398,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawPocketBoundary(): void {
+    const progress = 1 - Phaser.Math.Clamp(this.pocketTimerMs / WORMHOLE_POCKET_DURATION_MS, 0, 1);
+    this.drawCollapsingBoundary(this.getPocketBoundaryRadius(), progress);
+  }
+
+  private drawCollapsingBoundary(radius: number, progress: number): void {
     if (!this.pocketBoundaryGraphic) {
       this.pocketBoundaryGraphic = this.add.graphics().setDepth(7);
     }
 
     const layout = getLayout();
     const g = this.pocketBoundaryGraphic;
-    const radius = this.getPocketBoundaryRadius();
-    const progress = 1 - Phaser.Math.Clamp(this.pocketTimerMs / WORMHOLE_POCKET_DURATION_MS, 0, 1);
     const pulse = 0.5 + Math.sin(this.time.now * 0.012) * 0.5;
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, layout.centerX, layout.centerY);
     const outside = dist + PLAYER_RADIUS > radius;
@@ -1438,6 +1454,111 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private updateCollapsingBoundaryBurn(delta: number, outside: boolean): boolean {
+    if (!outside) {
+      this.pocketBoundaryBurnMs = Math.max(0, this.pocketBoundaryBurnMs - delta * 1.8);
+      return false;
+    }
+
+    this.pocketBoundaryBurnMs += delta;
+    if (this.pocketBoundaryBurnMs < WORMHOLE_POCKET_BOUNDARY_BURN_MS) {
+      return false;
+    }
+
+    this.missionSystem.trackDamageTaken();
+    this.pocketBoundaryBurnMs = 0;
+    if (this.player.hasShield) {
+      this.player.hasShield = false;
+      this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
+      playSfx(this, 'shieldLoss');
+      Overlays.shieldBreakFlash(this);
+      Overlays.screenShake(this, 0.01, 220);
+      return false;
+    }
+
+    if (this.debugInvulnerable) {
+      Overlays.screenShake(this, 0.006, 160);
+      return false;
+    }
+
+    playSfx(this, 'playerDeath');
+    this.handleDeath('laser');
+    return true;
+  }
+
+  private startPostBossEscapeSequence(): void {
+    if (this.multiplayer || this.pocketActive || this.postBossEscapePending || this.postBossCollapseActive) {
+      return;
+    }
+
+    this.postBossEscapePending = true;
+    this.postBossEscapeTimerMs = POST_BOSS_EXTRACT_DELAY_MS;
+    this.postBossCollapseActive = false;
+    this.postBossCollapseTimerMs = 0;
+    this.pocketBoundaryBurnMs = 0;
+    this.extractionSystem.setNormalGateSuppressed(true);
+  }
+
+  private updatePostBossEscape(delta: number, gameplayActive: boolean, runFrozen: boolean, paused: boolean): boolean {
+    if (this.pocketActive) {
+      return false;
+    }
+
+    if (this.postBossEscapePending && !runFrozen && !paused && gameplayActive) {
+      this.postBossEscapeTimerMs = Math.max(0, this.postBossEscapeTimerMs - delta);
+      if (this.postBossEscapeTimerMs <= 0) {
+        this.postBossEscapePending = false;
+        this.postBossCollapseActive = true;
+        this.postBossCollapseTimerMs = POST_BOSS_COLLAPSE_DURATION_MS;
+        this.pocketBoundaryBurnMs = 0;
+        this.extractionSystem.forceGate(0, POST_BOSS_ESCAPE_GATE_DURATION_MS);
+        this.difficultySystem.startPostBossEscapeSurge();
+        playSfx(this, 'enemyEntrance');
+        Overlays.beamWarningFlash(this);
+        Overlays.screenShake(this, 0.012, 260);
+        this.tryShowGameplaySlick(getSlickLine('gateOpen'), 2600);
+      }
+    }
+
+    if (!this.postBossCollapseActive) {
+      return false;
+    }
+
+    this.drawPostBossCollapseBoundary();
+    if (runFrozen || paused || !gameplayActive) {
+      return false;
+    }
+
+    this.postBossCollapseTimerMs = Math.max(0, this.postBossCollapseTimerMs - delta);
+    const layout = getLayout();
+    const radius = this.getPostBossCollapseRadius();
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, layout.centerX, layout.centerY);
+    return this.updateCollapsingBoundaryBurn(delta, dist + PLAYER_RADIUS > radius);
+  }
+
+  private getPostBossCollapseRadius(): number {
+    const layout = getLayout();
+    const startRadius = Math.sqrt(layout.arenaWidth * layout.arenaWidth + layout.arenaHeight * layout.arenaHeight) * 0.58;
+    const endRadius = Math.min(layout.arenaWidth, layout.arenaHeight) * WORMHOLE_POCKET_BOUNDARY_END_RADIUS_MULT;
+    const progress = 1 - Phaser.Math.Clamp(this.postBossCollapseTimerMs / POST_BOSS_COLLAPSE_DURATION_MS, 0, 1);
+    return Phaser.Math.Linear(startRadius, endRadius, progress);
+  }
+
+  private drawPostBossCollapseBoundary(): void {
+    const progress = 1 - Phaser.Math.Clamp(this.postBossCollapseTimerMs / POST_BOSS_COLLAPSE_DURATION_MS, 0, 1);
+    this.drawCollapsingBoundary(this.getPostBossCollapseRadius(), progress);
+  }
+
+  private clearPostBossEscapeSequence(): void {
+    this.postBossEscapePending = false;
+    this.postBossEscapeTimerMs = 0;
+    this.postBossCollapseActive = false;
+    this.postBossCollapseTimerMs = 0;
+    this.pocketBoundaryBurnMs = 0;
+    this.pocketBoundaryGraphic?.setVisible(false);
+    this.extractionSystem.setNormalGateSuppressed(false);
+  }
+
   private scheduleDebrisRespawn(): void {
     this.debrisRespawnTimer = this.time.delayedCall(SALVAGE_RESPAWN_DELAY, () => {
       if (
@@ -1452,6 +1573,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleDeath(cause: DeathCause): void {
+    this.clearPostBossEscapeSequence();
     const bankedScore = this.scoreSystem.getBanked();
     const lostScore = this.scoreSystem.getUnbanked();
     const campaignSession = this.runMode === RunMode.CAMPAIGN
@@ -1594,6 +1716,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleExtraction(): void {
+    this.clearPostBossEscapeSequence();
     this.state = GameState.EXTRACTING;
     this.time.timeScale = 1;
     this.tweens.timeScale = 1;

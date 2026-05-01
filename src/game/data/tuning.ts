@@ -96,18 +96,31 @@ export const SPECTATE_REPULSOR_RADIUS = 72;
 export const SPECTATE_REPULSOR_PLAYER_FORCE = 520;
 export const SPECTATE_REPULSOR_OBJECT_FORCE = 260;
 
+// Cross-arena beam throttle during a boss fight. Phase 10 beam config is harsh; the
+// boss already provides plenty of pressure, so the regular beams should fire less.
+export const BOSS_BEAM_FREQUENCY_MULT = 2.2;
+export const BOSS_BEAM_BURST_COUNT = 1;
+export const BOSS_DRIFTER_SPAWN_RATE_MULT = 2.0;
+
 // Phase 10 boss spawn weights (must sum to 1)
-export const BOSS_SPAWN_WEIGHT_GUNSHIP = 0.5;
-export const BOSS_SPAWN_WEIGHT_HAULER = 0.5;
+export const BOSS_SPAWN_WEIGHT_GUNSHIP = 0.25;
+export const BOSS_SPAWN_WEIGHT_HAULER = 0.25;
+export const BOSS_SPAWN_WEIGHT_SINGULARITY = 0.25;
+export const BOSS_SPAWN_WEIGHT_LATTICE = 0.25;
 export const BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MIN_MS = 12_000;
 export const BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MAX_MS = 17_000;
 export const BOSS_SHIELD_DRIFT_SPEED_MIN = 180;
 export const BOSS_SHIELD_DRIFT_SPEED_MAX = 250;
 export const BOSS_DEFEAT_BONUS_POINTS = 2_500;
 export const BOSS_DEFEAT_BONUS_PICKUP_COUNT = 12;
-export const POST_BOSS_ENEMY_SURGE_INITIAL_COUNT = 4;
-export const POST_BOSS_ENEMY_SURGE_INTERVAL_MS = 1_800;
-export const POST_BOSS_ENEMY_SURGE_MAX_ENEMIES = 10;
+export const POST_BOSS_EXTRACT_DELAY_MS = 15_000;
+export const POST_BOSS_ESCAPE_GATE_DURATION_MS = 22_000;
+export const POST_BOSS_COLLAPSE_DURATION_MS = 22_000;
+export const POST_BOSS_BEAM_FREQUENCY_MULT = 3.0;
+export const POST_BOSS_BEAM_BURST_COUNT = 1;
+export const POST_BOSS_ENEMY_SURGE_INITIAL_COUNT = 10;
+export const POST_BOSS_ENEMY_SURGE_INTERVAL_MS = 900;
+export const POST_BOSS_ENEMY_SURGE_MAX_ENEMIES = 18;
 
 // Wormhole pocket
 export const WORMHOLE_MIN_PHASE = 5;
@@ -166,12 +179,49 @@ export const SLAG_HAULER_VENT_SIZE_MIN = 1.2;
 export const SLAG_HAULER_VENT_SIZE_MAX = 2.0;
 export const SLAG_HAULER_DEBRIS_COUNT = 14;
 
+// Phase 10 boss - Singularity (gravity well)
+export const SINGULARITY_BODY_RADIUS = 30;
+export const SINGULARITY_DRIFT_SPEED = 110;
+export const SINGULARITY_WARNING_MS = 2_000;
+export const SINGULARITY_PULL_MS = 4_200;
+export const SINGULARITY_REPULSE_MS = 700;
+export const SINGULARITY_VULNERABLE_MS = 5_500;
+export const SINGULARITY_PULL_RADIUS = 480;
+export const SINGULARITY_PULL_ACCEL = 380;          // px/s^2 at edge of pull radius
+export const SINGULARITY_REPULSE_ACCEL = 850;        // px/s^2 outward during repulse window
+export const SINGULARITY_REPULSE_RADIUS = 600;
+export const SINGULARITY_HARDPOINT_COUNT = 4;
+export const SINGULARITY_HARDPOINT_RADIUS = 16;
+export const SINGULARITY_HARDPOINT_ORBIT_RADIUS = 78;
+export const SINGULARITY_HARDPOINT_SPIN_SPEED = 0.45; // rad/s
+export const SINGULARITY_CORE_OUTER_RADIUS = 40;
+export const SINGULARITY_CORE_INNER_RADIUS = 17;
+export const SINGULARITY_DEBRIS_COUNT = 14;
+
+// Phase 10 boss - Beam Lattice (stationary central pylon, rotating sweep beams)
+export const BEAM_LATTICE_BODY_RADIUS = 36;
+export const BEAM_LATTICE_HARDPOINT_COUNT = 4;
+export const BEAM_LATTICE_HARDPOINT_RADIUS = 16;
+export const BEAM_LATTICE_HARDPOINT_ORBIT_RADIUS = 50;
+export const BEAM_LATTICE_ROTATION_SPEED = 0.55;     // rad/s
+export const BEAM_LATTICE_VIEW_OVERSHOOT = 48;       // beam tip extends past view edge
+export const BEAM_LATTICE_BEAM_WIDTH = 16;
+export const BEAM_LATTICE_FIRE_MS = 8_000;
+export const BEAM_LATTICE_COOLDOWN_MS = 10_000;
+export const BEAM_LATTICE_CHARGE_TELEGRAPH_MS = 1_100;
+export const BEAM_LATTICE_DANGER_INNER = 70;         // inside beam emitter ring
+export const BEAM_LATTICE_DANGER_OUTER = 320;        // out to beam tip
+export const BEAM_LATTICE_SALVAGE_MULTIPLIER = 2.5;
+export const BEAM_LATTICE_CORE_OUTER_RADIUS = 38;
+export const BEAM_LATTICE_CORE_INNER_RADIUS = 17;
+export const BEAM_LATTICE_DEBRIS_COUNT = 12;
+
 // Phase 10 boss - Regent gunship
 export const GUNSHIP_BOSS_GUN_COUNT = 5;
 export const GUNSHIP_BOSS_BODY_SPEED = 84;
 export const GUNSHIP_BOSS_BEAM_WARNING_DURATION = 1_150;
 export const GUNSHIP_BOSS_BEAM_ACTIVE_DURATION = 750;
-export const GUNSHIP_BOSS_BEAM_COOLDOWN_DURATION = 1_350;
+export const GUNSHIP_BOSS_BEAM_COOLDOWN_DURATION = 2_400;
 export const GUNSHIP_BOSS_BEAM_STAGGER_MS = 260;
 export const GUNSHIP_BOSS_BEAM_WIDTH = 18;
 export const GUNSHIP_BOSS_GUN_RADIUS = 18;

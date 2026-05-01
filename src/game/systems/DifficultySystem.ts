@@ -11,6 +11,7 @@ import {
   BOSS_SHIELD_DRIFT_SPEED_MAX,
   BOSS_SHIELD_DRIFT_SPEED_MIN,
   BOMB_DROP_CHANCE,
+  BOSS_DRIFTER_SPAWN_RATE_MULT,
   DRIFTER_MINEABLE_CHANCE,
   DRIFTER_SPEED_BASE,
   ENEMY_BONUS_POINTS,
@@ -20,6 +21,8 @@ import {
   POST_BOSS_ENEMY_SURGE_INITIAL_COUNT,
   POST_BOSS_ENEMY_SURGE_INTERVAL_MS,
   POST_BOSS_ENEMY_SURGE_MAX_ENEMIES,
+  POST_BOSS_BEAM_BURST_COUNT,
+  POST_BOSS_BEAM_FREQUENCY_MULT,
   VERSUS_LASER_DROP_CHANCE_ENEMY,
   VERSUS_LASER_DROP_CHANCE_NPC,
   WORMHOLE_POCKET_COMPACT_DRIFTER_CAP_MULT,
@@ -44,8 +47,16 @@ import { SHIELD_PICKUP_RADIUS } from '../entities/ShieldPickup';
 import { ShipDebris } from '../entities/ShipDebris';
 import { GunshipBoss } from '../entities/GunshipBoss';
 import { SlagHauler } from '../entities/SlagHauler';
+import { SingularityBoss } from '../entities/SingularityBoss';
+import { BeamLatticeBoss } from '../entities/BeamLatticeBoss';
 import type { BossEntity } from '../entities/BossEntity';
-import { BOSS_SPAWN_WEIGHT_GUNSHIP } from '../data/tuning';
+import {
+  BOSS_BEAM_BURST_COUNT,
+  BOSS_BEAM_FREQUENCY_MULT,
+  BOSS_SPAWN_WEIGHT_GUNSHIP,
+  BOSS_SPAWN_WEIGHT_HAULER,
+  BOSS_SPAWN_WEIGHT_SINGULARITY,
+} from '../data/tuning';
 import { Overlays } from '../ui/Overlays';
 import { getLayout, getArenaDensityScale, isNarrowViewport, isShortViewport } from '../layout';
 import { playSfx } from './SfxSystem';
@@ -296,7 +307,8 @@ export class DifficultySystem {
 
     this.asteroidCollisionSfxCooldownMs = Math.max(0, this.asteroidCollisionSfxCooldownMs - delta);
     this.drifterTimer += delta;
-    if (this.drifterTimer >= activeConfig.hazardSpawnRate * this.scaledSpawnMult && this.drifters.length < activeScaledMaxDrifters) {
+    const bossDrifterRateMult = this.boss ? BOSS_DRIFTER_SPAWN_RATE_MULT : 1;
+    if (this.drifterTimer >= activeConfig.hazardSpawnRate * this.scaledSpawnMult * bossDrifterRateMult && this.drifters.length < activeScaledMaxDrifters) {
       const speed = DRIFTER_SPEED_BASE * activeConfig.hazardSpeedMultiplier;
       const pocketTuning = this.pocketActive ? this.getPocketScreenTuning() : null;
       const sizeScale = pocketTuning ? pickPocketAsteroidSize(pocketTuning.maxAsteroidSize) : pickAsteroidSize(activeConfig.phaseNumber);
@@ -357,6 +369,7 @@ export class DifficultySystem {
         this.drifters.push(DrifterHazard.createFragment(this.scene, v.x, v.y, v.vx, v.vy, v.sizeScale, v.mineable));
       }
     }
+    this.applyBossForceToDrifters(delta);
     for (const d of this.drifters) d.update(delta);
     for (const npc of this.npcs) npc.update(delta);
 
@@ -867,11 +880,34 @@ export class DifficultySystem {
 
   private spawnBoss(): void {
     this.clearCombatThreats();
-    this.boss = Math.random() < BOSS_SPAWN_WEIGHT_GUNSHIP
-      ? new GunshipBoss(this.scene)
-      : new SlagHauler(this.scene);
+    this.boss = this.pickBoss();
     this.resetBossShieldDriftTimer();
     this.bossEvents.spawned = true;
+  }
+
+  private pickBoss(): BossEntity {
+    const roll = Math.random();
+    let acc = BOSS_SPAWN_WEIGHT_GUNSHIP;
+    if (roll < acc) return new GunshipBoss(this.scene);
+    acc += BOSS_SPAWN_WEIGHT_HAULER;
+    if (roll < acc) return new SlagHauler(this.scene);
+    acc += BOSS_SPAWN_WEIGHT_SINGULARITY;
+    if (roll < acc) return new SingularityBoss(this.scene);
+    return new BeamLatticeBoss(this.scene);
+  }
+
+  private applyBossForceToDrifters(delta: number): void {
+    if (!this.boss?.getForceField) return;
+    const dt = delta / 1000;
+    for (const d of this.drifters) {
+      if (!d.active) continue;
+      const force = this.boss.getForceField(d.x, d.y, delta);
+      const ix = force.ax * dt + force.ix;
+      const iy = force.ay * dt + force.iy;
+      if (ix === 0 && iy === 0) continue;
+      d.vx += ix;
+      d.vy += iy;
+    }
   }
 
   private clearCombatThreats(): void {
@@ -942,12 +978,13 @@ export class DifficultySystem {
     boss.destroy();
     this.boss = null;
     this.bossDefeated = true;
-    this.startPostBossSurge();
+    this.postBossSurgeActive = false;
+    this.postBossSurgeTimerMs = 0;
     this.resetBossShieldDriftTimer();
     this.bossEvents.destroyed = true;
   }
 
-  private startPostBossSurge(): void {
+  startPostBossEscapeSurge(): void {
     this.postBossSurgeActive = true;
     this.postBossSurgeTimerMs = 0;
     for (let i = 0; i < POST_BOSS_ENEMY_SURGE_INITIAL_COUNT; i++) {
@@ -1037,6 +1074,20 @@ export class DifficultySystem {
 
   private getActiveConfig(): PhaseConfig {
     if (!this.pocketActive) {
+      if (this.postBossSurgeActive && this.config.beamEnabled) {
+        return {
+          ...this.config,
+          beamFrequency: this.config.beamFrequency * POST_BOSS_BEAM_FREQUENCY_MULT,
+          beamBurstCount: POST_BOSS_BEAM_BURST_COUNT,
+        };
+      }
+      if (this.boss && this.config.beamEnabled) {
+        return {
+          ...this.config,
+          beamFrequency: this.config.beamFrequency * BOSS_BEAM_FREQUENCY_MULT,
+          beamBurstCount: BOSS_BEAM_BURST_COUNT,
+        };
+      }
       return this.config;
     }
 

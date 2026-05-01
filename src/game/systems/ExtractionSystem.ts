@@ -21,6 +21,8 @@ export class ExtractionSystem {
   private closingGate: ExitGate | null = null;
   private phaseCount = 1;
   private pocketMode = false;
+  private forcedGate = false;
+  private normalGateSuppressed = false;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -46,14 +48,18 @@ export class ExtractionSystem {
         // Keep reference for one frame so extraction check can use final position
         this.closingGate = this.gate;
         this.gate = null;
-        // Phase advances when gate closes
-        this.phaseCount++;
-        this.phaseTimer = 0;
+        if (this.forcedGate) {
+          this.forcedGate = false;
+        } else {
+          // Phase advances when gate closes
+          this.phaseCount++;
+          this.phaseTimer = 0;
+        }
       }
     }
 
     // Spawn gate preview when enough phase time has elapsed
-    if (!this.gate && !this.closingGate && this.phaseTimer >= GATE_SPAWN_TIME) {
+    if (!this.normalGateSuppressed && !this.gate && !this.closingGate && this.phaseTimer >= GATE_SPAWN_TIME) {
       this.gate = new ExitGate(this.scene);
     }
   }
@@ -114,6 +120,25 @@ export class ExtractionSystem {
     return this.phaseCount;
   }
 
+  setNormalGateSuppressed(suppressed: boolean): void {
+    this.normalGateSuppressed = suppressed;
+    if (suppressed && this.gate && !this.forcedGate) {
+      this.gate.destroy();
+      this.gate = null;
+    }
+    if (suppressed && this.closingGate && !this.forcedGate) {
+      this.closingGate.destroy();
+      this.closingGate = null;
+    }
+  }
+
+  forceGate(previewTime: number, extractDuration: number): void {
+    this.clearGateState();
+    this.forcedGate = true;
+    this.normalGateSuppressed = true;
+    this.gate = new ExitGate(this.scene, undefined, previewTime, extractDuration);
+  }
+
   isPocketMode(): boolean {
     return this.pocketMode;
   }
@@ -147,6 +172,8 @@ export class ExtractionSystem {
     this.savedPhaseTimer = 0;
     this.pocketGateTimer = 0;
     this.pocketMode = false;
+    this.forcedGate = false;
+    this.normalGateSuppressed = false;
     this.clearGateState();
   }
 
@@ -163,5 +190,6 @@ export class ExtractionSystem {
       this.closingGate.destroy();
       this.closingGate = null;
     }
+    this.forcedGate = false;
   }
 }

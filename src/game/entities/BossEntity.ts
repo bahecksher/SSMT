@@ -20,6 +20,13 @@ export interface BossVentDrop {
   mineable: boolean;
 }
 
+export interface BossForceImpulse {
+  ax: number;
+  ay: number;
+  ix: number;
+  iy: number;
+}
+
 export interface BossEntity {
   active: boolean;
   update(delta: number): void;
@@ -36,4 +43,9 @@ export interface BossEntity {
   getStatusLabel(): string;
   getStatusColor(): number;
   destroy(): void;
+  // Optional: gravity / repulse field. Returns acceleration (ax,ay; px/s^2 — caller scales by dt)
+  // and one-shot impulse (ix,iy; px/s — applied directly on the frame consumed).
+  getForceField?(targetX: number, targetY: number, delta: number): BossForceImpulse;
+  // Optional: salvage point multiplier active at the given world position (>= 1).
+  getSalvageMultiplier?(targetX: number, targetY: number): number;
 }

@@ -32,6 +32,7 @@ export class SalvageSystem {
   private salvageYieldMult = 1.0;
   private miningYieldMult = 1.0;
   private pocketYieldMult = 1.0;
+  private bossYieldMult = 1.0;
 
   constructor(scene: Phaser.Scene, player: Player, scoreSystem: ScoreSystem) {
     this.scene = scene;
@@ -46,6 +47,10 @@ export class SalvageSystem {
 
   setPocketYieldMult(multiplier: number): void {
     this.pocketYieldMult = multiplier > 0 ? multiplier : 1.0;
+  }
+
+  setBossYieldMult(multiplier: number): void {
+    this.bossYieldMult = multiplier > 0 ? multiplier : 1.0;
   }
 
   addDebris(debris: SalvageDebris): void {
@@ -79,7 +84,7 @@ export class SalvageSystem {
       );
 
       if (dist <= debris.salvageRadius && !debris.depleted) {
-        const points = SALVAGE_POINTS_PER_SECOND * debris.pointsMultiplier * this.salvageYieldMult * this.pocketYieldMult * dt;
+        const points = SALVAGE_POINTS_PER_SECOND * debris.pointsMultiplier * this.salvageYieldMult * this.pocketYieldMult * this.bossYieldMult * dt;
         totalSalvagePoints += points;
         if (debris.isRare) hasRareInRange = true;
 
@@ -138,7 +143,7 @@ export class SalvageSystem {
         // Proximity multiplier: 0 at outer edge → 1 at asteroid body
         const proximity = 1 - (dist - drifter.radius) / (drifter.miningRadius - drifter.radius);
         const ptsPerSec = DRIFTER_MINING_POINTS_MIN + (DRIFTER_MINING_POINTS_MAX - DRIFTER_MINING_POINTS_MIN) * proximity * proximity;
-        totalMiningPoints += ptsPerSec * this.miningYieldMult * this.pocketYieldMult * dt;
+        totalMiningPoints += ptsPerSec * this.miningYieldMult * this.pocketYieldMult * this.bossYieldMult * dt;
         miningCount++;
         if (proximity > 0.7) dangerClose = true;
 
