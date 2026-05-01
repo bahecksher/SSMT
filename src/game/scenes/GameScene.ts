@@ -233,7 +233,6 @@ export class GameScene extends Phaser.Scene {
   private spectateLaserButtonText: Phaser.GameObjects.Text | null = null;
   private spectateRepulsorButtonText: Phaser.GameObjects.Text | null = null;
   private hud!: Hud;
-  private bossStatusText!: Phaser.GameObjects.Text;
   private state: GameState = GameState.PLAYING;
   private debrisRespawnTimer: Phaser.Time.TimerEvent | null = null;
   private rareSalvageTimer = 0;
@@ -263,6 +262,7 @@ export class GameScene extends Phaser.Scene {
   private liaisonRepLevel = 0;
   private playerDebris: ShipDebris[] = [];
   private invulnerableTimer = 0;
+  private debugInvulnerable = false;
   private countdownText: Phaser.GameObjects.Text | null = null;
   private resultData: ResultData | null = null;
   private resultUi: Phaser.GameObjects.GameObject[] = [];
@@ -534,19 +534,6 @@ export class GameScene extends Phaser.Scene {
     this.installDebugPhaseShortcuts();
 
     this.hud = new Hud(this);
-    this.bossStatusText = this.add.text(
-      layout.centerX,
-      Math.max(layout.arenaTop - 22, layout.gameWidth <= 430 ? 48 : 52),
-      '',
-      {
-        fontFamily: UI_FONT,
-        fontSize: readableFontSize(layout.gameWidth <= 430 ? 11 : 13),
-        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
-        align: 'center',
-        stroke: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
-        strokeThickness: 3,
-      },
-    ).setOrigin(0.5).setDepth(101).setAlpha(0.88).setVisible(false);
     this.createPauseButton();
     this.startWarpInAt(spawnX, spawnY);
     if (this.runMode === RunMode.CAMPAIGN && (handoff.startPhase ?? 1) > 1) {
@@ -601,7 +588,10 @@ export class GameScene extends Phaser.Scene {
       const target = paused ? null : (this.inputSystem.update(), this.inputSystem.getTarget());
       const swipe = paused ? null : this.inputSystem.getSwipe();
       this.player.update(effectiveDelta, target, swipe);
-      if (this.invulnerableTimer > 0) {
+      if (this.debugInvulnerable) {
+        const blink = Math.sin(this.time.now * 0.01) > 0;
+        this.player.graphic.setAlpha(blink ? 1 : 0.55);
+      } else if (this.invulnerableTimer > 0) {
         this.invulnerableTimer -= effectiveDelta;
         // Flicker player to indicate invulnerability
         const blink = Math.sin(this.invulnerableTimer * 0.012) > 0;
@@ -629,7 +619,7 @@ export class GameScene extends Phaser.Scene {
         this.salvageSystem.removeDebris(d);
         d.destroy();
         this.debrisList.splice(i, 1);
-        if (!runFrozen && !d.isRare) {
+        if (!runFrozen && !this.pocketActive && !d.isRare) {
           this.scheduleDebrisRespawn();
         }
       }
@@ -661,7 +651,7 @@ export class GameScene extends Phaser.Scene {
 
     // Ensure at least one normal debris exists or is scheduled
     const hasNormal = this.debrisList.some(d => !d.isRare);
-    if (!runFrozen && !hasNormal && !this.debrisRespawnTimer) {
+    if (!runFrozen && !this.pocketActive && !hasNormal && !this.debrisRespawnTimer) {
       this.scheduleDebrisRespawn();
     }
 
@@ -993,7 +983,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Player-NPC collisions — collision = destruction
-    let invulnerable = this.invulnerableTimer > 0;
+    let invulnerable = this.isPlayerInvulnerable();
 
     for (const npc of npcs) {
       if (!npc.active) continue;
@@ -1001,7 +991,7 @@ export class GameScene extends Phaser.Scene {
       const dy = npc.y - this.player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < NPC_BUMP_RADIUS && dist > 0.1) {
-        if (!gameplayActive || invulnerable) continue;
+        if (!gameplayActive || (invulnerable && !this.player.hasShield)) continue;
 
         if (this.player.hasShield) {
           // Player shield absorbs hit — NPC destroyed
@@ -1077,7 +1067,7 @@ export class GameScene extends Phaser.Scene {
 
     const bossHardpointIndex = this.difficultySystem.getBossHardpointCollisionIndex(this.player.x, this.player.y, PLAYER_RADIUS);
     const hitBossCore = this.difficultySystem.checkBossCoreContact(this.player.x, this.player.y, PLAYER_RADIUS);
-    if (gameplayActive && !invulnerable && bossHardpointIndex !== null) {
+    if (gameplayActive && bossHardpointIndex !== null && (!invulnerable || this.player.hasShield)) {
       this.missionSystem.trackDamageTaken();
       if (this.player.hasShield) {
         this.player.hasShield = false;
@@ -1124,8 +1114,8 @@ export class GameScene extends Phaser.Scene {
     const hitBeam = this.collisionSystem.checkBeams(this.difficultySystem.getBeams());
     const hitEnemy = this.collisionSystem.checkEnemies(this.difficultySystem.getEnemies());
     const hitBossBeam = this.difficultySystem.checkBossBeamHit(this.player.x, this.player.y, PLAYER_RADIUS);
-    invulnerable = this.invulnerableTimer > 0;
-    if (gameplayActive && !invulnerable && (hitDrifter || hitBeam || hitEnemy || hitBossBeam)) {
+    invulnerable = this.isPlayerInvulnerable();
+    if (gameplayActive && (!invulnerable || this.player.hasShield) && (hitDrifter || hitBeam || hitEnemy || hitBossBeam)) {
       this.missionSystem.trackDamageTaken();
       if (this.player.hasShield) {
         this.player.hasShield = false;
@@ -1291,15 +1281,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateBossStatusUi(): void {
-    const boss = this.difficultySystem.getBoss();
-    if (!boss || (this.state !== GameState.PLAYING && this.state !== GameState.PAUSED)) {
-      this.bossStatusText.setVisible(false);
-      return;
-    }
-
-    this.bossStatusText.setText(boss.getStatusLabel());
-    this.bossStatusText.setColor(`#${boss.getStatusColor().toString(16).padStart(6, '0')}`);
-    this.bossStatusText.setVisible(true);
   }
 
   private spawnRareDebris(phase: number): void {
@@ -1385,6 +1366,11 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
 
+    if (this.debugInvulnerable) {
+      Overlays.screenShake(this, 0.006, 160);
+      return false;
+    }
+
     playSfx(this, 'playerDeath');
     this.handleDeath('laser');
     return true;
@@ -1415,7 +1401,7 @@ export class GameScene extends Phaser.Scene {
     g.setVisible(true);
     g.clear();
 
-    const dangerAlpha = 0.055 + progress * 0.045 + (outside ? burn * 0.075 + pulse * 0.025 : 0);
+    const dangerAlpha = 0.16 + progress * 0.12 + (outside ? burn * 0.12 + pulse * 0.035 : 0);
     g.fillStyle(COLORS.BEAM, dangerAlpha);
     g.beginPath();
     g.moveTo(layout.arenaLeft, layout.arenaTop);
@@ -1424,16 +1410,16 @@ export class GameScene extends Phaser.Scene {
     g.lineTo(layout.arenaLeft, layout.arenaBottom);
     g.closePath();
     g.moveTo(layout.centerX + radius, layout.centerY);
-    g.arc(layout.centerX, layout.centerY, radius, 0, Math.PI * 2, true);
+    g.arc(layout.centerX, layout.centerY, radius, 0, Math.PI * 2, false);
     g.closePath();
     g.fillPath();
 
     g.lineStyle(2.5 + pulse * 1.5, outside ? COLORS.BEAM : COLORS.GATE, outside ? 0.85 : 0.55 + progress * 0.25);
     g.strokeCircle(layout.centerX, layout.centerY, radius);
-    g.lineStyle(1, COLORS.HUD, 0.2 + pulse * 0.18);
-    g.strokeCircle(layout.centerX, layout.centerY, radius + 8 + pulse * 8);
-    g.lineStyle(1, COLORS.GATE, 0.12 + progress * 0.16);
-    g.strokeCircle(layout.centerX, layout.centerY, Math.max(8, radius - 18));
+    g.lineStyle(1, COLORS.HUD, 0.18 + pulse * 0.16);
+    g.strokeCircle(layout.centerX, layout.centerY, radius + 10 + pulse * 8);
+    g.lineStyle(1, COLORS.GATE, 0.08 + progress * 0.1);
+    g.strokeCircle(layout.centerX, layout.centerY, radius + 22 + pulse * 5);
 
     const tickCount = 24;
     const tickLen = 8 + progress * 10;
@@ -1441,8 +1427,8 @@ export class GameScene extends Phaser.Scene {
     g.lineStyle(1.2, outside ? COLORS.BEAM : COLORS.GATE, outside ? 0.55 : 0.28);
     for (let i = 0; i < tickCount; i += 1) {
       const a = rotation + i * ((Math.PI * 2) / tickCount);
-      const inner = radius - tickLen;
-      const outer = radius + tickLen * 0.35;
+      const inner = radius + tickLen * 0.2;
+      const outer = radius + tickLen;
       g.lineBetween(
         layout.centerX + Math.cos(a) * inner,
         layout.centerY + Math.sin(a) * inner,
@@ -1875,7 +1861,6 @@ export class GameScene extends Phaser.Scene {
     this.pauseButtonHit.destroy();
     this.clearResultUi();
     this.hud.destroy();
-    this.bossStatusText.destroy();
     this.clearCommState();
     this.slickComm.destroy();
     this.regentComm.destroy();
@@ -4547,6 +4532,22 @@ export class GameScene extends Phaser.Scene {
     this.bonusPickups.push(new BonusPickup(this, p.x, p.y, 500, 0, 0, 0));
   }
 
+  private isPlayerInvulnerable(): boolean {
+    return this.debugInvulnerable || this.invulnerableTimer > 0;
+  }
+
+  private toggleDebugInvulnerable(): void {
+    this.debugInvulnerable = !this.debugInvulnerable;
+    if (this.debugInvulnerable) {
+      this.scoreRecordingBlocked = true;
+      this.invulnerableTimer = 0;
+      this.tryShowGameplaySlick('DEBUG // INVULNERABLE ON', 1600);
+    } else {
+      this.player.graphic.setAlpha(1);
+      this.tryShowGameplaySlick('DEBUG // INVULNERABLE OFF', 1600);
+    }
+  }
+
   private destroyAllWormholes(): void {
     for (const wormhole of this.wormholePickups) {
       wormhole.destroy();
@@ -4575,6 +4576,7 @@ export class GameScene extends Phaser.Scene {
     this.extractionSystem.enterPocketMode();
     this.difficultySystem.setPocketActive(true);
     this.salvageSystem.setPocketYieldMult(WORMHOLE_POCKET_SALVAGE_MULT);
+    this.spawnRareDebris(this.pocketEntryPhase);
     this.clearPocketThreats();
     this.geoSphere.setVisible(false);
     this.applyRuntimePalette(POCKET_PALETTE_ID);
@@ -4713,6 +4715,10 @@ export class GameScene extends Phaser.Scene {
               event.preventDefault();
               this.spawnDebugBonus();
               return;
+            case 'KeyI':
+              event.preventDefault();
+              this.toggleDebugInvulnerable();
+              return;
             default:
               return;
           }
@@ -4731,12 +4737,14 @@ export class GameScene extends Phaser.Scene {
         bitpSpawnShield?: () => void;
         bitpSpawnBomb?: () => void;
         bitpSpawnBonus?: () => void;
+        bitpToggleInvulnerable?: () => void;
       };
       debugWindow.bitpJumpToPhase = (n: number) => this.debugJumpToPhase(n);
       debugWindow.bitpSpawnWormhole = () => this.spawnDebugWormhole();
       debugWindow.bitpSpawnShield = () => this.spawnDebugShield();
       debugWindow.bitpSpawnBomb = () => this.spawnDebugBomb();
       debugWindow.bitpSpawnBonus = () => this.spawnDebugBonus();
+      debugWindow.bitpToggleInvulnerable = () => this.toggleDebugInvulnerable();
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (typeof window !== 'undefined') {
@@ -4746,12 +4754,14 @@ export class GameScene extends Phaser.Scene {
           bitpSpawnShield?: () => void;
           bitpSpawnBomb?: () => void;
           bitpSpawnBonus?: () => void;
+          bitpToggleInvulnerable?: () => void;
         };
         delete debugWindow.bitpJumpToPhase;
         delete debugWindow.bitpSpawnWormhole;
         delete debugWindow.bitpSpawnShield;
         delete debugWindow.bitpSpawnBomb;
         delete debugWindow.bitpSpawnBonus;
+        delete debugWindow.bitpToggleInvulnerable;
       }
     });
   }

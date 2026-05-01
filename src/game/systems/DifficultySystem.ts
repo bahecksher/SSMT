@@ -4,6 +4,8 @@ import type { PhaseConfig } from '../types';
 import {
   ASTEROID_DESTROY_BONUS,
   ASTEROID_DESTROY_DROP_CHANCE,
+  BOSS_DEFEAT_BONUS_POINTS,
+  BOSS_DEFEAT_BONUS_PICKUP_COUNT,
   BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MAX_MS,
   BOSS_SHIELD_DRIFT_SPAWN_INTERVAL_MIN_MS,
   BOSS_SHIELD_DRIFT_SPEED_MAX,
@@ -15,12 +17,23 @@ import {
   GUNSHIP_BOSS_DEBRIS_COUNT,
   NPC_BONUS_DROP_CHANCE,
   NPC_BONUS_POINTS,
+  POST_BOSS_ENEMY_SURGE_INITIAL_COUNT,
+  POST_BOSS_ENEMY_SURGE_INTERVAL_MS,
+  POST_BOSS_ENEMY_SURGE_MAX_ENEMIES,
   VERSUS_LASER_DROP_CHANCE_ENEMY,
   VERSUS_LASER_DROP_CHANCE_NPC,
+  WORMHOLE_POCKET_COMPACT_DRIFTER_CAP_MULT,
+  WORMHOLE_POCKET_COMPACT_MAX_SIZE,
+  WORMHOLE_POCKET_COMPACT_SPAWN_RATE_MULT,
+  WORMHOLE_POCKET_COMPACT_SPEED_MULT,
   WORMHOLE_POCKET_DRIFTER_CAP_MULT,
   WORMHOLE_POCKET_MINEABLE_CHANCE,
   WORMHOLE_POCKET_SPEED_MULT,
   WORMHOLE_POCKET_SPAWN_RATE_MULT,
+  WORMHOLE_POCKET_TINY_DRIFTER_CAP_MULT,
+  WORMHOLE_POCKET_TINY_MAX_SIZE,
+  WORMHOLE_POCKET_TINY_SPAWN_RATE_MULT,
+  WORMHOLE_POCKET_TINY_SPEED_MULT,
 } from '../data/tuning';
 import { getPhaseConfig, pickAsteroidSize, pickPocketAsteroidSize } from '../data/phaseConfig';
 import { DrifterHazard } from '../entities/DrifterHazard';
@@ -34,13 +47,20 @@ import { SlagHauler } from '../entities/SlagHauler';
 import type { BossEntity } from '../entities/BossEntity';
 import { BOSS_SPAWN_WEIGHT_GUNSHIP } from '../data/tuning';
 import { Overlays } from '../ui/Overlays';
-import { getLayout, getArenaDensityScale } from '../layout';
+import { getLayout, getArenaDensityScale, isNarrowViewport, isShortViewport } from '../layout';
 import { playSfx } from './SfxSystem';
 
 interface BossEvents {
   spawned: boolean;
   coreExposed: boolean;
   destroyed: boolean;
+}
+
+interface PocketScreenTuning {
+  capMult: number;
+  spawnRateMult: number;
+  speedMult: number;
+  maxAsteroidSize: number;
 }
 
 export class DifficultySystem {
@@ -59,6 +79,8 @@ export class DifficultySystem {
   private boss: BossEntity | null = null;
   private bossDefeated = false;
   private bossEvents: BossEvents = { spawned: false, coreExposed: false, destroyed: false };
+  private postBossSurgeActive = false;
+  private postBossSurgeTimerMs = 0;
   private scaledMaxDrifters = 0;
   private scaledMaxEnemies = 0;
   private scaledMaxNPCs = 0;
@@ -247,6 +269,8 @@ export class DifficultySystem {
     this.versusLaserDropPositions = [];
     this.bossDefeated = false;
     this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
+    this.postBossSurgeActive = false;
+    this.postBossSurgeTimerMs = 0;
     this.pocketActive = false;
     this.drifterTimer = 0;
     this.beamTimer = 0;
@@ -274,8 +298,9 @@ export class DifficultySystem {
     this.drifterTimer += delta;
     if (this.drifterTimer >= activeConfig.hazardSpawnRate * this.scaledSpawnMult && this.drifters.length < activeScaledMaxDrifters) {
       const speed = DRIFTER_SPEED_BASE * activeConfig.hazardSpeedMultiplier;
-      const sizeScale = this.pocketActive ? pickPocketAsteroidSize() : pickAsteroidSize(activeConfig.phaseNumber);
-      const adjustedSpeed = speed * (1 / Math.sqrt(sizeScale)) * (this.pocketActive ? WORMHOLE_POCKET_SPEED_MULT : 1);
+      const pocketTuning = this.pocketActive ? this.getPocketScreenTuning() : null;
+      const sizeScale = pocketTuning ? pickPocketAsteroidSize(pocketTuning.maxAsteroidSize) : pickAsteroidSize(activeConfig.phaseNumber);
+      const adjustedSpeed = speed * (1 / Math.sqrt(sizeScale)) * (pocketTuning?.speedMult ?? 1);
       const isMineable = Math.random() < (this.pocketActive ? WORMHOLE_POCKET_MINEABLE_CHANCE : DRIFTER_MINEABLE_CHANCE);
       this.drifters.push(new DrifterHazard(this.scene, adjustedSpeed, sizeScale, isMineable));
       this.drifterTimer = 0;
@@ -309,6 +334,7 @@ export class DifficultySystem {
         this.enemyTimer = 0;
       }
     }
+    this.updatePostBossSurge(delta);
 
     if (activeConfig.npcEnabled) {
       this.npcTimer += delta;
@@ -874,6 +900,25 @@ export class DifficultySystem {
     const layout = getLayout();
 
     this.shipDebris.push(new ShipDebris(this.scene, center.x, center.y, inward.x * 90, inward.y * 90, COLORS.ENEMY, 42));
+    const baseReward = Math.floor(BOSS_DEFEAT_BONUS_POINTS / BOSS_DEFEAT_BONUS_PICKUP_COUNT);
+    let remainingReward = BOSS_DEFEAT_BONUS_POINTS;
+    for (let i = 0; i < BOSS_DEFEAT_BONUS_PICKUP_COUNT; i++) {
+      const points = i === BOSS_DEFEAT_BONUS_PICKUP_COUNT - 1 ? remainingReward : baseReward;
+      remainingReward -= points;
+      const angle = (i / BOSS_DEFEAT_BONUS_PICKUP_COUNT) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.16, 0.16);
+      const offset = Phaser.Math.FloatBetween(8, 48);
+      const speed = Phaser.Math.FloatBetween(18, 55);
+      const x = Phaser.Math.Clamp(center.x + Math.cos(angle) * offset, layout.arenaLeft + 24, layout.arenaRight - 24);
+      const y = Phaser.Math.Clamp(center.y + Math.sin(angle) * offset, layout.arenaTop + 24, layout.arenaBottom - 24);
+      this.bonusDropPositions.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed + inward.x * 14,
+        vy: Math.sin(angle) * speed + inward.y * 14,
+        points,
+      });
+    }
+
     for (let i = 0; i < GUNSHIP_BOSS_DEBRIS_COUNT; i++) {
       const forwardSpeed = Phaser.Math.FloatBetween(95, 215);
       const lateralSpeed = Phaser.Math.FloatBetween(-145, 145);
@@ -897,8 +942,32 @@ export class DifficultySystem {
     boss.destroy();
     this.boss = null;
     this.bossDefeated = true;
+    this.startPostBossSurge();
     this.resetBossShieldDriftTimer();
     this.bossEvents.destroyed = true;
+  }
+
+  private startPostBossSurge(): void {
+    this.postBossSurgeActive = true;
+    this.postBossSurgeTimerMs = 0;
+    for (let i = 0; i < POST_BOSS_ENEMY_SURGE_INITIAL_COUNT; i++) {
+      this.enemies.push(new EnemyShip(this.scene));
+    }
+  }
+
+  private updatePostBossSurge(delta: number): void {
+    if (!this.postBossSurgeActive || this.pocketActive) {
+      return;
+    }
+
+    this.postBossSurgeTimerMs += delta;
+    while (
+      this.postBossSurgeTimerMs >= POST_BOSS_ENEMY_SURGE_INTERVAL_MS &&
+      this.enemies.length < POST_BOSS_ENEMY_SURGE_MAX_ENEMIES
+    ) {
+      this.postBossSurgeTimerMs -= POST_BOSS_ENEMY_SURGE_INTERVAL_MS;
+      this.enemies.push(new EnemyShip(this.scene));
+    }
   }
 
   private updateBossShieldDrift(delta: number): void {
@@ -971,12 +1040,13 @@ export class DifficultySystem {
       return this.config;
     }
 
+    const pocketTuning = this.getPocketScreenTuning();
     return {
       ...this.config,
-      hazardSpawnRate: this.config.hazardSpawnRate * WORMHOLE_POCKET_SPAWN_RATE_MULT,
+      hazardSpawnRate: this.config.hazardSpawnRate * pocketTuning.spawnRateMult,
       maxConcurrentDrifters: Math.max(
         this.config.maxConcurrentDrifters + 4,
-        Math.round(this.config.maxConcurrentDrifters * WORMHOLE_POCKET_DRIFTER_CAP_MULT),
+        Math.round(this.config.maxConcurrentDrifters * pocketTuning.capMult),
       ),
       beamEnabled: false,
       beamFrequency: 0,
@@ -997,10 +1067,42 @@ export class DifficultySystem {
       return this.scaledMaxDrifters;
     }
 
+    const pocketTuning = this.getPocketScreenTuning();
     return Math.max(
-      this.scaledMaxDrifters + 6,
-      Math.round(this.scaledMaxDrifters * WORMHOLE_POCKET_DRIFTER_CAP_MULT),
+      this.scaledMaxDrifters + (pocketTuning.capMult < WORMHOLE_POCKET_DRIFTER_CAP_MULT ? 3 : 6),
+      Math.round(this.scaledMaxDrifters * pocketTuning.capMult),
     );
+  }
+
+  private getPocketScreenTuning(): PocketScreenTuning {
+    const layout = getLayout();
+    const narrow = isNarrowViewport(layout);
+    const short = isShortViewport(layout);
+
+    if (narrow && short) {
+      return {
+        capMult: WORMHOLE_POCKET_TINY_DRIFTER_CAP_MULT,
+        spawnRateMult: WORMHOLE_POCKET_TINY_SPAWN_RATE_MULT,
+        speedMult: WORMHOLE_POCKET_TINY_SPEED_MULT,
+        maxAsteroidSize: WORMHOLE_POCKET_TINY_MAX_SIZE,
+      };
+    }
+
+    if (narrow || short) {
+      return {
+        capMult: WORMHOLE_POCKET_COMPACT_DRIFTER_CAP_MULT,
+        spawnRateMult: WORMHOLE_POCKET_COMPACT_SPAWN_RATE_MULT,
+        speedMult: WORMHOLE_POCKET_COMPACT_SPEED_MULT,
+        maxAsteroidSize: WORMHOLE_POCKET_COMPACT_MAX_SIZE,
+      };
+    }
+
+    return {
+      capMult: WORMHOLE_POCKET_DRIFTER_CAP_MULT,
+      spawnRateMult: WORMHOLE_POCKET_SPAWN_RATE_MULT,
+      speedMult: WORMHOLE_POCKET_SPEED_MULT,
+      maxAsteroidSize: Number.POSITIVE_INFINITY,
+    };
   }
 
   private canDropShieldAt(x: number, y: number): boolean {

@@ -136,13 +136,10 @@ export class GunshipBoss implements BossEntity {
 
     for (let i = 0; i < this.guns.length; i++) {
       if (!this.guns[i].alive) continue;
-      const sides: BeamSide[] = [-1, 1];
-      for (const side of sides) {
-        const gunPos = this.getGunPosition(i, side);
-        const dist = Phaser.Math.Distance.Between(playerX, playerY, gunPos.x, gunPos.y);
-        if (dist <= GUNSHIP_BOSS_GUN_RADIUS + playerRadius + 2) {
-          return i;
-        }
+      const gunPos = this.getGunPosition(i, this.getGunBeamSide(i));
+      const dist = Phaser.Math.Distance.Between(playerX, playerY, gunPos.x, gunPos.y);
+      if (dist <= GUNSHIP_BOSS_GUN_RADIUS + playerRadius + 2) {
+        return i;
       }
     }
 
@@ -217,11 +214,6 @@ export class GunshipBoss implements BossEntity {
     }
 
     if (enteredCore) {
-      this.coreEntryPrimed = true;
-      return false;
-    }
-
-    if (this.coreEntryPrimed && dist >= GUNSHIP_BOSS_CORE_OUTER_RADIUS + playerRadius + 6) {
       this.active = false;
       this.coreEntryPrimed = false;
       return true;
@@ -403,17 +395,17 @@ export class GunshipBoss implements BossEntity {
     const beamDir = { x: inward.x * side, y: inward.y * side };
     let maxDistance = Number.POSITIVE_INFINITY;
     if (beamDir.x > 0) {
-      maxDistance = Math.min(maxDistance, (layout.arenaRight - gunX) / beamDir.x);
+      maxDistance = Math.min(maxDistance, (layout.gameWidth - gunX) / beamDir.x);
     } else if (beamDir.x < 0) {
-      maxDistance = Math.min(maxDistance, (layout.arenaLeft - gunX) / beamDir.x);
+      maxDistance = Math.min(maxDistance, -gunX / beamDir.x);
     }
     if (beamDir.y > 0) {
-      maxDistance = Math.min(maxDistance, (layout.arenaBottom - gunY) / beamDir.y);
+      maxDistance = Math.min(maxDistance, (layout.gameHeight - gunY) / beamDir.y);
     } else if (beamDir.y < 0) {
-      maxDistance = Math.min(maxDistance, (layout.arenaTop - gunY) / beamDir.y);
+      maxDistance = Math.min(maxDistance, -gunY / beamDir.y);
     }
 
-    const distance = Number.isFinite(maxDistance) ? Math.max(0, maxDistance) : 0;
+    const distance = Number.isFinite(maxDistance) ? Math.max(0, maxDistance + GUNSHIP_BOSS_BEAM_WIDTH * 2) : 0;
     return {
       x: gunX + beamDir.x * distance,
       y: gunY + beamDir.y * distance,
@@ -555,49 +547,89 @@ export class GunshipBoss implements BossEntity {
       const beamState = this.getGunBeamState(i);
       const firingSide = this.getGunBeamSide(i);
       if (this.guns[i].alive) {
-        for (const side of [-1, 1] as const) {
-          const gunPos = this.getGunPosition(i, side);
-          const sideActive = side === firingSide;
-          if (sideActive) {
-            this.drawBeam(g, i, gunPos.x, gunPos.y, getLayout(), side);
-          }
-          g.fillStyle(COLORS.BG, 0.94);
-          g.lineStyle(1.55, hullColor, sideActive ? 0.98 : 0.46);
-          g.fillCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS);
-          g.strokeCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS);
-          g.lineStyle(1.3, hullColor, sideActive && beamState !== 'cooldown' ? 0.8 : 0.28);
-          g.strokeCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS * 0.68);
+        const gunPos = this.getGunPosition(i, firingSide);
+        this.drawBeam(g, i, gunPos.x, gunPos.y, getLayout(), firingSide);
+        g.fillStyle(COLORS.BG, 0.94);
+        g.lineStyle(1.55, hullColor, 0.98);
+        g.fillCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS);
+        g.strokeCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS);
+        g.lineStyle(1.3, hullColor, beamState !== 'cooldown' ? 0.8 : 0.28);
+        g.strokeCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS * 0.68);
 
-          if (sideActive && beamState === 'warning') {
-            const chargeRadius = GUNSHIP_BOSS_GUN_RADIUS * (0.96 + this.getGunBeamStateProgress(i, 'warning') * 0.34);
-            g.lineStyle(1.05, hullColor, 0.4 + Math.sin(this.beamPulse + i * 0.8) * 0.12);
-            g.strokeCircle(gunPos.x, gunPos.y, chargeRadius);
-          } else if (sideActive && beamState === 'active') {
-            g.lineStyle(1.15, 0xffffff, 0.64);
-            g.strokeCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS * 0.42);
-          }
+        if (beamState === 'warning') {
+          const chargeRadius = GUNSHIP_BOSS_GUN_RADIUS * (0.96 + this.getGunBeamStateProgress(i, 'warning') * 0.34);
+          g.lineStyle(1.05, hullColor, 0.4 + Math.sin(this.beamPulse + i * 0.8) * 0.12);
+          g.strokeCircle(gunPos.x, gunPos.y, chargeRadius);
+        } else if (beamState === 'active') {
+          g.lineStyle(1.15, 0xffffff, 0.64);
+          g.strokeCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS * 0.42);
         }
       } else {
-        for (const side of [-1, 1] as const) {
-          const gunPos = this.getGunPosition(i, side);
-          g.lineStyle(1.15, hullColor, 0.32);
-          g.strokeCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS * 0.8);
-        }
+        const gunPos = this.getGunPosition(i, firingSide);
+        g.lineStyle(1.15, hullColor, 0.32);
+        g.strokeCircle(gunPos.x, gunPos.y, GUNSHIP_BOSS_GUN_RADIUS * 0.8);
       }
     }
 
     if (this.isCoreExposed()) {
       const pulse = 0.14 + Math.sin(this.corePulse) * 0.06;
+      const reticleRadius = GUNSHIP_BOSS_CORE_OUTER_RADIUS + 9 + Math.sin(this.corePulse * 1.4) * 3;
       const coreCenter = this.getCoreCenter();
       g.fillStyle(COLORS.GATE, 0.1 + pulse);
       g.fillCircle(coreCenter.x, coreCenter.y, GUNSHIP_BOSS_CORE_OUTER_RADIUS);
+      g.lineStyle(1.2, COLORS.BG, 0.86);
+      g.strokeCircle(coreCenter.x, coreCenter.y, reticleRadius + 1.5);
+      g.lineStyle(1.5, COLORS.GATE, 0.62 + pulse);
+      g.strokeCircle(coreCenter.x, coreCenter.y, reticleRadius);
+      for (let i = 0; i < 4; i++) {
+        const angle = this.corePulse * 0.5 + i * (Math.PI / 2);
+        const inner = GUNSHIP_BOSS_CORE_OUTER_RADIUS + 5;
+        const outer = GUNSHIP_BOSS_CORE_OUTER_RADIUS + 16;
+        g.lineStyle(2, COLORS.GATE, 0.68);
+        g.lineBetween(
+          coreCenter.x + Math.cos(angle) * inner,
+          coreCenter.y + Math.sin(angle) * inner,
+          coreCenter.x + Math.cos(angle) * outer,
+          coreCenter.y + Math.sin(angle) * outer,
+        );
+      }
       g.lineStyle(2.1, COLORS.GATE, this.coreEntryPrimed ? 1 : 0.88);
       g.strokeCircle(coreCenter.x, coreCenter.y, GUNSHIP_BOSS_CORE_OUTER_RADIUS);
       g.lineStyle(1.25, 0xffffff, 0.56);
       g.strokeCircle(coreCenter.x, coreCenter.y, GUNSHIP_BOSS_CORE_INNER_RADIUS);
       g.fillStyle(COLORS.BG, 0.94);
       g.fillCircle(coreCenter.x, coreCenter.y, GUNSHIP_BOSS_CORE_INNER_RADIUS - 3);
+      this.drawCoreDevice(g, coreCenter.x, coreCenter.y, GUNSHIP_BOSS_CORE_INNER_RADIUS);
     }
+  }
+
+  private drawCoreDevice(g: Phaser.GameObjects.Graphics, x: number, y: number, radius: number): void {
+    const spin = this.corePulse * 0.7;
+    const deviceRadius = radius * 0.62;
+    const points: LocalPoint[] = [];
+    for (let i = 0; i < 4; i++) {
+      const angle = spin + i * (Math.PI / 2);
+      points.push({
+        x: x + Math.cos(angle) * deviceRadius,
+        y: y + Math.sin(angle) * deviceRadius,
+      });
+    }
+
+    g.fillStyle(COLORS.GATE, 0.2);
+    g.lineStyle(1.6, COLORS.GATE, 0.95);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      g.lineTo(points[i].x, points[i].y);
+    }
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+
+    g.lineStyle(1.1, 0xffffff, 0.78);
+    g.strokeCircle(x, y, radius * 0.28);
+    g.fillStyle(0xffffff, 0.72);
+    g.fillCircle(x, y, radius * 0.12);
   }
 
   private drawBeam(

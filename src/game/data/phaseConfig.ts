@@ -38,8 +38,9 @@ export function pickAsteroidSize(phase: number): number {
   return pickWeightedAsteroidSize(getSizePool(phase));
 }
 
-export function pickPocketAsteroidSize(): number {
-  return pickWeightedAsteroidSize(WORMHOLE_POCKET_SIZE_POOL);
+export function pickPocketAsteroidSize(maxSize = Number.POSITIVE_INFINITY): number {
+  const filteredPool = WORMHOLE_POCKET_SIZE_POOL.filter(([scale]) => scale <= maxSize);
+  return pickWeightedAsteroidSize(filteredPool.length > 0 ? filteredPool : WORMHOLE_POCKET_SIZE_POOL);
 }
 
 export function getPhaseConfig(phase: number): PhaseConfig {

@@ -97,7 +97,7 @@ export class DrifterHazard {
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
 
-    this.graphic = scene.add.graphics().setDepth(5);
+    this.graphic = scene.add.graphics().setDepth(12);
     this.draw();
     this.graphic.setPosition(this.x, this.y);
   }
@@ -133,7 +133,7 @@ export class DrifterHazard {
     d.spinSpeed = Phaser.Math.FloatBetween(0.2, 0.6) * (Math.random() < 0.5 ? 1 : -1);
     d.vertices = DrifterHazard.generateVertices(d.radius);
     d.miningSegmentCount = getRenderTuningProfile().asteroidMiningSegments;
-    d.graphic = scene.add.graphics().setDepth(5);
+    d.graphic = scene.add.graphics().setDepth(12);
     d.draw();
     d.graphic.setPosition(d.x, d.y);
     return d;

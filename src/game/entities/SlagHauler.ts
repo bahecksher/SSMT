@@ -179,11 +179,6 @@ export class SlagHauler implements BossEntity {
     }
 
     if (enteredCore) {
-      this.coreEntryPrimed = true;
-      return false;
-    }
-
-    if (this.coreEntryPrimed && dist >= SLAG_HAULER_CORE_OUTER_RADIUS + playerRadius + 6) {
       this.active = false;
       this.coreEntryPrimed = false;
       return true;
@@ -434,15 +429,62 @@ export class SlagHauler implements BossEntity {
 
     if (this.isCoreExposed()) {
       const pulse = 0.14 + Math.sin(this.corePulse) * 0.06;
+      const reticleRadius = SLAG_HAULER_CORE_OUTER_RADIUS + 9 + Math.sin(this.corePulse * 1.4) * 3;
       const coreCenter = this.getCoreCenter();
       g.fillStyle(COLORS.GATE, 0.1 + pulse);
       g.fillCircle(coreCenter.x, coreCenter.y, SLAG_HAULER_CORE_OUTER_RADIUS);
+      g.lineStyle(1.2, COLORS.BG, 0.86);
+      g.strokeCircle(coreCenter.x, coreCenter.y, reticleRadius + 1.5);
+      g.lineStyle(1.5, COLORS.GATE, 0.62 + pulse);
+      g.strokeCircle(coreCenter.x, coreCenter.y, reticleRadius);
+      for (let i = 0; i < 4; i++) {
+        const angle = this.corePulse * 0.5 + i * (Math.PI / 2);
+        const inner = SLAG_HAULER_CORE_OUTER_RADIUS + 5;
+        const outer = SLAG_HAULER_CORE_OUTER_RADIUS + 16;
+        g.lineStyle(2, COLORS.GATE, 0.68);
+        g.lineBetween(
+          coreCenter.x + Math.cos(angle) * inner,
+          coreCenter.y + Math.sin(angle) * inner,
+          coreCenter.x + Math.cos(angle) * outer,
+          coreCenter.y + Math.sin(angle) * outer,
+        );
+      }
       g.lineStyle(2.1, COLORS.GATE, this.coreEntryPrimed ? 1 : 0.88);
       g.strokeCircle(coreCenter.x, coreCenter.y, SLAG_HAULER_CORE_OUTER_RADIUS);
       g.lineStyle(1.25, 0xffffff, 0.56);
       g.strokeCircle(coreCenter.x, coreCenter.y, SLAG_HAULER_CORE_INNER_RADIUS);
       g.fillStyle(COLORS.BG, 0.94);
       g.fillCircle(coreCenter.x, coreCenter.y, SLAG_HAULER_CORE_INNER_RADIUS - 3);
+      this.drawCoreDevice(g, coreCenter.x, coreCenter.y, SLAG_HAULER_CORE_INNER_RADIUS);
     }
+  }
+
+  private drawCoreDevice(g: Phaser.GameObjects.Graphics, x: number, y: number, radius: number): void {
+    const spin = this.corePulse * 0.7;
+    const deviceRadius = radius * 0.62;
+    const points: LocalPoint[] = [];
+    for (let i = 0; i < 4; i++) {
+      const angle = spin + i * (Math.PI / 2);
+      points.push({
+        x: x + Math.cos(angle) * deviceRadius,
+        y: y + Math.sin(angle) * deviceRadius,
+      });
+    }
+
+    g.fillStyle(COLORS.GATE, 0.2);
+    g.lineStyle(1.6, COLORS.GATE, 0.95);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      g.lineTo(points[i].x, points[i].y);
+    }
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+
+    g.lineStyle(1.1, 0xffffff, 0.78);
+    g.strokeCircle(x, y, radius * 0.28);
+    g.fillStyle(0xffffff, 0.72);
+    g.fillCircle(x, y, radius * 0.12);
   }
 }

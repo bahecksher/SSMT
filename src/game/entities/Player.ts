@@ -26,7 +26,7 @@ export class Player {
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.x = x;
     this.y = y;
-    this.graphic = scene.add.graphics();
+    this.graphic = scene.add.graphics().setDepth(20);
     this.draw();
   }
 
@@ -118,7 +118,7 @@ export class Player {
       : (this.inverted ? 0xffffff : COLORS.PLAYER);
 
     // Glow
-    g.lineStyle(1, bodyColor, 0.1);
+    g.lineStyle(1, this.destroyed ? bodyColor : COLORS.PLAYER_GLOW, 0.14);
     g.strokeCircle(0, 0, VISUAL_SIZE * 2.5);
 
     // Body - triangle oriented to heading (stroke-based hologram)
@@ -132,7 +132,15 @@ export class Player {
     const x3 = Math.cos(h - Math.PI * 2 / 3) * triR;
     const y3 = Math.sin(h - Math.PI * 2 / 3) * triR;
 
-    g.lineStyle(1.5, bodyColor, 0.9);
+    g.lineStyle(3.5, COLORS.BG, 0.72);
+    g.beginPath();
+    g.moveTo(x1, y1);
+    g.lineTo(x2, y2);
+    g.lineTo(x3, y3);
+    g.closePath();
+    g.strokePath();
+
+    g.lineStyle(1.5, bodyColor, 0.95);
     g.beginPath();
     g.moveTo(x1, y1);
     g.lineTo(x2, y2);
