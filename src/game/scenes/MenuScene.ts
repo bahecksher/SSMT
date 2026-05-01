@@ -36,8 +36,21 @@ import { playUiSelectSfx } from '../systems/SfxSystem';
 import { CustomCursor } from '../ui/CustomCursor';
 import { SettingsSlider } from '../ui/SettingsSlider';
 import { RunMode, type LocalCampaignLeaderboardEntry } from '../types';
+import {
+  NetSession,
+  NET_EVENT,
+  generatePlayerId,
+  generateRoomCode,
+  isValidRoomCode,
+  normalizeRoomCode,
+  type MatchStartPayload,
+  type MultiplayerHandoff,
+  type PeerPresence,
+} from '../systems/NetSystem';
 
 type LeaderboardView = 'pilots' | 'corps';
+type VersusLobbyState = 'IDLE' | 'JOINING' | 'WAITING' | 'COUNTDOWN' | 'STARTED' | 'ERROR';
+
 interface BackgroundHandoffData {
   drifterState?: { x: number; y: number; vx: number; vy: number; radiusScale: number }[];
   debrisState?: { x: number; y: number; vx: number; vy: number }[];
@@ -55,6 +68,11 @@ type MenuButton = {
   height: number;
 };
 
+type VersusLobbyButton = MenuButton & {
+  enabled: boolean;
+  onClick: () => void;
+};
+
 // Background simulation constants (phase 1 feel)
 const BG_MAX_DEBRIS = 2;
 const BG_MAX_DRIFTERS = 5;
@@ -65,6 +83,7 @@ const BG_NPC_SPAWN_MS = 2500;
 const MENU_STARFIELD_OVERSCAN = 96;
 const MENU_STARFIELD_COUNT = 170;
 const MENU_MODE_CYCLE: RunMode[] = [RunMode.ARCADE, RunMode.CAMPAIGN, RunMode.VERSUS];
+const VERSUS_COUNTDOWN_MS = 3000;
 
 export class MenuScene extends Phaser.Scene {
   private saveSystem!: SaveSystem;
@@ -105,6 +124,15 @@ export class MenuScene extends Phaser.Scene {
   private corpScoreGraph: CorporationScoreGraph | null = null;
   private statusText!: Phaser.GameObjects.Text;
   private pilotText!: Phaser.GameObjects.Text;
+  private primaryActionText!: Phaser.GameObjects.Text;
+  private versusState: VersusLobbyState = 'IDLE';
+  private versusSession: NetSession | null = null;
+  private versusLobbyButtons: VersusLobbyButton[] = [];
+  private versusLobbyTexts: Phaser.GameObjects.Text[] = [];
+  private versusCountdownText: Phaser.GameObjects.Text | null = null;
+  private versusLocalReady = false;
+  private versusCountdownTimer: Phaser.Time.TimerEvent | null = null;
+  private versusHandingOff = false;
 
   // Background simulation
   private bgDebris: SalvageDebris[] = [];
@@ -139,6 +167,13 @@ export class MenuScene extends Phaser.Scene {
     this.bgDrifters = [];
     this.bgNpcs = [];
     this.settingsOpen = false;
+    this.versusState = 'IDLE';
+    this.versusSession = null;
+    this.versusLobbyButtons = [];
+    this.versusLobbyTexts = [];
+    this.versusLocalReady = false;
+    this.versusCountdownTimer = null;
+    this.versusHandingOff = false;
     this.drifterTimer = 0;
     this.debrisTimer = 0;
     this.npcTimer = 0;
@@ -433,7 +468,7 @@ export class MenuScene extends Phaser.Scene {
     // TAP TO START — anchored from bottom via shared metrics
     const primaryAction = getPrimaryActionMetrics(layout);
     const tapY = primaryAction.centerY;
-    const tapText = this.add.text(centerX, tapY, 'TAP TO START', {
+    this.primaryActionText = this.add.text(centerX, tapY, 'TAP TO START', {
       fontFamily: TITLE_FONT,
       fontSize: readableFontSize(primaryAction.fontSizePx),
       color: gateColor,
@@ -447,7 +482,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     this.tweens.add({
-      targets: tapText,
+      targets: this.primaryActionText,
       alpha: 0.3,
       duration: 800,
       yoyo: true,
@@ -478,9 +513,6 @@ export class MenuScene extends Phaser.Scene {
       playUiSelectSfx(this);
       const selectedMode = this.saveSystem.getSelectedMode();
       if (selectedMode === RunMode.VERSUS) {
-        const backgroundHandoff = this.buildBackgroundHandoff();
-        this.cleanupBackground();
-        this.scene.start(SCENE_KEYS.VERSUS_LOBBY, backgroundHandoff);
         return;
       }
 
@@ -692,6 +724,12 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private cleanup(): void {
+    this.cancelVersusCountdown();
+    if (this.versusSession && !this.versusHandingOff) {
+      this.versusSession.leave().catch(() => { /* ignore */ });
+    }
+    this.versusSession = null;
+    this.clearVersusLobbyUi();
     this.input.removeAllListeners();
     this.cleanupBackground();
     this.cursor.destroy(this);
@@ -1075,6 +1113,7 @@ export class MenuScene extends Phaser.Scene {
     this.modeToggleTab.setText(this.getModeToggleLabel(mode));
     this.modeToggleTab.setColor(active);
     this.modeToggleTab.setAlpha(1);
+    this.primaryActionText?.setText(mode === RunMode.VERSUS ? '' : 'TAP TO START');
     this.updateLeaderboardSectionVisibility();
   }
 
@@ -1083,6 +1122,9 @@ export class MenuScene extends Phaser.Scene {
     const currentIndex = MENU_MODE_CYCLE.indexOf(currentMode);
     const nextMode = MENU_MODE_CYCLE[(currentIndex + 1 + MENU_MODE_CYCLE.length) % MENU_MODE_CYCLE.length];
     this.saveSystem.setSelectedMode(nextMode);
+    if (nextMode !== RunMode.VERSUS) {
+      void this.leaveVersusLobbySilently();
+    }
     this.updateModeTabStyles();
     this.loadLeaderboard();
   }
@@ -1137,8 +1179,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     if (selectedMode === RunMode.VERSUS) {
-      this.statusText.setText('1V1 MIRRORED LOBBY // NO LEADERBOARD YET').setVisible(true);
-      this.positionMenuComm();
+      this.renderVersusLobby();
       return;
     }
 
@@ -1436,6 +1477,367 @@ export class MenuScene extends Phaser.Scene {
     if (!visible) {
       this.clearCorporationGraph();
     }
+    if (mode !== RunMode.VERSUS) {
+      this.clearVersusLobbyUi();
+    }
+  }
+
+  private renderVersusLobby(): void {
+    this.clearVersusLobbyUi();
+    this.clearCorporationGraph();
+    this.statusText.setVisible(true).setPosition(getLayout().centerX, this.leaderboardStatusY);
+
+    const layout = getLayout();
+    const compactMenu = isNarrowViewport(layout) || isShortViewport(layout);
+    const centerX = layout.centerX;
+    const buttonW = compactMenu ? 132 : 166;
+    const buttonH = compactMenu ? 36 : 42;
+    const buttonGap = compactMenu ? 10 : 14;
+    const statusSize = readableFontSize(compactMenu ? 13 : 15);
+    const codeSize = readableFontSize(compactMenu ? 22 : 28);
+    const hintSize = readableFontSize(compactMenu ? 10 : 12);
+    const startY = this.leaderboardStartY - (compactMenu ? 2 : 0);
+    const codeY = startY + (compactMenu ? 32 : 42);
+    const peerY = codeY + (compactMenu ? 30 : 38);
+    const hintY = peerY + (compactMenu ? 28 : 34);
+    const buttonY = hintY + (compactMenu ? 36 : 44);
+    const buttonOffset = buttonW / 2 + buttonGap / 2;
+
+    const makeText = (
+      y: number,
+      text: string,
+      fontSize: string,
+      color = COLORS.HUD,
+      alpha = 0.9,
+      fontFamily = UI_FONT,
+    ) => {
+      const obj = this.add.text(centerX, y, text, {
+        fontFamily,
+        fontSize,
+        color: `#${color.toString(16).padStart(6, '0')}`,
+        align: 'center',
+        wordWrap: { width: layout.gameWidth - 72, useAdvancedWrap: true },
+      }).setOrigin(0.5).setDepth(10).setAlpha(alpha);
+      this.versusLobbyTexts.push(obj);
+      return obj;
+    };
+
+    switch (this.versusState) {
+      case 'IDLE':
+        this.statusText.setText('CREATE OR JOIN A ROOM');
+        makeText(hintY - 18, 'SHARE A ROOM CODE WITH YOUR OPPONENT.', hintSize, COLORS.HUD, 0.62);
+        this.makeVersusLobbyButton(centerX - buttonOffset, buttonY, buttonW, buttonH, 'CREATE', () => this.createVersusRoom());
+        this.makeVersusLobbyButton(centerX + buttonOffset, buttonY, buttonW, buttonH, 'JOIN', () => this.joinVersusRoomPrompt());
+        break;
+      case 'JOINING':
+        this.statusText.setText('CONNECTING...');
+        makeText(codeY, this.versusSession?.roomCode ?? '', codeSize, COLORS.SALVAGE, 1, TITLE_FONT);
+        makeText(hintY, 'OPENING REALTIME CHANNEL.', hintSize, COLORS.HUD, 0.62);
+        break;
+      case 'WAITING': {
+        const peer = this.versusSession?.getPeer() ?? null;
+        this.statusText.setText(peer ? 'OPPONENT CONNECTED' : 'WAITING FOR OPPONENT...');
+        makeText(codeY, this.versusSession?.roomCode ?? '', codeSize, COLORS.SALVAGE, 1, TITLE_FONT);
+        makeText(peerY, this.formatVersusPresence(peer), statusSize, COLORS.HUD, 0.9);
+        makeText(hintY, 'PRESS READY WHEN BOTH SIDES ARE SET.', hintSize, COLORS.HUD, 0.62);
+        this.makeVersusLobbyButton(
+          centerX - buttonOffset,
+          buttonY,
+          buttonW,
+          buttonH,
+          this.versusLocalReady ? 'UNREADY' : 'READY',
+          () => this.toggleVersusReady(),
+          !!peer,
+        );
+        this.makeVersusLobbyButton(centerX + buttonOffset, buttonY, buttonW, buttonH, 'CANCEL', () => this.cancelVersusRoom());
+        break;
+      }
+      case 'COUNTDOWN':
+        this.statusText.setText('MATCH STARTING');
+        makeText(codeY, this.versusSession?.roomCode ?? '', codeSize, COLORS.SALVAGE, 1, TITLE_FONT);
+        makeText(peerY, this.formatVersusPresence(this.versusSession?.getPeer() ?? null), statusSize, COLORS.HUD, 0.9);
+        this.makeVersusLobbyButton(centerX, buttonY, buttonW, buttonH, 'CANCEL', () => this.cancelVersusRoom());
+        break;
+      case 'STARTED':
+        this.statusText.setText('MATCH STARTING...');
+        break;
+      case 'ERROR':
+        this.statusText.setText('CONNECTION FAILED');
+        makeText(hintY, 'CHECK NETWORK AND TRY AGAIN.', hintSize, COLORS.HUD, 0.62);
+        this.makeVersusLobbyButton(centerX, buttonY, buttonW, buttonH, 'BACK', () => this.cancelVersusRoom());
+        break;
+    }
+
+    this.positionMenuComm();
+  }
+
+  private makeVersusLobbyButton(
+    centerX: number,
+    centerY: number,
+    width: number,
+    height: number,
+    label: string,
+    onClick: () => void,
+    enabled = true,
+  ): VersusLobbyButton {
+    const bg = this.add.graphics().setDepth(10);
+    const text = this.add.text(centerX, centerY, label, {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(12),
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(11);
+    const hit = this.add.zone(centerX - width / 2, centerY - height / 2, width, height)
+      .setData('cornerRadius', 8)
+      .setOrigin(0, 0)
+      .setDepth(12)
+      .setInteractive({ useHandCursor: enabled });
+    const button: VersusLobbyButton = { bg, label: text, hit, width, height, enabled, onClick };
+
+    hit.on('pointerdown', (e: Phaser.Input.Pointer) => {
+      e.event.stopPropagation();
+      if (!button.enabled) return;
+      playUiSelectSfx(this);
+      button.onClick();
+    });
+
+    this.drawVersusLobbyButton(button, centerX, centerY);
+    this.versusLobbyButtons.push(button);
+    return button;
+  }
+
+  private drawVersusLobbyButton(button: VersusLobbyButton, centerX: number, centerY: number): void {
+    const left = centerX - button.width / 2;
+    const top = centerY - button.height / 2;
+    button.bg.clear();
+    button.bg.fillStyle(COLORS.BG, 0.84);
+    button.bg.lineStyle(1.1, COLORS.HUD, button.enabled ? 0.54 : 0.18);
+    button.bg.fillRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.strokeRoundedRect(left, top, button.width, button.height, 8);
+    button.bg.fillStyle(COLORS.HUD, button.enabled ? 0.08 : 0.02);
+    button.bg.fillRoundedRect(left + 4, top + 4, button.width - 8, button.height - 8, 6);
+    button.label.setAlpha(button.enabled ? 0.88 : 0.32);
+  }
+
+  private async createVersusRoom(): Promise<void> {
+    if (this.versusState !== 'IDLE') return;
+    await this.startVersusSession(generateRoomCode());
+  }
+
+  private async joinVersusRoomPrompt(): Promise<void> {
+    if (this.versusState !== 'IDLE') return;
+    const raw = window.prompt('Enter room code (4 letters/numbers):');
+    if (raw === null) return;
+    const code = normalizeRoomCode(raw);
+    if (!isValidRoomCode(code)) {
+      this.statusText.setText('INVALID CODE');
+      return;
+    }
+    await this.startVersusSession(code);
+  }
+
+  private async startVersusSession(roomCode: string): Promise<void> {
+    this.versusSession = new NetSession(roomCode, generatePlayerId(), this.saveSystem.getPlayerName());
+    this.versusSession.onPresence((peers) => this.handleVersusPresence(peers));
+    this.versusSession.onBroadcast(NET_EVENT.MATCH_START, (payload) => this.handleVersusMatchStart(payload as MatchStartPayload));
+    this.versusSession.onBroadcast(NET_EVENT.MATCH_CANCEL, () => this.handleVersusMatchCancel());
+
+    this.setVersusState('JOINING');
+    try {
+      await this.versusSession.join();
+      this.versusLocalReady = false;
+      this.setVersusState('WAITING');
+    } catch (err) {
+      console.error('[MenuScene] versus join failed', err);
+      this.setVersusState('ERROR');
+    }
+  }
+
+  private async toggleVersusReady(): Promise<void> {
+    if (!this.versusSession || this.versusState !== 'WAITING' || !this.versusSession.getPeer()) return;
+    this.versusLocalReady = !this.versusLocalReady;
+    try {
+      await this.versusSession.setReady(this.versusLocalReady);
+    } catch (err) {
+      console.warn('[MenuScene] versus setReady failed', err);
+    }
+    this.renderVersusLobby();
+    this.maybeStartVersusCountdown();
+  }
+
+  private async cancelVersusRoom(): Promise<void> {
+    if (this.versusSession?.isHost()) {
+      try {
+        await this.versusSession.broadcast(NET_EVENT.MATCH_CANCEL, { reason: 'host_cancel' });
+      } catch {
+        /* ignore */
+      }
+    }
+    await this.leaveVersusLobbySilently();
+    this.setVersusState('IDLE');
+  }
+
+  private handleVersusPresence(_peers: PeerPresence[]): void {
+    if (!this.versusSession) return;
+    if (this.versusState === 'WAITING') {
+      this.renderVersusLobby();
+      this.maybeStartVersusCountdown();
+    } else if (this.versusState === 'COUNTDOWN') {
+      const peer = this.versusSession.getPeer();
+      if (!peer || !peer.ready) {
+        this.cancelVersusCountdown();
+        this.setVersusState('WAITING');
+      }
+    }
+  }
+
+  private maybeStartVersusCountdown(): void {
+    if (!this.versusSession || this.versusState !== 'WAITING') return;
+    const peer = this.versusSession.getPeer();
+    if (!peer || !peer.ready || !this.versusLocalReady || !this.versusSession.isHost()) return;
+
+    const matchId = `m_${this.versusSession.roomCode}_${Date.now().toString(36)}`;
+    const payload: MatchStartPayload = { matchId, delayMs: VERSUS_COUNTDOWN_MS };
+    this.versusSession
+      .broadcast(NET_EVENT.MATCH_START, payload)
+      .catch((err) => console.warn('[MenuScene] versus match_start broadcast failed', err));
+    this.beginVersusCountdown(matchId, VERSUS_COUNTDOWN_MS);
+  }
+
+  private handleVersusMatchStart(payload: MatchStartPayload): void {
+    if (!this.versusSession || this.versusState !== 'WAITING' || this.versusSession.isHost()) return;
+    this.beginVersusCountdown(payload.matchId, payload.delayMs);
+  }
+
+  private handleVersusMatchCancel(): void {
+    if (this.versusState === 'COUNTDOWN') {
+      this.cancelVersusCountdown();
+      this.setVersusState('WAITING');
+    }
+  }
+
+  private beginVersusCountdown(matchId: string, delayMs = VERSUS_COUNTDOWN_MS): void {
+    if (!this.versusSession) return;
+    this.cancelVersusCountdown();
+    this.setVersusState('COUNTDOWN');
+    const durationMs = Math.max(0, delayMs);
+    const startAt = Date.now() + durationMs;
+    let remaining = Math.ceil(durationMs / 1000);
+    this.showVersusCountdownNumber(remaining);
+
+    if (durationMs <= 0) {
+      this.fireVersusMatchStart(matchId);
+      return;
+    }
+
+    this.versusCountdownTimer = this.time.addEvent({
+      delay: 250,
+      loop: true,
+      callback: () => {
+        const msLeft = Math.max(0, startAt - Date.now());
+        const secs = Math.ceil(msLeft / 1000);
+        if (secs !== remaining) {
+          remaining = secs;
+          this.showVersusCountdownNumber(remaining);
+        }
+        if (msLeft <= 0) {
+          this.cancelVersusCountdown();
+          this.fireVersusMatchStart(matchId);
+        }
+      },
+    });
+  }
+
+  private showVersusCountdownNumber(secs: number): void {
+    this.versusCountdownText?.destroy();
+    this.versusCountdownText = null;
+    const layout = getLayout();
+    const compactMenu = isNarrowViewport(layout) || isShortViewport(layout);
+    const y = getPrimaryActionMetrics(layout).centerY;
+    const text = this.add.text(layout.centerX, y, secs <= 0 ? 'GO' : String(secs), {
+      fontFamily: TITLE_FONT,
+      fontSize: readableFontSize(compactMenu ? 36 : 46),
+      color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
+      align: 'center',
+    }).setOrigin(0.5).setDepth(13);
+    this.versusCountdownText = text;
+    this.versusLobbyTexts.push(text);
+    this.tweens.add({
+      targets: text,
+      scale: { from: 1.35, to: 1 },
+      alpha: { from: 1, to: 0.86 },
+      duration: 250,
+      ease: 'Quad.easeOut',
+    });
+  }
+
+  private fireVersusMatchStart(matchId: string): void {
+    if (!this.versusSession) return;
+    const peer = this.versusSession.getPeer();
+    const handoff: MultiplayerHandoff = {
+      session: this.versusSession,
+      role: this.versusSession.isHost() ? 'host' : 'guest',
+      matchId,
+      peerId: peer?.playerId ?? '',
+      startAt: Date.now(),
+    };
+    this.versusHandingOff = true;
+    this.setVersusState('STARTED');
+    const backgroundHandoff = this.buildBackgroundHandoff();
+    this.cleanupBackground();
+    this.scene.start(SCENE_KEYS.MISSION_SELECT, {
+      ...backgroundHandoff,
+      multiplayer: handoff,
+      mode: RunMode.VERSUS,
+    });
+  }
+
+  private formatVersusPresence(peer: PeerPresence | null): string {
+    if (!peer) return 'NO OPPONENT';
+    const tag = peer.playerName.trim().toUpperCase();
+    return peer.ready ? `OPPONENT ${tag} - READY` : `OPPONENT ${tag} - STANDBY`;
+  }
+
+  private setVersusState(state: VersusLobbyState): void {
+    this.versusState = state;
+    if (this.saveSystem.getSelectedMode() === RunMode.VERSUS) {
+      this.renderVersusLobby();
+    }
+  }
+
+  private async leaveVersusLobbySilently(): Promise<void> {
+    this.cancelVersusCountdown();
+    if (this.versusSession) {
+      try {
+        await this.versusSession.leave();
+      } catch {
+        /* ignore */
+      }
+    }
+    this.versusSession = null;
+    this.versusLocalReady = false;
+    this.clearVersusLobbyUi();
+  }
+
+  private cancelVersusCountdown(): void {
+    if (this.versusCountdownTimer) {
+      this.versusCountdownTimer.remove(false);
+      this.versusCountdownTimer = null;
+    }
+  }
+
+  private clearVersusLobbyUi(): void {
+    for (const button of this.versusLobbyButtons) {
+      button.bg.destroy();
+      button.label.destroy();
+      button.hit.destroy();
+    }
+    this.versusLobbyButtons = [];
+    for (const text of this.versusLobbyTexts) {
+      text.destroy();
+    }
+    this.versusLobbyTexts = [];
+    this.versusCountdownText = null;
   }
 
   private buildFullCorpEntries(entries: CorporationLeaderboardEntry[]): CorporationLeaderboardEntry[] {

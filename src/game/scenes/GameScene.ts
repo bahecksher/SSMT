@@ -2159,7 +2159,9 @@ export class GameScene extends Phaser.Scene {
     const layout = getLayout();
     const x = layout.arenaLeft + Math.max(0, Math.min(1, arenaXFraction)) * layout.arenaWidth;
     const y = layout.arenaTop + Math.max(0, Math.min(1, arenaYFraction)) * layout.arenaHeight;
-    this.versusRepulsorCharges.push(new VersusRepulsorCharge(this, x, y));
+    const charge = new VersusRepulsorCharge(this, x, y);
+    this.versusRepulsorCharges.push(charge);
+    this.refreshRepulsorChargeDepths();
   }
 
   private broadcastLocalTerminal(outcome: VersusOutcome): void {
@@ -3741,6 +3743,7 @@ export class GameScene extends Phaser.Scene {
     this.mirrorEntities?.setDepth(GameScene.MIRROR_SPECTATE_ENTITY_DEPTH);
     this.mirrorLabel?.setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH);
     this.mirrorWaiting?.setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH);
+    this.refreshRepulsorChargeDepths();
     // Reset spectate inventory state and start the regen timer.
     this.spectateLaserCharges = 0;
     this.spectateLaserAccumMs = 0;
@@ -3760,8 +3763,16 @@ export class GameScene extends Phaser.Scene {
     this.mirrorEntities?.setDepth(GameScene.MIRROR_ENTITY_DEPTH);
     this.mirrorLabel?.setDepth(GameScene.MIRROR_TEXT_DEPTH);
     this.mirrorWaiting?.setDepth(GameScene.MIRROR_TEXT_DEPTH);
+    this.refreshRepulsorChargeDepths();
     this.tearDownSpectateInventoryUi();
     this.setMirrorVisible(false);
+  }
+
+  private refreshRepulsorChargeDepths(): void {
+    const depth = this.versusSpectating ? GameScene.MIRROR_SPECTATE_ENTITY_DEPTH + 0.5 : 8;
+    for (const charge of this.versusRepulsorCharges) {
+      charge.graphic.setDepth(depth);
+    }
   }
 
   private buildSpectateInventoryUi(): void {
