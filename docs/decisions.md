@@ -119,6 +119,21 @@ After death or extraction, phase timers, gate progression, spawns, and reactive 
 ### 2026-03-27 - Callsign format restored to AAA-###
 Player identity now uses three editable uppercase letters plus a persistent three-digit suffix, displayed as `AAA-###`. Existing saved callsigns migrate by preserving available letters and the last three digits, padding a missing third letter when needed.
 
+### 2026-05-01 - Four-player Versus remains parallel arenas
+Future 2-4 player Versus should expand the current mirrored/parallel-arena model, not become a shared arena. Players compete on score plus extraction, while eliminated/extracted players can continue affecting live players through sabotage.
+
+### 2026-05-01 - Four-player spectate favors one target at a time
+For 2-4 player Versus, do not try to show all opponent arenas as live mirrors during normal play. Use compact status/ranking cards while alive, then let eliminated/extracted players spectate and sabotage one selected live target at a time.
+
+### 2026-05-01 - Versus skips MissionSelect and company play
+Versus should launch directly from the room countdown into the run. It should not use MissionSelect, accepted missions, company affiliation boosts, liaison comms, or contract/favor spending.
+
+### 2026-05-01 - Preserve 1v1 Versus spectate, use scoreboard-first multi-player death screen
+Keep the existing 1v1 laser/spectate/death-screen feel. For 3-4 player rooms, terminal players should see a live scoreboard with score, phase, and state for every pilot, plus optional one-target spectate/sabotage rather than only one broadcast view.
+
+### 2026-05-01 - Multi-player terminal sabotage broadcasts to all active pilots
+In 3-4 player rooms, terminal sabotage is not target-specific for the first pass. A terminal player gets one laser charge that regenerates every 10s and one enemy-spawn charge that regenerates every 20s. Both broadcast to all active pilots. Player colors identify the sender: local ship, spawned enemies, and spawned lasers use the sender's assigned room color.
+
 ### 2026-03-27 - Phase 6: Settings, bomb power-up, screen shake, collection delays
 Settings system persists screen shake and scanline toggles to localStorage. Accessible from both the pause menu and the main menu. Bomb power-up drops from enemies (25% chance) with a 1.5s collection delay; once collected, a BOMB button appears in the bottom-right. Detonation clears all entities except the player with a white flash + camera shake. The same 1.5s collection delay applies to bonus point pickups from enemies. Flash+shake fires on game entry, extraction, and bomb detonation. Death triggers a screen shake.
 

@@ -10,6 +10,10 @@ export interface PeerPresence {
   joinedAt: number;
 }
 
+export const VERSUS_MIN_PLAYERS = 2;
+export const VERSUS_MAX_PLAYERS = 4;
+export const VERSUS_PLAYER_COLORS = [0x49f6ff, 0xffd84a, 0xc070ff, 0x39ff88] as const;
+
 export interface MatchStartPayload {
   matchId: string;
   delayMs: number;
@@ -25,6 +29,7 @@ export const NET_EVENT = {
   MATCH_REMATCH_CANCEL: 'match_rematch_cancel',
   MATCH_RESULT_PULSE: 'match_result_pulse',
   MATCH_LASER: 'match_laser',
+  MATCH_ENEMY: 'match_enemy',
   /** Sent during versus MissionSelect when a peer toggles their LOCK IN state. */
   MATCH_BRIEFING_READY: 'match_briefing_ready',
   /** Host broadcast: both peers locked in, start the GameScene countdown now. */
@@ -40,6 +45,8 @@ export interface MatchBriefingReadyPayload {
 
 /** Spectate repulsor: dead/extracted peer places a charge on the live player's arena. */
 export interface MatchRepulsorPayload {
+  senderId?: string;
+  targetId?: string;
   /** Arena-relative fractions (0..1), same convention as MirrorSnapshot.ship. */
   x: number;
   y: number;
@@ -55,14 +62,26 @@ export interface MatchDeployPayload {
 
 /** Sender fired the versus sabotage laser. Receiver spawns a telegraphed lane sweep. */
 export interface MatchLaserPayload {
+  senderId?: string;
+  targetId?: string;
+  color?: number;
   /** Horizontal sweeps: 'top' | 'middle' | 'bottom'. Vertical sweeps: 'left' | 'center' | 'right'. */
   lane: 'top' | 'middle' | 'bottom' | 'left' | 'center' | 'right';
   /** Sender's match-clock ms at the moment of firing. Used to dedupe replays. */
   t: number;
 }
 
+/** Sender spawned a hostile enemy into other active players' arenas. */
+export interface MatchEnemyPayload {
+  senderId?: string;
+  targetId?: string;
+  color?: number;
+  t: number;
+}
+
 /** Sender extracted. `time` = ms since match start (same clock as MirrorSnapshot.t). `rep` reserved for future rep-flux summary. */
 export interface MatchExtractPayload {
+  senderId?: string;
   score: number;
   time: number;
   rep?: number;
@@ -70,6 +89,7 @@ export interface MatchExtractPayload {
 
 /** Sender died. `time` = ms since match start (same clock as MirrorSnapshot.t). */
 export interface MatchDeathPayload {
+  senderId?: string;
   score: number;
   time: number;
   cause: 'asteroid' | 'enemy' | 'laser';
@@ -103,6 +123,7 @@ export interface MirrorLaserSnapshot {
   width: number;
   lethal: boolean;
   kind: 'hazard' | 'versus';
+  color?: number;
 }
 
 export interface MirrorNpcSnapshot {
@@ -123,6 +144,8 @@ export interface MirrorGateSnapshot {
 }
 
 export interface MirrorSnapshot {
+  senderId?: string;
+  senderColor?: number;
   /**
    * Sender's match-start wall clock in ms (sender's matchClockStartMs). Stable
    * for all snapshots in the same round; changes on rematch when the sender
@@ -146,7 +169,7 @@ export interface MirrorSnapshot {
     shielded: boolean;
   };
   /** Enemy x/y are arena-relative fractions, same convention as ship. */
-  enemies: Array<{ x: number; y: number; type: number }>;
+  enemies: Array<{ x: number; y: number; type: number; color?: number }>;
   /** Asteroids rendered as simplified ghost circles/rings. */
   drifters: MirrorDrifterSnapshot[];
   /** Salvage blobs rendered as simplified ghost salvage silhouettes/rings. */
@@ -345,12 +368,35 @@ export class NetSession {
         joinedAt: typeof e.joinedAt === 'number' ? e.joinedAt : 0,
       });
     }
-    return out;
+    return this.sortPresence(out);
   }
 
-  /** Returns the peer (not self), or null if no other peer is present. */
+  getActivePlayers(): PeerPresence[] {
+    return this.getPeers().slice(0, VERSUS_MAX_PLAYERS);
+  }
+
+  getOtherPlayers(): PeerPresence[] {
+    return this.getActivePlayers().filter((peer) => peer.playerId !== this.playerId);
+  }
+
+  isInActiveRoster(): boolean {
+    return this.getActivePlayers().some((peer) => peer.playerId === this.playerId);
+  }
+
+  getPlayerColor(playerId: string): number {
+    const roster = this.getActivePlayers();
+    const index = Math.max(0, roster.findIndex((peer) => peer.playerId === playerId));
+    return VERSUS_PLAYER_COLORS[index % VERSUS_PLAYER_COLORS.length];
+  }
+
+  hasLaunchableRoster(): boolean {
+    const roster = this.getActivePlayers();
+    return roster.length >= VERSUS_MIN_PLAYERS && roster.every((peer) => peer.ready);
+  }
+
+  /** Returns the first active peer (not self), or null if no other peer is present. */
   getPeer(): PeerPresence | null {
-    for (const peer of this.getPeers()) {
+    for (const peer of this.getOtherPlayers()) {
       if (peer.playerId !== this.playerId) return peer;
     }
     return null;
@@ -362,11 +408,20 @@ export class NetSession {
    * Pure string compare — no dependency on presence-payload number serialization.
    */
   isHost(): boolean {
-    let smallest = this.playerId;
-    for (const peer of this.getPeers()) {
+    const roster = this.getActivePlayers();
+    if (!roster.some((peer) => peer.playerId === this.playerId)) return false;
+    let smallest = roster[0]?.playerId ?? this.playerId;
+    for (const peer of roster) {
       if (peer.playerId < smallest) smallest = peer.playerId;
     }
     return smallest === this.playerId;
+  }
+
+  private sortPresence(peers: PeerPresence[]): PeerPresence[] {
+    return [...peers].sort((a, b) => {
+      if (a.joinedAt !== b.joinedAt) return a.joinedAt - b.joinedAt;
+      return a.playerId.localeCompare(b.playerId);
+    });
   }
 
   /**

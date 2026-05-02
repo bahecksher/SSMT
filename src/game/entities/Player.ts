@@ -22,6 +22,7 @@ export class Player {
   private vy = 0;
   private shieldPulse = 0;
   private heading = -Math.PI / 2; // default pointing up
+  private accentColor: number | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.x = x;
@@ -115,7 +116,7 @@ export class Player {
 
     const bodyColor = this.destroyed
       ? COLORS.HAZARD
-      : (this.inverted ? 0xffffff : COLORS.PLAYER);
+      : (this.inverted ? 0xffffff : (this.accentColor ?? COLORS.PLAYER));
 
     // Glow
     g.lineStyle(1, this.destroyed ? bodyColor : COLORS.PLAYER_GLOW, 0.14);
@@ -165,6 +166,11 @@ export class Player {
   getVelocityX(): number { return this.vx; }
   getVelocityY(): number { return this.vy; }
   getHeading(): number { return this.heading; }
+
+  setAccentColor(color: number | null): void {
+    this.accentColor = color;
+    this.draw();
+  }
 
   applyImpulse(ix: number, iy: number): void {
     this.vx += ix;

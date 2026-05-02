@@ -35,9 +35,11 @@ export class VersusLaserStrike {
   readonly x2: number;
   readonly y2: number;
   private readonly scene: Phaser.Scene;
+  private readonly color: number;
 
-  constructor(scene: Phaser.Scene, lane: VersusLaserLane) {
+  constructor(scene: Phaser.Scene, lane: VersusLaserLane, color = VERSUS_LASER_COLOR) {
     this.scene = scene;
+    this.color = color;
     const layout = getLayout();
     this.width = VERSUS_LASER_WIDTH;
     this.isHorizontal = HORIZONTAL_LANES.has(lane);
@@ -90,6 +92,10 @@ export class VersusLaserStrike {
     return this.lethal;
   }
 
+  getColor(): number {
+    return this.color;
+  }
+
   /** True if a circle at (x,y,r) intersects the lethal lane. */
   hits(x: number, y: number, r: number): boolean {
     if (!this.lethal) return false;
@@ -105,7 +111,7 @@ export class VersusLaserStrike {
   private draw(): void {
     const g = this.graphic;
     g.clear();
-    const color = VERSUS_LASER_COLOR;
+    const color = this.color;
 
     if (!this.lethal) {
       const warningProgress = this.elapsed / VERSUS_LASER_WARNING_MS;

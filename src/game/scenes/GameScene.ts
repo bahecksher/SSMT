@@ -41,6 +41,7 @@ import { VersusRepulsorCharge } from '../entities/VersusRepulsorCharge';
 import { ShipDebris } from '../entities/ShipDebris';
 import { ExitGate } from '../entities/ExitGate';
 import { NPCShip } from '../entities/NPCShip';
+import { EnemyShip } from '../entities/EnemyShip';
 import { Hud } from '../ui/Hud';
 import { Overlays } from '../ui/Overlays';
 import { GeoSphere } from '../entities/GeoSphere';
@@ -90,6 +91,8 @@ import {
   type MatchDeathPayload,
   type MatchLaserPayload,
   type MatchRepulsorPayload,
+  type MatchEnemyPayload,
+  type PeerPresence,
 } from '../systems/NetSystem';
 import {
   DRIFTER_MINING_RADIUS_MULT,
@@ -127,6 +130,9 @@ import {
   WORMHOLE_POCKET_SALVAGE_MULT,
   WORMHOLE_SCHEDULED_RUN_CHANCE,
 } from '../data/tuning';
+
+const MULTI_SPECTATE_LASER_REGEN_MS = 10000;
+const MULTI_SPECTATE_ENEMY_REGEN_MS = 20000;
 
 function lerpAngleShortest(from: number, to: number, alpha: number): number {
   const delta = Phaser.Math.Angle.Wrap(to - from);
@@ -231,9 +237,12 @@ export class GameScene extends Phaser.Scene {
   private versusRepulsorRecvDedup = new Set<number>();
   private spectateLaserCharges = 0;
   private spectateLaserAccumMs = 0;
+  private spectateEnemyCharges = 0;
+  private spectateEnemyAccumMs = 0;
   private spectateRepulsorLastSendMs = 0;
   private spectateInventoryUi: Phaser.GameObjects.GameObject[] = [];
   private spectateLaserButtonText: Phaser.GameObjects.Text | null = null;
+  private spectateEnemyButtonText: Phaser.GameObjects.Text | null = null;
   private spectateRepulsorButtonText: Phaser.GameObjects.Text | null = null;
   private hud!: Hud;
   private state: GameState = GameState.PLAYING;
@@ -328,6 +337,10 @@ export class GameScene extends Phaser.Scene {
   private multiplayer: MultiplayerHandoff | null = null;
   private snapshotAccumMs = 0;
   private peerSnapshots: { snap: MirrorSnapshot; arr: number }[] = [];
+  private peerSnapshotMap = new Map<string, { snap: MirrorSnapshot; arr: number }[]>();
+  private peerOutcomeMap = new Map<string, VersusOutcome>();
+  private multiplayerRoster: PeerPresence[] = [];
+  private localPlayerColor = COLORS.PLAYER;
   private matchClockStartMs = 0;
   private peerEpoch: number | null = null;
   private mirrorRect: { x: number; y: number; w: number; h: number } | null = null;
@@ -399,9 +412,12 @@ export class GameScene extends Phaser.Scene {
     this.versusRepulsorRecvDedup = new Set<number>();
     this.spectateLaserCharges = 0;
     this.spectateLaserAccumMs = 0;
+    this.spectateEnemyCharges = 0;
+    this.spectateEnemyAccumMs = 0;
     this.spectateRepulsorLastSendMs = 0;
     this.spectateInventoryUi = [];
     this.spectateLaserButtonText = null;
+    this.spectateEnemyButtonText = null;
     this.spectateRepulsorButtonText = null;
     this.scoreRecordingBlocked = false;
     this.activePaletteId = initialPaletteId;
@@ -415,6 +431,10 @@ export class GameScene extends Phaser.Scene {
     this.localTerminalFired = false;
     this.localOutcome = null;
     this.peerOutcome = null;
+    this.peerSnapshotMap = new Map();
+    this.peerOutcomeMap = new Map();
+    this.multiplayerRoster = [];
+    this.localPlayerColor = COLORS.PLAYER;
     this.versusResultRendered = false;
     this.versusSpectating = false;
     this.versusPeerWaitTimer = null;
@@ -506,7 +526,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Mission system — use selected missions from briefing, or reload from persistence on retry
-    const missionList = handoff.selectedMissions ?? loadOrGenerateMissions().filter((m) => m.accepted);
+    const missionList = this.runMode === RunMode.VERSUS
+      ? []
+      : (handoff.selectedMissions ?? loadOrGenerateMissions().filter((m) => m.accepted));
     this.missionSystem = new MissionSystem(missionList);
     this.repFluxTracker = new RepFluxTracker();
 
@@ -523,7 +545,9 @@ export class GameScene extends Phaser.Scene {
     this.liaisonCompanyId = null;
     this.liaisonRepLevel = 0;
     const repSave = loadCompanyRep();
-    const affiliatedCompanyId = getCompanyAffiliation(repSave).companyId;
+    const affiliatedCompanyId = this.runMode === RunMode.VERSUS
+      ? null
+      : getCompanyAffiliation(repSave).companyId;
     if (affiliatedCompanyId) {
       this.liaisonCompanyId = affiliatedCompanyId;
       this.liaisonRepLevel = Math.max(1, getRepLevel(repSave.rep[affiliatedCompanyId] ?? 0));
@@ -1999,6 +2023,9 @@ export class GameScene extends Phaser.Scene {
 
   private setupMultiplayer(handoff: MultiplayerHandoff): void {
     this.multiplayer = handoff;
+    this.multiplayerRoster = handoff.session.getActivePlayers();
+    this.localPlayerColor = handoff.session.getPlayerColor(handoff.session.playerId);
+    this.player.setAccentColor(this.localPlayerColor);
     this.matchClockStartMs = Date.now();
     // Versus mode: enable sabotage laser drops on enemy/NPC kills.
     this.difficultySystem.setVersusLasersEnabled(true);
@@ -2013,6 +2040,9 @@ export class GameScene extends Phaser.Scene {
     handoff.session.onBroadcast(NET_EVENT.SNAPSHOT, (payload) => {
       const snap = payload as MirrorSnapshot | undefined;
       if (!snap || typeof snap.t !== 'number') return;
+      const senderId = snap.senderId ?? handoff.peerId;
+      this.recordPeerSnapshot(senderId, snap);
+      if (senderId !== handoff.peerId) return;
       this.notePeerSeen();
       // Detect peer-side new round: a different epoch means the peer reset its
       // matchClockStartMs (rematch). Drop the prior round's buffered snapshots
@@ -2037,7 +2067,15 @@ export class GameScene extends Phaser.Scene {
     handoff.session.onBroadcast(NET_EVENT.MATCH_EXTRACT, (payload) => {
       const p = payload as MatchExtractPayload | undefined;
       if (!p || typeof p.score !== 'number') return;
+      const senderId = p.senderId ?? handoff.peerId;
       this.notePeerSeen();
+      this.peerOutcomeMap.set(senderId, {
+        cause: 'extract',
+        score: Math.round(p.score),
+        time: typeof p.time === 'number' ? p.time : 0,
+        phase: this.getLatestPeerPhase(senderId),
+      });
+      if (senderId !== handoff.peerId) return;
       if (this.peerOutcome) return;
       this.peerOutcome = {
         cause: 'extract',
@@ -2083,6 +2121,8 @@ export class GameScene extends Phaser.Scene {
     handoff.session.onBroadcast(NET_EVENT.MATCH_REPULSOR, (payload) => {
       const p = payload as MatchRepulsorPayload | undefined;
       if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') return;
+      if (p.senderId && p.senderId === handoff.session.playerId) return;
+      if (p.targetId && p.targetId !== handoff.session.playerId) return;
       this.notePeerSeen();
       if (typeof p.t === 'number') {
         if (this.versusRepulsorRecvDedup.has(p.t)) return;
@@ -2095,6 +2135,8 @@ export class GameScene extends Phaser.Scene {
       const p = payload as MatchLaserPayload | undefined;
       const validLanes: VersusLaserLane[] = ['top', 'middle', 'bottom', 'left', 'center', 'right'];
       if (!p || !validLanes.includes(p.lane as VersusLaserLane)) return;
+      if (p.senderId && p.senderId === handoff.session.playerId) return;
+      if (p.targetId && p.targetId !== handoff.session.playerId) return;
       this.notePeerSeen();
       // Dedupe by sender timestamp; Supabase broadcast can occasionally
       // double-deliver, and an exact-match spawn would double the lethal sweep.
@@ -2102,13 +2144,31 @@ export class GameScene extends Phaser.Scene {
         if (this.versusLaserRecvDedup.has(p.t)) return;
         this.versusLaserRecvDedup.add(p.t);
       }
-      this.spawnIncomingVersusLaser(p.lane);
+      this.spawnIncomingVersusLaser(p.lane, p.color ?? this.getVersusColorForPlayer(p.senderId));
+    });
+
+    handoff.session.onBroadcast(NET_EVENT.MATCH_ENEMY, (payload) => {
+      const p = payload as MatchEnemyPayload | undefined;
+      if (!p) return;
+      if (p.senderId && p.senderId === handoff.session.playerId) return;
+      if (p.targetId && p.targetId !== handoff.session.playerId) return;
+      this.notePeerSeen();
+      this.spawnIncomingVersusEnemy(p.color ?? this.getVersusColorForPlayer(p.senderId));
     });
 
     handoff.session.onBroadcast(NET_EVENT.MATCH_DEATH, (payload) => {
       const p = payload as MatchDeathPayload | undefined;
       if (!p || typeof p.score !== 'number') return;
+      const senderId = p.senderId ?? handoff.peerId;
       this.notePeerSeen();
+      this.peerOutcomeMap.set(senderId, {
+        cause: 'death',
+        score: Math.round(p.score),
+        time: typeof p.time === 'number' ? p.time : 0,
+        phase: this.getLatestPeerPhase(senderId),
+        deathCause: p.cause === 'asteroid' || p.cause === 'enemy' || p.cause === 'laser' ? p.cause : undefined,
+      });
+      if (senderId !== handoff.peerId) return;
       if (this.peerOutcome) return;
       this.peerOutcome = {
         cause: 'death',
@@ -2123,14 +2183,40 @@ export class GameScene extends Phaser.Scene {
     this.createMirrorViewport();
   }
 
-  private getLatestPeerPhase(): number {
-    const last = this.peerSnapshots[this.peerSnapshots.length - 1];
+  private isMultiPilotVersus(): boolean {
+    return (this.multiplayerRoster.length || this.multiplayer?.session.getActivePlayers().length || 0) > 2;
+  }
+
+  private recordPeerSnapshot(senderId: string, snap: MirrorSnapshot): void {
+    if (!senderId || senderId === this.multiplayer?.session.playerId) return;
+    const list = this.peerSnapshotMap.get(senderId) ?? [];
+    const last = list[list.length - 1];
+    if (last && snap.t < last.snap.t) return;
+    list.push({ snap, arr: Date.now() });
+    if (list.length > 2) list.shift();
+    this.peerSnapshotMap.set(senderId, list);
+  }
+
+  private getPeerSnapshotList(playerId = this.multiplayer?.peerId ?? ''): { snap: MirrorSnapshot; arr: number }[] {
+    if (!playerId || playerId === this.multiplayer?.peerId) return this.peerSnapshots;
+    return this.peerSnapshotMap.get(playerId) ?? [];
+  }
+
+  private getLatestPeerPhase(playerId = this.multiplayer?.peerId ?? ''): number {
+    const list = this.getPeerSnapshotList(playerId);
+    const last = list[list.length - 1];
     return last ? last.snap.phase : 1;
   }
 
-  private getLatestPeerScore(): number {
-    const last = this.peerSnapshots[this.peerSnapshots.length - 1];
+  private getLatestPeerScore(playerId = this.multiplayer?.peerId ?? ''): number {
+    const list = this.getPeerSnapshotList(playerId);
+    const last = list[list.length - 1];
     return last ? Math.round(last.snap.score) : 0;
+  }
+
+  private getVersusColorForPlayer(playerId?: string): number {
+    if (!playerId || !this.multiplayer) return VERSUS_LASER_COLOR;
+    return this.multiplayer.session.getPlayerColor(playerId);
   }
 
   private getLocalPilotName(): string {
@@ -2160,18 +2246,25 @@ export class GameScene extends Phaser.Scene {
     const lanes: VersusLaserLane[] = ['top', 'middle', 'bottom'];
     const lane = lanes[Math.floor(Math.random() * lanes.length)];
     const payload: MatchLaserPayload = {
+      senderId: this.multiplayer.session.playerId,
+      targetId: this.isMultiPilotVersus() ? undefined : this.multiplayer.peerId,
+      color: this.localPlayerColor,
       lane,
       t: now - this.matchClockStartMs,
     };
-    this.addSentLaserMirrorEcho(lane);
+    this.addSentLaserMirrorEcho(lane, this.localPlayerColor);
     this.multiplayer.session.broadcast(NET_EVENT.MATCH_LASER, payload).catch((err) => {
       console.warn('[GameScene] match_laser broadcast failed', err);
     });
   }
 
   /** Receiver: spawn the lethal lane sweep that the peer just fired. */
-  private spawnIncomingVersusLaser(lane: VersusLaserLane): void {
-    this.versusLaserStrikes.push(new VersusLaserStrike(this, lane));
+  private spawnIncomingVersusLaser(lane: VersusLaserLane, color = VERSUS_LASER_COLOR): void {
+    this.versusLaserStrikes.push(new VersusLaserStrike(this, lane, color));
+  }
+
+  private spawnIncomingVersusEnemy(color = COLORS.ENEMY): void {
+    this.difficultySystem.getEnemies().push(new EnemyShip(this, color));
   }
 
   /**
@@ -2193,7 +2286,7 @@ export class GameScene extends Phaser.Scene {
     for (let i = enemies.length - 1; i >= 0; i--) {
       const enemy = enemies[i];
       if (!enemy.active || !strike.hits(enemy.x, enemy.y, enemy.radius)) continue;
-      this.playerDebris.push(new ShipDebris(this, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), COLORS.ENEMY, enemy.radius));
+      this.playerDebris.push(new ShipDebris(this, enemy.x, enemy.y, enemy.getVelocityX(), enemy.getVelocityY(), enemy.getHullColor(), enemy.radius));
       enemy.destroy();
       enemies.splice(i, 1);
     }
@@ -2241,12 +2334,31 @@ export class GameScene extends Phaser.Scene {
     if (this.spectateLaserCharges <= 0) return;
     this.spectateLaserCharges -= 1;
     const payload: MatchLaserPayload = {
+      senderId: this.multiplayer.session.playerId,
+      targetId: this.isMultiPilotVersus() ? undefined : this.multiplayer.peerId,
+      color: this.localPlayerColor,
       lane,
       t: Date.now() - this.matchClockStartMs,
     };
-    this.addSentLaserMirrorEcho(lane);
+    this.addSentLaserMirrorEcho(lane, this.localPlayerColor);
     this.multiplayer.session.broadcast(NET_EVENT.MATCH_LASER, payload).catch((err) => {
       console.warn('[GameScene] spectate laser broadcast failed', err);
+    });
+    this.refreshSpectateInventoryUi();
+  }
+
+  private fireSpectateEnemy(): void {
+    if (!this.multiplayer) return;
+    if (this.spectateEnemyCharges <= 0) return;
+    this.spectateEnemyCharges -= 1;
+    const payload: MatchEnemyPayload = {
+      senderId: this.multiplayer.session.playerId,
+      targetId: this.isMultiPilotVersus() ? undefined : this.multiplayer.peerId,
+      color: this.localPlayerColor,
+      t: Date.now() - this.matchClockStartMs,
+    };
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_ENEMY, payload).catch((err) => {
+      console.warn('[GameScene] spectate enemy broadcast failed', err);
     });
     this.refreshSpectateInventoryUi();
   }
@@ -2266,6 +2378,8 @@ export class GameScene extends Phaser.Scene {
     if (now - this.spectateRepulsorLastSendMs < SPECTATE_REPULSOR_COOLDOWN_MS) return;
     this.spectateRepulsorLastSendMs = now;
     const payload: MatchRepulsorPayload = {
+      senderId: this.multiplayer.session.playerId,
+      targetId: this.multiplayer.peerId,
       x: Math.max(0, Math.min(1, arenaXFraction)),
       y: Math.max(0, Math.min(1, arenaYFraction)),
       t: now - this.matchClockStartMs,
@@ -2293,12 +2407,17 @@ export class GameScene extends Phaser.Scene {
     this.localTerminalFired = true;
     this.localOutcome = outcome;
     if (outcome.cause === 'extract') {
-      const payload: MatchExtractPayload = { score: outcome.score, time: outcome.time };
+      const payload: MatchExtractPayload = {
+        senderId: this.multiplayer.session.playerId,
+        score: outcome.score,
+        time: outcome.time,
+      };
       this.multiplayer.session.broadcast(NET_EVENT.MATCH_EXTRACT, payload).catch((err) => {
         console.warn('[GameScene] match_extract broadcast failed', err);
       });
     } else if (outcome.cause === 'death') {
       const payload: MatchDeathPayload = {
+        senderId: this.multiplayer.session.playerId,
         score: outcome.score,
         time: outcome.time,
         cause: outcome.deathCause ?? 'asteroid',
@@ -2317,6 +2436,10 @@ export class GameScene extends Phaser.Scene {
     // If local fired but the death/extract screen wipe hasn't reached
     // enterResultsState yet, defer — enterVersusResultFlow will see peerOutcome.
     if (this.state !== GameState.RESULTS) return;
+    if (this.isMultiPilotVersus()) {
+      this.showVersusWaitingUi();
+      return;
+    }
     this.cancelVersusPeerWait();
     this.renderVersusResult();
   }
@@ -2584,15 +2707,15 @@ export class GameScene extends Phaser.Scene {
     this.mirrorNeedsRedraw = true;
   }
 
-  private addSentLaserMirrorEcho(lane: VersusLaserLane): void {
+  private addSentLaserMirrorEcho(lane: VersusLaserLane, color = VERSUS_LASER_COLOR): void {
     this.mirrorLaserEchoes.push({
-      laser: this.createMirrorLaserFromLane(lane),
+      laser: this.createMirrorLaserFromLane(lane, color),
       elapsed: 0,
     });
     this.mirrorNeedsRedraw = true;
   }
 
-  private createMirrorLaserFromLane(lane: VersusLaserLane): MirrorLaserSnapshot {
+  private createMirrorLaserFromLane(lane: VersusLaserLane, color = VERSUS_LASER_COLOR): MirrorLaserSnapshot {
     const layout = getLayout();
     const sizeBasis = Math.max(1, Math.min(layout.arenaWidth, layout.arenaHeight));
     const isHorizontal = lane === 'top' || lane === 'middle' || lane === 'bottom';
@@ -2610,6 +2733,7 @@ export class GameScene extends Phaser.Scene {
       width: Math.round((VERSUS_LASER_WIDTH / sizeBasis) * 10000) / 10000,
       lethal: false,
       kind: 'versus',
+      color,
     };
   }
 
@@ -2663,6 +2787,8 @@ export class GameScene extends Phaser.Scene {
     const beams = this.difficultySystem.getBeams();
     const gate = this.extractionSystem.getGate();
     const snapshot: MirrorSnapshot = {
+      senderId: this.multiplayer.session.playerId,
+      senderColor: this.localPlayerColor,
       epoch: this.matchClockStartMs,
       t: Date.now() - this.matchClockStartMs,
       ship: {
@@ -2676,6 +2802,7 @@ export class GameScene extends Phaser.Scene {
         x: round4((e.x - al) / aw),
         y: round4((e.y - at) / ah),
         type: 0,
+        color: e.getHullColor(),
       })),
       drifters: drifters
         .filter((d) => d.active)
@@ -2711,6 +2838,7 @@ export class GameScene extends Phaser.Scene {
             width: round4(s.width / sizeBasis),
             lethal: s.isLethal(),
             kind: 'versus' as const,
+            color: s.getColor(),
           })),
       ],
       npcs: npcs
@@ -2875,6 +3003,7 @@ export class GameScene extends Phaser.Scene {
     const sx = mapX(sFx);
     const sy = mapY(sFy);
     const shipR = GameScene.MIRROR_SHIP_RADIUS;
+    const shipColor = newest.snap.senderColor ?? COLORS.PLAYER;
 
     if (newest.snap.ship.alive) {
       const x1 = sx + Math.cos(sAngle) * shipR;
@@ -2883,8 +3012,8 @@ export class GameScene extends Phaser.Scene {
       const y2 = sy + Math.sin(sAngle + (Math.PI * 2) / 3) * shipR;
       const x3 = sx + Math.cos(sAngle - (Math.PI * 2) / 3) * shipR;
       const y3 = sy + Math.sin(sAngle - (Math.PI * 2) / 3) * shipR;
-      g.lineStyle(1.3, COLORS.PLAYER, 0.38);
-      g.fillStyle(COLORS.PLAYER, 0.1);
+      g.lineStyle(1.3, shipColor, 0.38);
+      g.fillStyle(shipColor, 0.1);
       g.beginPath();
       g.moveTo(x1, y1);
       g.lineTo(x2, y2);
@@ -2974,19 +3103,23 @@ export class GameScene extends Phaser.Scene {
     const enemyFillAlpha = spectate ? 0.32 : 0.12;
     const enemyStrokeAlpha = spectate ? 0.7 : 0.24;
     if (renderEnemies) {
-      g.fillStyle(COLORS.ENEMY, enemyFillAlpha);
-      g.lineStyle(spectate ? 1.5 : 1, COLORS.ENEMY, enemyStrokeAlpha);
       const paired = Math.min(older.snap.enemies.length, newest.snap.enemies.length);
       for (let i = 0; i < paired; i++) {
         const oe = older.snap.enemies[i];
         const ne = newest.snap.enemies[i];
         const fx = oe.x + (ne.x - oe.x) * alpha;
         const fy = oe.y + (ne.y - oe.y) * alpha;
+        const color = ne.color ?? COLORS.ENEMY;
+        g.fillStyle(color, enemyFillAlpha);
+        g.lineStyle(spectate ? 1.5 : 1, color, enemyStrokeAlpha);
         g.fillCircle(mapX(fx), mapY(fy), enemyR);
         g.strokeCircle(mapX(fx), mapY(fy), enemyR);
       }
       for (let i = paired; i < newest.snap.enemies.length; i++) {
         const ne = newest.snap.enemies[i];
+        const color = ne.color ?? COLORS.ENEMY;
+        g.fillStyle(color, enemyFillAlpha);
+        g.lineStyle(spectate ? 1.5 : 1, color, enemyStrokeAlpha);
         g.fillCircle(mapX(ne.x), mapY(ne.y), enemyR);
         g.strokeCircle(mapX(ne.x), mapY(ne.y), enemyR);
       }
@@ -3209,7 +3342,7 @@ export class GameScene extends Phaser.Scene {
     spectate: boolean,
   ): void {
     for (const laser of lasers) {
-      const color = laser.kind === 'versus' ? VERSUS_LASER_COLOR : COLORS.ENEMY;
+      const color = laser.kind === 'versus' ? (laser.color ?? VERSUS_LASER_COLOR) : COLORS.ENEMY;
       const width = Math.max(2, mapSize(laser.width));
       const glowAlpha = laser.lethal
         ? (spectate ? 0.18 : 0.08)
@@ -3415,6 +3548,11 @@ export class GameScene extends Phaser.Scene {
 
   private enterVersusResultFlow(): void {
     if (!this.localOutcome) return;
+    if (this.isMultiPilotVersus()) {
+      this.beginVersusSpectate();
+      this.showVersusWaitingUi();
+      return;
+    }
     // Both terminal: render now.
     if (this.peerOutcome) {
       this.setMirrorVisible(false);
@@ -3868,8 +4006,10 @@ export class GameScene extends Phaser.Scene {
     this.mirrorWaiting?.setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH);
     this.refreshRepulsorChargeDepths();
     // Reset spectate inventory state and start the regen timer.
-    this.spectateLaserCharges = 0;
+    this.spectateLaserCharges = this.isMultiPilotVersus() ? 1 : 0;
     this.spectateLaserAccumMs = 0;
+    this.spectateEnemyCharges = this.isMultiPilotVersus() ? 1 : 0;
+    this.spectateEnemyAccumMs = 0;
     this.spectateRepulsorLastSendMs = 0;
     this.showVersusWaitingUi();
     this.buildSpectateInventoryUi();
@@ -3901,6 +4041,7 @@ export class GameScene extends Phaser.Scene {
   private buildSpectateInventoryUi(): void {
     this.tearDownSpectateInventoryUi();
     const layout = getLayout();
+    const multiPilot = this.isMultiPilotVersus();
     const btnGap = 10;
     const btnH = 34;
     const sidePad = Math.max(18, Math.round(layout.gameWidth * 0.06));
@@ -3915,6 +4056,7 @@ export class GameScene extends Phaser.Scene {
       cx: number,
       label: string,
       onPress?: () => void,
+      enabled: () => boolean = () => true,
     ): Phaser.GameObjects.Text => {
       const bg = this.add.graphics().setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH);
       bg.fillStyle(COLORS.BG, 0.65);
@@ -3936,7 +4078,7 @@ export class GameScene extends Phaser.Scene {
           .setInteractive({ useHandCursor: true });
         hit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
           event.stopPropagation();
-          if (this.spectateLaserCharges <= 0) return;
+          if (!enabled()) return;
           playUiSelectSfx(this);
           onPress();
         });
@@ -3949,22 +4091,30 @@ export class GameScene extends Phaser.Scene {
     const repulsorX = laserX + btnW + btnGap;
     this.spectateLaserButtonText = drawControlButton(laserX, 'LASER', () => {
       this.fireSpectateRandomLaser();
-    });
-    this.spectateRepulsorButtonText = drawControlButton(repulsorX, 'REPULSOR');
+    }, () => this.spectateLaserCharges > 0);
+    if (multiPilot) {
+      this.spectateEnemyButtonText = drawControlButton(repulsorX, 'ENEMY', () => {
+        this.fireSpectateEnemy();
+      }, () => this.spectateEnemyCharges > 0);
+    } else {
+      this.spectateRepulsorButtonText = drawControlButton(repulsorX, 'REPULSOR');
+    }
 
-    // Mirror tap zone: tap anywhere on the peer arena (except the lane button
-    // strip) to place a repulsor charge.
-    const repulsorZone = this.add.zone(layout.arenaLeft, layout.arenaTop, layout.arenaWidth, layout.arenaHeight)
-      .setOrigin(0, 0)
-      .setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH - 1)
-      .setInteractive({ useHandCursor: true });
-    repulsorZone.on('pointerdown', (pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
-      event.stopPropagation();
-      const fx = (pointer.x - layout.arenaLeft) / Math.max(1, layout.arenaWidth);
-      const fy = (pointer.y - layout.arenaTop) / Math.max(1, layout.arenaHeight);
-      this.fireSpectateRepulsor(fx, fy);
-    });
-    this.spectateInventoryUi.push(repulsorZone);
+    if (!multiPilot) {
+      // Mirror tap zone: tap anywhere on the peer arena (except the lane button
+      // strip) to place a repulsor charge.
+      const repulsorZone = this.add.zone(layout.arenaLeft, layout.arenaTop, layout.arenaWidth, layout.arenaHeight)
+        .setOrigin(0, 0)
+        .setDepth(GameScene.MIRROR_SPECTATE_TEXT_DEPTH - 1)
+        .setInteractive({ useHandCursor: true });
+      repulsorZone.on('pointerdown', (pointer: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
+        event.stopPropagation();
+        const fx = (pointer.x - layout.arenaLeft) / Math.max(1, layout.arenaWidth);
+        const fy = (pointer.y - layout.arenaTop) / Math.max(1, layout.arenaHeight);
+        this.fireSpectateRepulsor(fx, fy);
+      });
+      this.spectateInventoryUi.push(repulsorZone);
+    }
 
     this.refreshSpectateInventoryUi();
   }
@@ -3973,20 +4123,34 @@ export class GameScene extends Phaser.Scene {
     for (const obj of this.spectateInventoryUi) obj.destroy();
     this.spectateInventoryUi = [];
     this.spectateLaserButtonText = null;
+    this.spectateEnemyButtonText = null;
     this.spectateRepulsorButtonText = null;
   }
 
   private refreshSpectateInventoryUi(): void {
+    const multiPilot = this.isMultiPilotVersus();
     const charges = this.spectateLaserCharges;
     if (this.spectateLaserButtonText) {
-      if (charges < SPECTATE_LASER_MAX_CHARGES) {
-        const remainMs = Math.max(0, SPECTATE_LASER_REGEN_MS - this.spectateLaserAccumMs);
+      const laserMax = multiPilot ? 1 : SPECTATE_LASER_MAX_CHARGES;
+      const laserRegen = multiPilot ? MULTI_SPECTATE_LASER_REGEN_MS : SPECTATE_LASER_REGEN_MS;
+      if (charges < laserMax) {
+        const remainMs = Math.max(0, laserRegen - this.spectateLaserAccumMs);
         const secs = Math.ceil(remainMs / 1000);
         this.spectateLaserButtonText.setText(`LASER x${charges}\n+1 IN ${secs}s`);
         this.spectateLaserButtonText.setAlpha(charges > 0 ? 1 : 0.58);
       } else {
         this.spectateLaserButtonText.setText(`LASER x${charges}\nREADY`);
         this.spectateLaserButtonText.setAlpha(1);
+      }
+    }
+    if (this.spectateEnemyButtonText) {
+      if (this.spectateEnemyCharges < 1) {
+        const remainMs = Math.max(0, MULTI_SPECTATE_ENEMY_REGEN_MS - this.spectateEnemyAccumMs);
+        this.spectateEnemyButtonText.setText(`ENEMY x${this.spectateEnemyCharges}\n+1 IN ${Math.ceil(remainMs / 1000)}s`);
+        this.spectateEnemyButtonText.setAlpha(0.58);
+      } else {
+        this.spectateEnemyButtonText.setText('ENEMY x1\nREADY');
+        this.spectateEnemyButtonText.setAlpha(1);
       }
     }
     if (!this.spectateRepulsorButtonText) return;
@@ -4002,19 +4166,35 @@ export class GameScene extends Phaser.Scene {
 
   private tickSpectateInventory(delta: number): void {
     if (!this.versusSpectating) return;
-    if (this.spectateLaserCharges < SPECTATE_LASER_MAX_CHARGES) {
+    const multiPilot = this.isMultiPilotVersus();
+    const laserMax = multiPilot ? 1 : SPECTATE_LASER_MAX_CHARGES;
+    const laserRegen = multiPilot ? MULTI_SPECTATE_LASER_REGEN_MS : SPECTATE_LASER_REGEN_MS;
+    if (this.spectateLaserCharges < laserMax) {
       this.spectateLaserAccumMs += delta;
-      if (this.spectateLaserAccumMs >= SPECTATE_LASER_REGEN_MS) {
+      if (this.spectateLaserAccumMs >= laserRegen) {
         this.spectateLaserAccumMs = 0;
-        this.spectateLaserCharges = Math.min(SPECTATE_LASER_MAX_CHARGES, this.spectateLaserCharges + 1);
+        this.spectateLaserCharges = Math.min(laserMax, this.spectateLaserCharges + 1);
       }
     } else {
       this.spectateLaserAccumMs = 0;
+    }
+    if (multiPilot && this.spectateEnemyCharges < 1) {
+      this.spectateEnemyAccumMs += delta;
+      if (this.spectateEnemyAccumMs >= MULTI_SPECTATE_ENEMY_REGEN_MS) {
+        this.spectateEnemyAccumMs = 0;
+        this.spectateEnemyCharges = 1;
+      }
+    } else {
+      this.spectateEnemyAccumMs = 0;
     }
     this.refreshSpectateInventoryUi();
   }
 
   private showVersusWaitingUi(): void {
+    if (this.isMultiPilotVersus()) {
+      this.showMultiPilotWaitingUi();
+      return;
+    }
     this.clearResultUi();
     const layout = getLayout();
     const centerX = layout.centerX;
@@ -4083,6 +4263,134 @@ export class GameScene extends Phaser.Scene {
     // Keep the bottom gutter reserved for spectate disruption controls.
     this.createResultButton('MENU', layout.gameWidth - 52, 28, 84, 30, COLORS.HUD, () => {
       this.scene.start(SCENE_KEYS.MENU);
+    });
+  }
+
+  private showMultiPilotWaitingUi(): void {
+    this.clearResultUi();
+    const layout = getLayout();
+    const centerX = layout.centerX;
+    const localExtracted = this.localOutcome?.cause === 'extract';
+    const accent = localExtracted ? COLORS.GATE : COLORS.HAZARD;
+    const titleLabel = localExtracted ? 'EXTRACTED' : 'DESTROYED';
+    const localScore = Math.floor(this.localOutcome?.score ?? 0);
+
+    const dim = this.add.graphics().setDepth(GameScene.MIRROR_SPECTATE_BG_DEPTH + 4);
+    dim.fillStyle(COLORS.BG, 0.9);
+    dim.fillRect(0, 0, layout.gameWidth, layout.gameHeight);
+    this.resultUi.push(dim);
+
+    const headerHeight = 58;
+    const header = this.add.graphics().setDepth(208);
+    header.fillStyle(accent, 0.92);
+    header.fillRect(0, 0, layout.gameWidth, headerHeight);
+    this.resultUi.push(header);
+
+    const headerTitle = this.add.text(centerX, 12, titleLabel, {
+      fontFamily: TITLE_FONT,
+      fontSize: readableFontSize(20),
+      color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5, 0).setDepth(210);
+    this.resultUi.push(headerTitle);
+
+    const headerSub = this.add.text(centerX, 38, `${localScore} CR // LIVE MATCH CONTROL`, {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(12),
+      color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.9);
+    this.resultUi.push(headerSub);
+
+    const boardTop = headerHeight + 30;
+    const rowH = 46;
+    const tableWidth = Math.min(layout.gameWidth - 38, 430);
+    const tableLeft = centerX - tableWidth / 2;
+    const title = this.add.text(centerX, boardTop - 24, 'LIVE STANDINGS', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(14),
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(210);
+    this.resultUi.push(title);
+
+    const rowTexts: Phaser.GameObjects.Text[] = [];
+    const rows = Math.max(2, this.multiplayerRoster.length || 2);
+    for (let i = 0; i < rows; i++) {
+      const y = boardTop + i * rowH;
+      const bg = this.add.graphics().setDepth(209);
+      bg.fillStyle(COLORS.BG, 0.55);
+      bg.fillRoundedRect(tableLeft, y, tableWidth, rowH - 8, 7);
+      bg.lineStyle(1, COLORS.HUD, 0.16);
+      bg.strokeRoundedRect(tableLeft, y, tableWidth, rowH - 8, 7);
+      this.resultUi.push(bg);
+      const text = this.add.text(tableLeft + 12, y + 9, '', {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(12),
+        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      }).setOrigin(0, 0).setDepth(210);
+      this.resultUi.push(text);
+      rowTexts.push(text);
+    }
+
+    const updateRows = (): void => {
+      const pilots = this.getVersusPilotRows();
+      for (let i = 0; i < rowTexts.length; i++) {
+        const row = pilots[i];
+        const text = rowTexts[i];
+        if (!row) {
+          text.setText('');
+          continue;
+        }
+        text.setColor(`#${row.color.toString(16).padStart(6, '0')}`);
+        text.setText(`${i + 1}. ${row.name}  ${row.score}c  PH ${row.phase}  ${row.state}`);
+      }
+    };
+    updateRows();
+    const tickEvent = this.time.addEvent({ delay: 500, loop: true, callback: updateRows });
+    this.resultUi.push({ destroy: () => tickEvent.remove(false) } as unknown as Phaser.GameObjects.GameObject);
+
+    const footer = this.add.text(centerX, layout.gameHeight - 98, 'LASER HITS ALL ACTIVE PILOTS // ENEMY DEPLOYS TO ALL ACTIVE PILOTS', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(10),
+      color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
+      align: 'center',
+      wordWrap: { width: layout.gameWidth - 34 },
+    }).setOrigin(0.5, 0).setDepth(210).setAlpha(0.85);
+    this.resultUi.push(footer);
+
+    this.createResultButton('MENU', layout.gameWidth - 52, 28, 84, 30, COLORS.HUD, () => {
+      this.scene.start(SCENE_KEYS.MENU);
+    });
+  }
+
+  private getVersusPilotRows(): Array<{ name: string; score: number; phase: number; state: string; color: number; extracted: boolean }> {
+    if (!this.multiplayer) return [];
+    const roster = this.multiplayerRoster.length ? this.multiplayerRoster : this.multiplayer.session.getActivePlayers();
+    const rows = roster.map((pilot) => {
+      const isLocal = pilot.playerId === this.multiplayer?.session.playerId;
+      const outcome = isLocal ? this.localOutcome : this.peerOutcomeMap.get(pilot.playerId);
+      const score = outcome?.score ?? (isLocal
+        ? Math.round(this.scoreSystem.getBanked() + this.scoreSystem.getUnbanked())
+        : this.getLatestPeerScore(pilot.playerId));
+      const phase = outcome?.phase ?? (isLocal
+        ? this.difficultySystem.getConfig().phaseNumber
+        : this.getLatestPeerPhase(pilot.playerId));
+      const state = outcome?.cause === 'extract'
+        ? 'EXTRACTED'
+        : outcome?.cause === 'death'
+          ? 'DESTROYED'
+          : 'ALIVE';
+      return {
+        name: `${pilot.playerName.trim().toUpperCase() || pilot.playerId.toUpperCase()}${isLocal ? ' YOU' : ''}`,
+        score: Math.floor(score),
+        phase,
+        state,
+        color: this.multiplayer?.session.getPlayerColor(pilot.playerId) ?? COLORS.HUD,
+        extracted: outcome?.cause === 'extract',
+      };
+    });
+    return rows.sort((a, b) => {
+      if (a.extracted !== b.extracted) return a.extracted ? -1 : 1;
+      return b.score - a.score;
     });
   }
 

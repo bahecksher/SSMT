@@ -15,8 +15,10 @@ export class EnemyShip {
   private vx: number;
   private vy: number;
   private heading: number; // current facing angle in radians
+  private readonly hullColor: number | null;
 
-  constructor(scene: Phaser.Scene) {
+  constructor(scene: Phaser.Scene, hullColor: number | null = null) {
+    this.hullColor = hullColor;
     const layout = getLayout();
     const margin = ENEMY_RADIUS + 20;
 
@@ -107,7 +109,7 @@ export class EnemyShip {
     g.setAlpha(1);
 
     const r = this.radius;
-    const color = this.inverted ? 0x000000 : COLORS.ENEMY;
+    const color = this.inverted ? 0x000000 : (this.hullColor ?? COLORS.ENEMY);
 
     // Glow ring
     g.lineStyle(1, color, 0.08);
@@ -166,6 +168,7 @@ export class EnemyShip {
 
   getVelocityX(): number { return this.vx; }
   getVelocityY(): number { return this.vy; }
+  getHullColor(): number { return this.hullColor ?? COLORS.ENEMY; }
 
   applyImpulse(ix: number, iy: number): void {
     this.x += ix * 0.08;

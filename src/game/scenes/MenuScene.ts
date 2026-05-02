@@ -39,6 +39,7 @@ import { RunMode, type LocalCampaignLeaderboardEntry } from '../types';
 import {
   NetSession,
   NET_EVENT,
+  VERSUS_MAX_PLAYERS,
   generatePlayerId,
   generateRoomCode,
   isValidRoomCode,
@@ -1525,7 +1526,7 @@ export class MenuScene extends Phaser.Scene {
     switch (this.versusState) {
       case 'IDLE':
         this.statusText.setText('CREATE OR JOIN A ROOM');
-        makeText(hintY - 18, 'SHARE A ROOM CODE WITH YOUR OPPONENT.', hintSize, COLORS.HUD, 0.62);
+        makeText(hintY - 18, 'SHARE A ROOM CODE WITH OTHER PILOTS.', hintSize, COLORS.HUD, 0.62);
         this.makeVersusLobbyButton(centerX - buttonOffset, buttonY, buttonW, buttonH, 'CREATE', () => this.createVersusRoom());
         this.makeVersusLobbyButton(centerX + buttonOffset, buttonY, buttonW, buttonH, 'JOIN', () => this.joinVersusRoomPrompt());
         break;
@@ -1535,11 +1536,26 @@ export class MenuScene extends Phaser.Scene {
         makeText(hintY, 'OPENING REALTIME CHANNEL.', hintSize, COLORS.HUD, 0.62);
         break;
       case 'WAITING': {
-        const peer = this.versusSession?.getPeer() ?? null;
-        this.statusText.setText(peer ? 'OPPONENT CONNECTED' : 'WAITING FOR OPPONENT...');
+        const roster = this.versusSession?.getActivePlayers() ?? [];
+        const others = this.versusSession?.getOtherPlayers() ?? [];
+        const inActiveRoster = this.versusSession?.isInActiveRoster() ?? false;
+        const roomCanReady = roster.length >= 2;
+        const readyEnabled = inActiveRoster && roomCanReady && others.length > 0;
+        const status = !inActiveRoster
+          ? 'ROOM FULL'
+          : roster.length <= 1
+            ? 'WAITING FOR PILOTS...'
+            : 'ROOM READY';
+        this.statusText.setText(status);
         makeText(codeY, this.versusSession?.roomCode ?? '', codeSize, COLORS.SALVAGE, 1, TITLE_FONT);
-        makeText(peerY, this.formatVersusPresence(peer), statusSize, COLORS.HUD, 0.9);
-        makeText(hintY, 'PRESS READY WHEN BOTH SIDES ARE SET.', hintSize, COLORS.HUD, 0.62);
+        makeText(peerY, this.formatVersusRoster(roster), statusSize, COLORS.HUD, 0.9);
+        makeText(
+          hintY,
+          `PRESS READY WHEN ALL PILOTS ARE SET. ${roster.length}/${VERSUS_MAX_PLAYERS} SLOTS`,
+          hintSize,
+          COLORS.HUD,
+          0.62,
+        );
         this.makeVersusLobbyButton(
           centerX - buttonOffset,
           buttonY,
@@ -1547,7 +1563,7 @@ export class MenuScene extends Phaser.Scene {
           buttonH,
           this.versusLocalReady ? 'UNREADY' : 'READY',
           () => this.toggleVersusReady(),
-          !!peer,
+          readyEnabled,
         );
         this.makeVersusLobbyButton(centerX + buttonOffset, buttonY, buttonW, buttonH, 'CANCEL', () => this.cancelVersusRoom());
         break;
@@ -1555,7 +1571,7 @@ export class MenuScene extends Phaser.Scene {
       case 'COUNTDOWN':
         this.statusText.setText('MATCH STARTING');
         makeText(codeY, this.versusSession?.roomCode ?? '', codeSize, COLORS.SALVAGE, 1, TITLE_FONT);
-        makeText(peerY, this.formatVersusPresence(this.versusSession?.getPeer() ?? null), statusSize, COLORS.HUD, 0.9);
+        makeText(peerY, this.formatVersusRoster(this.versusSession?.getActivePlayers() ?? []), statusSize, COLORS.HUD, 0.9);
         this.makeVersusLobbyButton(centerX, buttonY, buttonW, buttonH, 'CANCEL', () => this.cancelVersusRoom());
         break;
       case 'STARTED':
@@ -1654,7 +1670,9 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private async toggleVersusReady(): Promise<void> {
-    if (!this.versusSession || this.versusState !== 'WAITING' || !this.versusSession.getPeer()) return;
+    if (!this.versusSession || this.versusState !== 'WAITING') return;
+    if (!this.versusSession.isInActiveRoster()) return;
+    if (this.versusSession.getActivePlayers().length < 2 || this.versusSession.getOtherPlayers().length === 0) return;
     this.versusLocalReady = !this.versusLocalReady;
     try {
       await this.versusSession.setReady(this.versusLocalReady);
@@ -1683,8 +1701,7 @@ export class MenuScene extends Phaser.Scene {
       this.renderVersusLobby();
       this.maybeStartVersusCountdown();
     } else if (this.versusState === 'COUNTDOWN') {
-      const peer = this.versusSession.getPeer();
-      if (!peer || !peer.ready) {
+      if (!this.versusSession.hasLaunchableRoster()) {
         this.cancelVersusCountdown();
         this.setVersusState('WAITING');
       }
@@ -1693,8 +1710,9 @@ export class MenuScene extends Phaser.Scene {
 
   private maybeStartVersusCountdown(): void {
     if (!this.versusSession || this.versusState !== 'WAITING') return;
-    const peer = this.versusSession.getPeer();
-    if (!peer || !peer.ready || !this.versusLocalReady || !this.versusSession.isHost()) return;
+    const roster = this.versusSession.getActivePlayers();
+    if (roster.length < 2) return;
+    if (!this.versusSession.hasLaunchableRoster() || !this.versusSession.isHost()) return;
 
     const matchId = `m_${this.versusSession.roomCode}_${Date.now().toString(36)}`;
     const payload: MatchStartPayload = { matchId, delayMs: VERSUS_COUNTDOWN_MS };
@@ -1753,7 +1771,9 @@ export class MenuScene extends Phaser.Scene {
     this.versusCountdownText = null;
     const layout = getLayout();
     const compactMenu = isNarrowViewport(layout) || isShortViewport(layout);
-    const y = getPrimaryActionMetrics(layout).centerY;
+    // Lift countdown above the primary-action row so it does not overlap TAP TO START / DEPLOY.
+    const liftPx = compactMenu ? 52 : 64;
+    const y = getPrimaryActionMetrics(layout).centerY - liftPx;
     const text = this.add.text(layout.centerX, y, secs <= 0 ? 'GO' : String(secs), {
       fontFamily: TITLE_FONT,
       fontSize: readableFontSize(compactMenu ? 36 : 46),
@@ -1785,17 +1805,23 @@ export class MenuScene extends Phaser.Scene {
     this.setVersusState('STARTED');
     const backgroundHandoff = this.buildBackgroundHandoff();
     this.cleanupBackground();
-    this.scene.start(SCENE_KEYS.MISSION_SELECT, {
+    this.scene.start(SCENE_KEYS.GAME, {
       ...backgroundHandoff,
       multiplayer: handoff,
       mode: RunMode.VERSUS,
     });
   }
 
-  private formatVersusPresence(peer: PeerPresence | null): string {
-    if (!peer) return 'NO OPPONENT';
-    const tag = peer.playerName.trim().toUpperCase();
-    return peer.ready ? `OPPONENT ${tag} - READY` : `OPPONENT ${tag} - STANDBY`;
+  private formatVersusRoster(roster: PeerPresence[]): string {
+    if (roster.length === 0) return 'NO PILOTS';
+    return roster
+      .map((peer, index) => {
+        const tag = peer.playerName.trim().toUpperCase() || peer.playerId.toUpperCase();
+        const self = this.versusSession && peer.playerId === this.versusSession.playerId ? ' YOU' : '';
+        const state = peer.ready ? 'READY' : 'STANDBY';
+        return `${index + 1}:${tag}${self}-${state}`;
+      })
+      .join('  ');
   }
 
   private setVersusState(state: VersusLobbyState): void {
