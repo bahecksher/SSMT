@@ -36,10 +36,12 @@ export class VersusLaserStrike {
   readonly y2: number;
   private readonly scene: Phaser.Scene;
   private readonly color: number;
+  readonly senderId?: string;
 
-  constructor(scene: Phaser.Scene, lane: VersusLaserLane, color = VERSUS_LASER_COLOR) {
+  constructor(scene: Phaser.Scene, lane: VersusLaserLane, color = VERSUS_LASER_COLOR, senderId?: string) {
     this.scene = scene;
     this.color = color;
+    this.senderId = senderId;
     const layout = getLayout();
     this.width = VERSUS_LASER_WIDTH;
     this.isHorizontal = HORIZONTAL_LANES.has(lane);

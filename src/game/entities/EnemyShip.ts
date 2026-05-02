@@ -16,6 +16,8 @@ export class EnemyShip {
   private vy: number;
   private heading: number; // current facing angle in radians
   private readonly hullColor: number | null;
+  /** Versus sender id when this enemy was spawned by a peer's sabotage broadcast. */
+  versusSenderId?: string;
 
   constructor(scene: Phaser.Scene, hullColor: number | null = null) {
     this.hullColor = hullColor;

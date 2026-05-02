@@ -187,6 +187,7 @@ interface VersusOutcome {
   time: number;
   phase: number;
   deathCause?: DeathCause;
+  killer?: string;
 }
 interface MirrorLaserEcho {
   laser: MirrorLaserSnapshot;
@@ -864,7 +865,8 @@ export class GameScene extends Phaser.Scene {
         }
         this.resolveIncomingVersusLaserStrike(strike);
         if (playerKilled) {
-          this.handleDeath('laser');
+          const killerLabel = this.deriveKillerLabel('laser', { kind: 'laser', senderId: strike.senderId });
+          this.handleDeath('laser', killerLabel);
           return;
         }
       }
@@ -1183,19 +1185,27 @@ export class GameScene extends Phaser.Scene {
         Overlays.shieldBreakFlash(this);
       } else {
         let deathCause: DeathCause;
-        if (hitBeam || hitBossBeam) {
+        let killerLabel: string;
+        if (hitBossBeam) {
           deathCause = 'laser';
+          killerLabel = this.deriveKillerLabel('laser', { kind: 'bossBeam' });
+        } else if (hitBeam) {
+          deathCause = 'laser';
+          killerLabel = this.deriveKillerLabel('laser', { kind: 'hazardBeam' });
         } else if (hitEnemy) {
           deathCause = 'enemy';
+          killerLabel = this.deriveKillerLabel('enemy', { kind: 'enemy', senderId: hitEnemy.versusSenderId });
         } else if (hitDrifter) {
           deathCause = 'asteroid';
+          killerLabel = this.deriveKillerLabel('asteroid', { kind: 'drifter' });
         } else {
           deathCause = 'enemy';
+          killerLabel = this.deriveKillerLabel('enemy', null);
         }
         if (hitDrifter) {
           playSfx(this, 'asteroidCollision');
         }
-        this.handleDeath(deathCause);
+        this.handleDeath(deathCause, killerLabel);
         return;
       }
     }
@@ -1596,7 +1606,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private handleDeath(cause: DeathCause): void {
+  private handleDeath(cause: DeathCause, killerLabel?: string): void {
     this.clearPostBossEscapeSequence();
     const bankedScore = this.scoreSystem.getBanked();
     const lostScore = this.scoreSystem.getUnbanked();
@@ -1698,6 +1708,7 @@ export class GameScene extends Phaser.Scene {
         time: Date.now() - this.matchClockStartMs,
         phase: this.extractionSystem.getPhaseCount(),
         deathCause: cause,
+        killer: killerLabel ?? this.deriveKillerLabel(cause, null),
       });
     }
     Overlays.screenWipe(
@@ -2075,15 +2086,19 @@ export class GameScene extends Phaser.Scene {
         time: typeof p.time === 'number' ? p.time : 0,
         phase: this.getLatestPeerPhase(senderId),
       });
-      if (senderId !== handoff.peerId) return;
-      if (this.peerOutcome) return;
-      this.peerOutcome = {
-        cause: 'extract',
-        score: Math.round(p.score),
-        time: typeof p.time === 'number' ? p.time : 0,
-        phase: this.getLatestPeerPhase(),
-      };
-      this.onPeerTerminal();
+      if (senderId === handoff.peerId && !this.peerOutcome) {
+        this.peerOutcome = {
+          cause: 'extract',
+          score: Math.round(p.score),
+          time: typeof p.time === 'number' ? p.time : 0,
+          phase: this.getLatestPeerPhase(),
+        };
+      }
+      if (senderId === handoff.peerId) {
+        this.onPeerTerminal();
+      } else {
+        this.maybeResolveMultiPilotResult();
+      }
     });
 
     handoff.session.onBroadcast(NET_EVENT.MATCH_REMATCH_READY, () => {
@@ -2116,6 +2131,30 @@ export class GameScene extends Phaser.Scene {
         this.peerRematch = false;
         this.refreshRematchUi();
       }
+      if (this.isMultiPilotVersus()) {
+        const presentIds = new Set(peers.map((p) => p.playerId));
+        const roster = this.multiplayerRoster.length
+          ? this.multiplayerRoster
+          : handoff.session.getActivePlayers();
+        const localId = handoff.session.playerId;
+        let synthesized = false;
+        for (const pilot of roster) {
+          if (pilot.playerId === localId) continue;
+          if (presentIds.has(pilot.playerId)) continue;
+          if (this.peerOutcomeMap.has(pilot.playerId)) continue;
+          this.peerSnapshotMap.delete(pilot.playerId);
+          this.peerOutcomeMap.set(pilot.playerId, {
+            cause: 'death',
+            score: this.getLatestPeerScore(pilot.playerId),
+            time: 0,
+            phase: this.getLatestPeerPhase(pilot.playerId),
+          });
+          synthesized = true;
+        }
+        if (synthesized) {
+          this.maybeResolveMultiPilotResult();
+        }
+      }
     });
 
     handoff.session.onBroadcast(NET_EVENT.MATCH_REPULSOR, (payload) => {
@@ -2144,7 +2183,7 @@ export class GameScene extends Phaser.Scene {
         if (this.versusLaserRecvDedup.has(p.t)) return;
         this.versusLaserRecvDedup.add(p.t);
       }
-      this.spawnIncomingVersusLaser(p.lane, p.color ?? this.getVersusColorForPlayer(p.senderId));
+      this.spawnIncomingVersusLaser(p.lane, p.color ?? this.getVersusColorForPlayer(p.senderId), p.senderId);
     });
 
     handoff.session.onBroadcast(NET_EVENT.MATCH_ENEMY, (payload) => {
@@ -2153,7 +2192,7 @@ export class GameScene extends Phaser.Scene {
       if (p.senderId && p.senderId === handoff.session.playerId) return;
       if (p.targetId && p.targetId !== handoff.session.playerId) return;
       this.notePeerSeen();
-      this.spawnIncomingVersusEnemy(p.color ?? this.getVersusColorForPlayer(p.senderId));
+      this.spawnIncomingVersusEnemy(p.color ?? this.getVersusColorForPlayer(p.senderId), p.senderId);
     });
 
     handoff.session.onBroadcast(NET_EVENT.MATCH_DEATH, (payload) => {
@@ -2161,23 +2200,31 @@ export class GameScene extends Phaser.Scene {
       if (!p || typeof p.score !== 'number') return;
       const senderId = p.senderId ?? handoff.peerId;
       this.notePeerSeen();
+      const deathCause = p.cause === 'asteroid' || p.cause === 'enemy' || p.cause === 'laser' ? p.cause : undefined;
+      const killer = typeof p.killer === 'string' && p.killer.trim().length > 0 ? p.killer.trim() : undefined;
       this.peerOutcomeMap.set(senderId, {
         cause: 'death',
         score: Math.round(p.score),
         time: typeof p.time === 'number' ? p.time : 0,
         phase: this.getLatestPeerPhase(senderId),
-        deathCause: p.cause === 'asteroid' || p.cause === 'enemy' || p.cause === 'laser' ? p.cause : undefined,
+        deathCause,
+        killer,
       });
-      if (senderId !== handoff.peerId) return;
-      if (this.peerOutcome) return;
-      this.peerOutcome = {
-        cause: 'death',
-        score: Math.round(p.score),
-        time: typeof p.time === 'number' ? p.time : 0,
-        phase: this.getLatestPeerPhase(),
-        deathCause: p.cause === 'asteroid' || p.cause === 'enemy' || p.cause === 'laser' ? p.cause : undefined,
-      };
-      this.onPeerTerminal();
+      if (senderId === handoff.peerId && !this.peerOutcome) {
+        this.peerOutcome = {
+          cause: 'death',
+          score: Math.round(p.score),
+          time: typeof p.time === 'number' ? p.time : 0,
+          phase: this.getLatestPeerPhase(),
+          deathCause,
+          killer,
+        };
+      }
+      if (senderId === handoff.peerId) {
+        this.onPeerTerminal();
+      } else {
+        this.maybeResolveMultiPilotResult();
+      }
     });
 
     this.createMirrorViewport();
@@ -2217,6 +2264,45 @@ export class GameScene extends Phaser.Scene {
   private getVersusColorForPlayer(playerId?: string): number {
     if (!playerId || !this.multiplayer) return VERSUS_LASER_COLOR;
     return this.multiplayer.session.getPlayerColor(playerId);
+  }
+
+  private getPeerNameById(playerId?: string): string {
+    if (!playerId || !this.multiplayer) return '';
+    const roster = this.multiplayerRoster.length
+      ? this.multiplayerRoster
+      : this.multiplayer.session.getActivePlayers();
+    const peer = roster.find((p) => p.playerId === playerId);
+    return peer ? peer.playerName.trim().toUpperCase() || peer.playerId.toUpperCase() : '';
+  }
+
+  private deriveKillerLabel(
+    cause: DeathCause,
+    source: { kind: 'drifter' | 'enemy' | 'laser' | 'bossBeam' | 'hazardBeam'; senderId?: string } | null,
+  ): string {
+    if (!source) {
+      switch (cause) {
+        case 'asteroid':
+          return 'ASTEROID';
+        case 'laser':
+          return 'BEAM';
+        case 'enemy':
+          return 'ENEMY';
+        default:
+          return 'UNKNOWN';
+      }
+    }
+    if (source.kind === 'drifter') return 'ASTEROID';
+    if (source.kind === 'bossBeam') return 'BOSS BEAM';
+    if (source.kind === 'hazardBeam') return 'REGENT BEAM';
+    if (source.kind === 'laser') {
+      const peerName = this.getPeerNameById(source.senderId);
+      return peerName ? `${peerName} LASER` : 'PLAYER LASER';
+    }
+    if (source.kind === 'enemy') {
+      const peerName = this.getPeerNameById(source.senderId);
+      return peerName ? `${peerName} ENEMY` : 'REGENT ENEMY';
+    }
+    return 'UNKNOWN';
   }
 
   private getLocalPilotName(): string {
@@ -2259,12 +2345,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Receiver: spawn the lethal lane sweep that the peer just fired. */
-  private spawnIncomingVersusLaser(lane: VersusLaserLane, color = VERSUS_LASER_COLOR): void {
-    this.versusLaserStrikes.push(new VersusLaserStrike(this, lane, color));
+  private spawnIncomingVersusLaser(lane: VersusLaserLane, color = VERSUS_LASER_COLOR, senderId?: string): void {
+    this.versusLaserStrikes.push(new VersusLaserStrike(this, lane, color, senderId));
   }
 
-  private spawnIncomingVersusEnemy(color = COLORS.ENEMY): void {
-    this.difficultySystem.getEnemies().push(new EnemyShip(this, color));
+  private spawnIncomingVersusEnemy(color = COLORS.ENEMY, senderId?: string): void {
+    const enemy = new EnemyShip(this, color);
+    enemy.versusSenderId = senderId;
+    this.difficultySystem.getEnemies().push(enemy);
   }
 
   /**
@@ -2421,11 +2509,13 @@ export class GameScene extends Phaser.Scene {
         score: outcome.score,
         time: outcome.time,
         cause: outcome.deathCause ?? 'asteroid',
+        killer: outcome.killer,
       };
       this.multiplayer.session.broadcast(NET_EVENT.MATCH_DEATH, payload).catch((err) => {
         console.warn('[GameScene] match_death broadcast failed', err);
       });
     }
+    this.maybeResolveMultiPilotResult();
   }
 
   private onPeerTerminal(): void {
@@ -2437,10 +2527,40 @@ export class GameScene extends Phaser.Scene {
     // enterResultsState yet, defer — enterVersusResultFlow will see peerOutcome.
     if (this.state !== GameState.RESULTS) return;
     if (this.isMultiPilotVersus()) {
-      this.showVersusWaitingUi();
+      this.maybeResolveMultiPilotResult();
       return;
     }
     this.cancelVersusPeerWait();
+    this.renderVersusResult();
+  }
+
+  private checkMultiPilotAllTerminal(): boolean {
+    if (!this.multiplayer || !this.isMultiPilotVersus()) return false;
+    if (!this.localOutcome) return false;
+    const roster = this.multiplayerRoster.length
+      ? this.multiplayerRoster
+      : this.multiplayer.session.getActivePlayers();
+    if (roster.length < 2) return false;
+    const localId = this.multiplayer.session.playerId;
+    for (const pilot of roster) {
+      if (pilot.playerId === localId) continue;
+      if (!this.peerOutcomeMap.has(pilot.playerId)) return false;
+    }
+    return true;
+  }
+
+  private maybeResolveMultiPilotResult(): void {
+    if (!this.isMultiPilotVersus()) return;
+    if (this.versusResultRendered) return;
+    if (this.state !== GameState.RESULTS) {
+      // Still alive: refresh the live standings if we are already viewing them
+      // (we are not — local hasn't terminated). Bail.
+      return;
+    }
+    if (!this.checkMultiPilotAllTerminal()) {
+      this.showVersusWaitingUi();
+      return;
+    }
     this.renderVersusResult();
   }
 
@@ -2975,18 +3095,7 @@ export class GameScene extends Phaser.Scene {
     g.setVisible(true);
     g.clear();
 
-    if (this.peerSnapshots.length === 0 || this.state === GameState.RESULTS) {
-      return;
-    }
-
-    const newest = this.peerSnapshots[this.peerSnapshots.length - 1];
-    const older = this.peerSnapshots.length > 1 ? this.peerSnapshots[0] : newest;
-    const dt = Math.max(1, newest.snap.t - older.snap.t);
-    const localElapsed = Date.now() - newest.arr;
-    const renderT = newest.snap.t + localElapsed - GameScene.MIRROR_INTERP_BUFFER_MS;
-    let alpha = (renderT - older.snap.t) / dt;
-    if (alpha < 0) alpha = 0;
-    else if (alpha > 1) alpha = 1;
+    if (this.state === GameState.RESULTS) return;
 
     const mapX = (fx: number) => {
       const c = fx < 0 ? 0 : fx > 1 ? 1 : fx;
@@ -2997,43 +3106,63 @@ export class GameScene extends Phaser.Scene {
       return rect.y + c * rect.h;
     };
 
-    const sFx = older.snap.ship.x + (newest.snap.ship.x - older.snap.ship.x) * alpha;
-    const sFy = older.snap.ship.y + (newest.snap.ship.y - older.snap.ship.y) * alpha;
-    const sAngle = lerpAngleShortest(older.snap.ship.angle, newest.snap.ship.angle, alpha);
-    const sx = mapX(sFx);
-    const sy = mapY(sFy);
-    const shipR = GameScene.MIRROR_SHIP_RADIUS;
-    const shipColor = newest.snap.senderColor ?? COLORS.PLAYER;
+    const drawGhost = (list: { snap: MirrorSnapshot; arr: number }[]): void => {
+      if (list.length === 0) return;
+      const newest = list[list.length - 1];
+      const older = list.length > 1 ? list[0] : newest;
+      const dt = Math.max(1, newest.snap.t - older.snap.t);
+      const localElapsed = Date.now() - newest.arr;
+      const renderT = newest.snap.t + localElapsed - GameScene.MIRROR_INTERP_BUFFER_MS;
+      let alpha = (renderT - older.snap.t) / dt;
+      if (alpha < 0) alpha = 0;
+      else if (alpha > 1) alpha = 1;
 
-    if (newest.snap.ship.alive) {
-      const x1 = sx + Math.cos(sAngle) * shipR;
-      const y1 = sy + Math.sin(sAngle) * shipR;
-      const x2 = sx + Math.cos(sAngle + (Math.PI * 2) / 3) * shipR;
-      const y2 = sy + Math.sin(sAngle + (Math.PI * 2) / 3) * shipR;
-      const x3 = sx + Math.cos(sAngle - (Math.PI * 2) / 3) * shipR;
-      const y3 = sy + Math.sin(sAngle - (Math.PI * 2) / 3) * shipR;
-      g.lineStyle(1.3, shipColor, 0.38);
-      g.fillStyle(shipColor, 0.1);
-      g.beginPath();
-      g.moveTo(x1, y1);
-      g.lineTo(x2, y2);
-      g.lineTo(x3, y3);
-      g.closePath();
-      g.fillPath();
-      g.strokePath();
-      if (newest.snap.ship.shielded) {
-        g.lineStyle(1, COLORS.SHIELD, 0.24);
-        g.strokeCircle(sx, sy, shipR * 1.6);
+      const sFx = older.snap.ship.x + (newest.snap.ship.x - older.snap.ship.x) * alpha;
+      const sFy = older.snap.ship.y + (newest.snap.ship.y - older.snap.ship.y) * alpha;
+      const sAngle = lerpAngleShortest(older.snap.ship.angle, newest.snap.ship.angle, alpha);
+      const sx = mapX(sFx);
+      const sy = mapY(sFy);
+      const shipR = GameScene.MIRROR_SHIP_RADIUS;
+      const shipColor = newest.snap.senderColor ?? COLORS.PLAYER;
+
+      if (newest.snap.ship.alive) {
+        const x1 = sx + Math.cos(sAngle) * shipR;
+        const y1 = sy + Math.sin(sAngle) * shipR;
+        const x2 = sx + Math.cos(sAngle + (Math.PI * 2) / 3) * shipR;
+        const y2 = sy + Math.sin(sAngle + (Math.PI * 2) / 3) * shipR;
+        const x3 = sx + Math.cos(sAngle - (Math.PI * 2) / 3) * shipR;
+        const y3 = sy + Math.sin(sAngle - (Math.PI * 2) / 3) * shipR;
+        g.lineStyle(1.3, shipColor, 0.42);
+        g.fillStyle(shipColor, 0.12);
+        g.beginPath();
+        g.moveTo(x1, y1);
+        g.lineTo(x2, y2);
+        g.lineTo(x3, y3);
+        g.closePath();
+        g.fillPath();
+        g.strokePath();
+        if (newest.snap.ship.shielded) {
+          g.lineStyle(1, COLORS.SHIELD, 0.24);
+          g.strokeCircle(sx, sy, shipR * 1.6);
+        }
+      } else {
+        const markR = shipR * 0.7;
+        g.lineStyle(1.15, COLORS.HAZARD, 0.32);
+        g.beginPath();
+        g.moveTo(sx - markR, sy - markR);
+        g.lineTo(sx + markR, sy + markR);
+        g.moveTo(sx + markR, sy - markR);
+        g.lineTo(sx - markR, sy + markR);
+        g.strokePath();
+      }
+    };
+
+    if (this.isMultiPilotVersus()) {
+      for (const list of this.peerSnapshotMap.values()) {
+        drawGhost(list);
       }
     } else {
-      const markR = shipR * 0.7;
-      g.lineStyle(1.15, COLORS.HAZARD, 0.28);
-      g.beginPath();
-      g.moveTo(sx - markR, sy - markR);
-      g.lineTo(sx + markR, sy + markR);
-      g.moveTo(sx + markR, sy - markR);
-      g.lineTo(sx - markR, sy + markR);
-      g.strokePath();
+      drawGhost(this.peerSnapshots);
     }
   }
 
@@ -3550,7 +3679,11 @@ export class GameScene extends Phaser.Scene {
     if (!this.localOutcome) return;
     if (this.isMultiPilotVersus()) {
       this.beginVersusSpectate();
-      this.showVersusWaitingUi();
+      if (this.checkMultiPilotAllTerminal()) {
+        this.renderVersusResult();
+      } else {
+        this.showVersusWaitingUi();
+      }
       return;
     }
     // Both terminal: render now.
@@ -4377,7 +4510,7 @@ export class GameScene extends Phaser.Scene {
       const state = outcome?.cause === 'extract'
         ? 'EXTRACTED'
         : outcome?.cause === 'death'
-          ? 'DESTROYED'
+          ? (outcome.killer ? `DESTROYED — ${outcome.killer.toUpperCase()}` : 'DESTROYED')
           : 'ALIVE';
       return {
         name: `${pilot.playerName.trim().toUpperCase() || pilot.playerId.toUpperCase()}${isLocal ? ' YOU' : ''}`,
@@ -4401,6 +4534,10 @@ export class GameScene extends Phaser.Scene {
     this.cancelVersusPeerWait();
     this.endVersusSpectate();
     setResultMusic(this);
+    if (this.isMultiPilotVersus()) {
+      this.showMultiPilotResultUi();
+      return;
+    }
     const peer: VersusOutcome = this.peerOutcome ?? {
       cause: 'survived',
       score: this.getLatestPeerScore(),
@@ -4496,8 +4633,12 @@ export class GameScene extends Phaser.Scene {
         outcomeLabel = 'EXTRACTED';
         outcomeColor = COLORS.GATE;
       } else if (outcome.cause === 'death') {
-        const causeWord = outcome.deathCause ? ` — ${outcome.deathCause.toUpperCase()}` : '';
-        outcomeLabel = `DESTROYED${causeWord}`;
+        const killerWord = outcome.killer
+          ? ` — ${outcome.killer.toUpperCase()}`
+          : outcome.deathCause
+            ? ` — ${outcome.deathCause.toUpperCase()}`
+            : '';
+        outcomeLabel = `DESTROYED${killerWord}`;
         outcomeColor = COLORS.HAZARD;
       } else {
         outcomeLabel = 'STILL ALIVE';
@@ -4536,6 +4677,118 @@ export class GameScene extends Phaser.Scene {
     const menuX = centerX + halfButtonWidth / 2 + buttonGap / 2;
     this.createRematchPrimaryButton(rematchX, menuY, halfButtonWidth, buttonHeight);
     this.createResultButton('MENU', menuX, menuY, halfButtonWidth, buttonHeight, COLORS.HUD, () => {
+      this.scene.start(SCENE_KEYS.MENU);
+    });
+  }
+
+  private showMultiPilotResultUi(): void {
+    this.clearResultUi();
+    const layout = getLayout();
+    const centerX = layout.centerX;
+    const arenaInset = Phaser.Math.Clamp(Math.round(Math.min(layout.arenaWidth, layout.arenaHeight) * 0.04), 16, 30);
+    const panelLeft = layout.arenaLeft + arenaInset;
+    const panelTop = layout.arenaTop + arenaInset;
+    const panelWidth = layout.arenaWidth - arenaInset * 2;
+    const panelHeight = layout.arenaHeight - arenaInset * 2;
+    const compact = layout.gameWidth <= 430 || layout.gameHeight <= 760;
+
+    const rows = this.getVersusPilotRows();
+    const winner = rows[0];
+    const localWon = !!winner && winner.name.endsWith(' YOU');
+    const banner = localWon ? 'WIN' : winner ? 'LOSE' : 'DRAW';
+    const bannerColor = banner === 'WIN' ? COLORS.GATE : banner === 'LOSE' ? COLORS.HAZARD : COLORS.HUD;
+
+    const backing = this.add.graphics().setDepth(205);
+    backing.fillStyle(COLORS.BG, 0.86);
+    backing.fillRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
+    backing.lineStyle(1.5, bannerColor, 0.45);
+    backing.strokeRoundedRect(panelLeft, panelTop, panelWidth, panelHeight, 18);
+    this.resultUi.push(backing);
+
+    const titleBarHeight = Phaser.Math.Clamp(Math.round(panelHeight * (compact ? 0.05 : 0.058)), 32, 48);
+    const titleBarTop = panelTop + 12;
+    const titleBar = this.add.graphics().setDepth(208);
+    titleBar.fillStyle(bannerColor, 0.94);
+    titleBar.fillRect(0, titleBarTop, layout.gameWidth, titleBarHeight);
+    this.resultUi.push(titleBar);
+
+    const title = this.add.text(centerX, titleBarTop + titleBarHeight / 2, banner, {
+      fontFamily: TITLE_FONT,
+      fontSize: readableFontSize(Phaser.Math.Clamp(Math.round(titleBarHeight * 0.6), 20, 32)),
+      color: `#${COLORS.BG.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5).setDepth(210);
+    this.resultUi.push(title);
+
+    const tableTop = titleBarTop + titleBarHeight + (compact ? 22 : 30);
+    const buttonHeight = compact ? 40 : 46;
+    const menuY = panelTop + panelHeight - 28 - buttonHeight / 2;
+    const tableBottom = menuY - buttonHeight / 2 - (compact ? 18 : 24);
+    const tableWidth = Math.min(panelWidth - 32, 440);
+    const tableLeft = centerX - tableWidth / 2;
+    const rowCount = Math.max(1, rows.length);
+    const rowGap = 8;
+    const rowMaxH = 56;
+    const rowH = Math.min(rowMaxH, Math.max(34, Math.floor((tableBottom - tableTop - rowGap * (rowCount - 1)) / rowCount)));
+
+    const heading = this.add.text(centerX, tableTop - 18, 'FINAL STANDINGS', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(13),
+      color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(210);
+    this.resultUi.push(heading);
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const y = tableTop + i * (rowH + rowGap);
+      const bg = this.add.graphics().setDepth(209);
+      bg.fillStyle(COLORS.BG, 0.62);
+      bg.fillRoundedRect(tableLeft, y, tableWidth, rowH, 8);
+      bg.lineStyle(1.5, row.color, i === 0 ? 0.85 : 0.32);
+      bg.strokeRoundedRect(tableLeft, y, tableWidth, rowH, 8);
+      this.resultUi.push(bg);
+
+      const rankText = this.add.text(tableLeft + 14, y + rowH / 2, `${i + 1}`, {
+        fontFamily: TITLE_FONT,
+        fontSize: readableFontSize(compact ? 18 : 22),
+        color: `#${row.color.toString(16).padStart(6, '0')}`,
+      }).setOrigin(0, 0.5).setDepth(210);
+      this.resultUi.push(rankText);
+
+      const nameText = this.add.text(tableLeft + 48, y + 6, row.name, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(compact ? 12 : 14),
+        color: `#${row.color.toString(16).padStart(6, '0')}`,
+        fontStyle: 'bold',
+      }).setOrigin(0, 0).setDepth(210);
+      this.resultUi.push(nameText);
+
+      const detail = `${row.state}  PH ${row.phase}`;
+      const detailText = this.add.text(tableLeft + 48, y + rowH - 8, detail, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(compact ? 10 : 11),
+        color: `#${COLORS.HUD.toString(16).padStart(6, '0')}`,
+      }).setOrigin(0, 1).setDepth(210).setAlpha(0.78);
+      this.resultUi.push(detailText);
+
+      const scoreText = this.add.text(tableLeft + tableWidth - 16, y + rowH / 2, `${row.score}c`, {
+        fontFamily: UI_FONT,
+        fontSize: readableFontSize(compact ? 16 : 20),
+        color: `#${COLORS.SALVAGE.toString(16).padStart(6, '0')}`,
+      }).setOrigin(1, 0.5).setDepth(210);
+      this.resultUi.push(scoreText);
+    }
+
+    const noteY = menuY - buttonHeight / 2 - (compact ? 14 : 18);
+    const noteText = this.add.text(centerX, noteY, 'VERSUS // NO RECORDS OR PAYOUTS', {
+      fontFamily: UI_FONT,
+      fontSize: readableFontSize(compact ? 10 : 12),
+      color: `#${COLORS.GATE.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5).setDepth(210).setAlpha(0.7);
+    this.resultUi.push(noteText);
+
+    const buttonWidth = Math.min(panelWidth - 64, 280);
+    this.createResultButton('MENU', centerX, menuY, buttonWidth, buttonHeight, COLORS.HUD, () => {
       this.scene.start(SCENE_KEYS.MENU);
     });
   }

@@ -1548,9 +1548,13 @@ export class MenuScene extends Phaser.Scene {
             : 'ROOM READY';
         this.statusText.setText(status);
         makeText(codeY, this.versusSession?.roomCode ?? '', codeSize, COLORS.SALVAGE, 1, TITLE_FONT);
-        makeText(peerY, this.formatVersusRoster(roster), statusSize, COLORS.HUD, 0.9);
+        const peerText = makeText(peerY, this.formatVersusRoster(roster), statusSize, COLORS.HUD, 0.9);
+        const statusPx = parseInt(statusSize, 10) || (compactMenu ? 13 : 15);
+        const extraH = Math.max(0, peerText.height - statusPx);
+        const hintShiftY = hintY + extraH / 2 + (extraH > 0 ? (compactMenu ? 6 : 8) : 0);
+        const buttonShiftY = buttonY + extraH / 2 + (extraH > 0 ? (compactMenu ? 6 : 8) : 0);
         makeText(
-          hintY,
+          hintShiftY,
           `PRESS READY WHEN ALL PILOTS ARE SET. ${roster.length}/${VERSUS_MAX_PLAYERS} SLOTS`,
           hintSize,
           COLORS.HUD,
@@ -1558,22 +1562,26 @@ export class MenuScene extends Phaser.Scene {
         );
         this.makeVersusLobbyButton(
           centerX - buttonOffset,
-          buttonY,
+          buttonShiftY,
           buttonW,
           buttonH,
           this.versusLocalReady ? 'UNREADY' : 'READY',
           () => this.toggleVersusReady(),
           readyEnabled,
         );
-        this.makeVersusLobbyButton(centerX + buttonOffset, buttonY, buttonW, buttonH, 'CANCEL', () => this.cancelVersusRoom());
+        this.makeVersusLobbyButton(centerX + buttonOffset, buttonShiftY, buttonW, buttonH, 'CANCEL', () => this.cancelVersusRoom());
         break;
       }
-      case 'COUNTDOWN':
+      case 'COUNTDOWN': {
         this.statusText.setText('MATCH STARTING');
         makeText(codeY, this.versusSession?.roomCode ?? '', codeSize, COLORS.SALVAGE, 1, TITLE_FONT);
-        makeText(peerY, this.formatVersusRoster(this.versusSession?.getActivePlayers() ?? []), statusSize, COLORS.HUD, 0.9);
-        this.makeVersusLobbyButton(centerX, buttonY, buttonW, buttonH, 'CANCEL', () => this.cancelVersusRoom());
+        const peerText = makeText(peerY, this.formatVersusRoster(this.versusSession?.getActivePlayers() ?? []), statusSize, COLORS.HUD, 0.9);
+        const statusPx = parseInt(statusSize, 10) || (compactMenu ? 13 : 15);
+        const extraH = Math.max(0, peerText.height - statusPx);
+        const buttonShiftY = buttonY + extraH / 2 + (extraH > 0 ? (compactMenu ? 6 : 8) : 0);
+        this.makeVersusLobbyButton(centerX, buttonShiftY, buttonW, buttonH, 'CANCEL', () => this.cancelVersusRoom());
         break;
+      }
       case 'STARTED':
         this.statusText.setText('MATCH STARTING...');
         break;
@@ -1819,9 +1827,9 @@ export class MenuScene extends Phaser.Scene {
         const tag = peer.playerName.trim().toUpperCase() || peer.playerId.toUpperCase();
         const self = this.versusSession && peer.playerId === this.versusSession.playerId ? ' YOU' : '';
         const state = peer.ready ? 'READY' : 'STANDBY';
-        return `${index + 1}:${tag}${self}-${state}`;
+        return `${index + 1}: ${tag}${self} - ${state}`;
       })
-      .join('  ');
+      .join('\n');
   }
 
   private setVersusState(state: VersusLobbyState): void {

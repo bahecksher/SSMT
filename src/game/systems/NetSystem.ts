@@ -93,6 +93,8 @@ export interface MatchDeathPayload {
   score: number;
   time: number;
   cause: 'asteroid' | 'enemy' | 'laser';
+  /** Pretty descriptor of the killer ("ASTEROID", "REGENT ENEMY", "PLAYER FOO LASER", "BOSS BEAM"). */
+  killer?: string;
 }
 
 export interface MultiplayerHandoff {
