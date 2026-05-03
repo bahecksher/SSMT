@@ -92,6 +92,7 @@ import {
   type MatchLaserPayload,
   type MatchRepulsorPayload,
   type MatchEnemyPayload,
+  type MatchRematchPayload,
   type PeerPresence,
 } from '../systems/NetSystem';
 import {
@@ -359,6 +360,10 @@ export class GameScene extends Phaser.Scene {
   private versusPeerWaitTimer: Phaser.Time.TimerEvent | null = null;
   private localRematch = false;
   private peerRematch = false;
+  /** Multi-pilot only: per-peer rematch ready state keyed by playerId. */
+  private peerRematchMap = new Map<string, boolean>();
+  /** Cached pilot colors snapshotted at match start; survives disconnects. */
+  private versusColorByPlayerId = new Map<string, number>();
   private rematchInFlight = false;
   private peerLeft = false;
   private rematchPrimaryRefresh: (() => void) | null = null;
@@ -441,6 +446,8 @@ export class GameScene extends Phaser.Scene {
     this.versusPeerWaitTimer = null;
     this.localRematch = false;
     this.peerRematch = false;
+    this.peerRematchMap = new Map();
+    this.versusColorByPlayerId = new Map();
     this.rematchInFlight = false;
     this.peerLeft = false;
     this.rematchPrimaryRefresh = null;
@@ -2035,7 +2042,14 @@ export class GameScene extends Phaser.Scene {
   private setupMultiplayer(handoff: MultiplayerHandoff): void {
     this.multiplayer = handoff;
     this.multiplayerRoster = handoff.session.getActivePlayers();
-    this.localPlayerColor = handoff.session.getPlayerColor(handoff.session.playerId);
+    // Cache the initial roster->color mapping so disconnects do not shift the
+    // remaining pilots' indexes (and therefore their colors) in the standings.
+    this.versusColorByPlayerId.clear();
+    for (const pilot of this.multiplayerRoster) {
+      this.versusColorByPlayerId.set(pilot.playerId, handoff.session.getPlayerColor(pilot.playerId));
+    }
+    this.localPlayerColor = this.versusColorByPlayerId.get(handoff.session.playerId)
+      ?? handoff.session.getPlayerColor(handoff.session.playerId);
     this.player.setAccentColor(this.localPlayerColor);
     this.matchClockStartMs = Date.now();
     // Versus mode: enable sabotage laser drops on enemy/NPC kills.
@@ -2101,17 +2115,27 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    handoff.session.onBroadcast(NET_EVENT.MATCH_REMATCH_READY, () => {
+    handoff.session.onBroadcast(NET_EVENT.MATCH_REMATCH_READY, (payload) => {
       this.notePeerSeen();
       if (this.rematchInFlight) return;
+      const p = payload as MatchRematchPayload | undefined;
+      const senderId = p?.senderId;
+      if (senderId && senderId !== handoff.session.playerId) {
+        this.peerRematchMap.set(senderId, true);
+      }
       this.peerRematch = true;
       this.refreshRematchUi();
       this.maybeFireRematch();
     });
 
-    handoff.session.onBroadcast(NET_EVENT.MATCH_REMATCH_CANCEL, () => {
+    handoff.session.onBroadcast(NET_EVENT.MATCH_REMATCH_CANCEL, (payload) => {
       this.notePeerSeen();
       if (this.rematchInFlight) return;
+      const p = payload as MatchRematchPayload | undefined;
+      const senderId = p?.senderId;
+      if (senderId && senderId !== handoff.session.playerId) {
+        this.peerRematchMap.set(senderId, false);
+      }
       this.peerRematch = false;
       this.refreshRematchUi();
     });
@@ -2141,6 +2165,7 @@ export class GameScene extends Phaser.Scene {
         for (const pilot of roster) {
           if (pilot.playerId === localId) continue;
           if (presentIds.has(pilot.playerId)) continue;
+          this.peerRematchMap.delete(pilot.playerId);
           if (this.peerOutcomeMap.has(pilot.playerId)) continue;
           this.peerSnapshotMap.delete(pilot.playerId);
           this.peerOutcomeMap.set(pilot.playerId, {
@@ -2154,6 +2179,8 @@ export class GameScene extends Phaser.Scene {
         if (synthesized) {
           this.maybeResolveMultiPilotResult();
         }
+        this.refreshRematchUi();
+        this.maybeFireRematch();
       }
     });
 
@@ -2263,6 +2290,8 @@ export class GameScene extends Phaser.Scene {
 
   private getVersusColorForPlayer(playerId?: string): number {
     if (!playerId || !this.multiplayer) return VERSUS_LASER_COLOR;
+    const cached = this.versusColorByPlayerId.get(playerId);
+    if (cached !== undefined) return cached;
     return this.multiplayer.session.getPlayerColor(playerId);
   }
 
@@ -2428,7 +2457,13 @@ export class GameScene extends Phaser.Scene {
       lane,
       t: Date.now() - this.matchClockStartMs,
     };
-    this.addSentLaserMirrorEcho(lane, this.localPlayerColor);
+    // Echo paints local laser onto the spectate mirror viewport so the shooter
+    // sees their shot land in the peer's arena. In multi-pilot terminal there
+    // is no clean single peer mirror — the echo bleeds onto the standings as
+    // self-fire, so skip it.
+    if (!this.isMultiPilotVersus()) {
+      this.addSentLaserMirrorEcho(lane, this.localPlayerColor);
+    }
     this.multiplayer.session.broadcast(NET_EVENT.MATCH_LASER, payload).catch((err) => {
       console.warn('[GameScene] spectate laser broadcast failed', err);
     });
@@ -2576,10 +2611,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private requestRematch(): void {
-    if (!this.multiplayer || this.rematchInFlight || this.peerLeft) return;
+    if (!this.multiplayer || this.rematchInFlight) return;
+    if (!this.isMultiPilotVersus() && this.peerLeft) return;
     if (this.localRematch) return;
     this.localRematch = true;
-    this.multiplayer.session.broadcast(NET_EVENT.MATCH_REMATCH_READY, {}).catch((err) => {
+    const payload: MatchRematchPayload = { senderId: this.multiplayer.session.playerId };
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_REMATCH_READY, payload).catch((err) => {
       console.warn('[GameScene] match_rematch_ready broadcast failed', err);
     });
     this.refreshRematchUi();
@@ -2590,16 +2627,43 @@ export class GameScene extends Phaser.Scene {
     if (!this.multiplayer || this.rematchInFlight) return;
     if (!this.localRematch) return;
     this.localRematch = false;
-    this.multiplayer.session.broadcast(NET_EVENT.MATCH_REMATCH_CANCEL, {}).catch((err) => {
+    const payload: MatchRematchPayload = { senderId: this.multiplayer.session.playerId };
+    this.multiplayer.session.broadcast(NET_EVENT.MATCH_REMATCH_CANCEL, payload).catch((err) => {
       console.warn('[GameScene] match_rematch_cancel broadcast failed', err);
     });
     this.refreshRematchUi();
   }
 
+  /** Multi-pilot only. Returns count of present peers ready and total peers in roster (excluding self and disconnected). */
+  private getMultiPilotRematchStatus(): { ready: number; total: number } {
+    if (!this.multiplayer) return { ready: 0, total: 0 };
+    const presentIds = new Set(this.multiplayer.session.getActivePlayers().map((p) => p.playerId));
+    const localId = this.multiplayer.session.playerId;
+    const roster = this.multiplayerRoster.length
+      ? this.multiplayerRoster
+      : this.multiplayer.session.getActivePlayers();
+    let ready = 0;
+    let total = 0;
+    for (const pilot of roster) {
+      if (pilot.playerId === localId) continue;
+      if (!presentIds.has(pilot.playerId)) continue;
+      total += 1;
+      if (this.peerRematchMap.get(pilot.playerId)) ready += 1;
+    }
+    return { ready, total };
+  }
+
   private maybeFireRematch(): void {
     if (this.rematchInFlight) return;
-    if (!this.localRematch || !this.peerRematch) return;
-    if (this.peerLeft) return;
+    if (!this.localRematch) return;
+    if (this.isMultiPilotVersus()) {
+      const status = this.getMultiPilotRematchStatus();
+      if (status.total === 0) return;
+      if (status.ready < status.total) return;
+    } else {
+      if (!this.peerRematch) return;
+      if (this.peerLeft) return;
+    }
     this.fireRematch();
   }
 
@@ -4517,7 +4581,7 @@ export class GameScene extends Phaser.Scene {
         score: Math.floor(score),
         phase,
         state,
-        color: this.multiplayer?.session.getPlayerColor(pilot.playerId) ?? COLORS.HUD,
+        color: this.getVersusColorForPlayer(pilot.playerId),
         extracted: outcome?.cause === 'extract',
       };
     });
@@ -4787,8 +4851,13 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(210).setAlpha(0.7);
     this.resultUi.push(noteText);
 
-    const buttonWidth = Math.min(panelWidth - 64, 280);
-    this.createResultButton('MENU', centerX, menuY, buttonWidth, buttonHeight, COLORS.HUD, () => {
+    const totalButtonsWidth = Math.min(panelWidth - 64, 360);
+    const buttonGap = 12;
+    const halfButtonWidth = (totalButtonsWidth - buttonGap) / 2;
+    const rematchX = centerX - halfButtonWidth / 2 - buttonGap / 2;
+    const menuX = centerX + halfButtonWidth / 2 + buttonGap / 2;
+    this.createRematchPrimaryButton(rematchX, menuY, halfButtonWidth, buttonHeight);
+    this.createResultButton('MENU', menuX, menuY, halfButtonWidth, buttonHeight, COLORS.HUD, () => {
       this.scene.start(SCENE_KEYS.MENU);
     });
   }
@@ -4832,33 +4901,60 @@ export class GameScene extends Phaser.Scene {
     };
 
     const apply = (): void => {
-      const peerName = this.getPeerPilotName();
       let label: string;
       let color: number;
       let action: (() => void) | null;
       let isEnabled = true;
-      if (this.peerLeft) {
-        label = `${peerName} LEFT`;
-        color = COLORS.HAZARD;
-        action = null;
-        isEnabled = false;
-      } else if (this.rematchInFlight) {
-        label = 'STARTING…';
-        color = COLORS.GATE;
-        action = null;
-        isEnabled = false;
-      } else if (this.localRematch) {
-        label = 'WAITING — CANCEL';
-        color = COLORS.HUD;
-        action = () => this.cancelRematch();
-      } else if (this.peerRematch) {
-        label = `REMATCH (${peerName} READY)`;
-        color = COLORS.GATE;
-        action = () => this.requestRematch();
+      if (this.isMultiPilotVersus()) {
+        const status = this.getMultiPilotRematchStatus();
+        if (this.rematchInFlight) {
+          label = 'STARTING…';
+          color = COLORS.GATE;
+          action = null;
+          isEnabled = false;
+        } else if (status.total === 0) {
+          label = 'ALL LEFT';
+          color = COLORS.HAZARD;
+          action = null;
+          isEnabled = false;
+        } else if (this.localRematch) {
+          label = `WAITING (${status.ready}/${status.total}) — CANCEL`;
+          color = COLORS.HUD;
+          action = () => this.cancelRematch();
+        } else if (status.ready > 0) {
+          label = `REMATCH (${status.ready}/${status.total} READY)`;
+          color = COLORS.GATE;
+          action = () => this.requestRematch();
+        } else {
+          label = 'REMATCH';
+          color = COLORS.HUD;
+          action = () => this.requestRematch();
+        }
       } else {
-        label = 'REMATCH';
-        color = COLORS.HUD;
-        action = () => this.requestRematch();
+        const peerName = this.getPeerPilotName();
+        if (this.peerLeft) {
+          label = `${peerName} LEFT`;
+          color = COLORS.HAZARD;
+          action = null;
+          isEnabled = false;
+        } else if (this.rematchInFlight) {
+          label = 'STARTING…';
+          color = COLORS.GATE;
+          action = null;
+          isEnabled = false;
+        } else if (this.localRematch) {
+          label = 'WAITING — CANCEL';
+          color = COLORS.HUD;
+          action = () => this.cancelRematch();
+        } else if (this.peerRematch) {
+          label = `REMATCH (${peerName} READY)`;
+          color = COLORS.GATE;
+          action = () => this.requestRematch();
+        } else {
+          label = 'REMATCH';
+          color = COLORS.HUD;
+          action = () => this.requestRematch();
+        }
       }
       labelText.setText(label);
       this.fitTextToWidth(labelText, width - 16, 10);

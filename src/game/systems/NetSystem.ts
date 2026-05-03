@@ -79,6 +79,11 @@ export interface MatchEnemyPayload {
   t: number;
 }
 
+/** Per-pilot rematch ready/cancel toggle. senderId carries the toggling pilot's id so multi-pilot receivers can track per-peer ready state. */
+export interface MatchRematchPayload {
+  senderId?: string;
+}
+
 /** Sender extracted. `time` = ms since match start (same clock as MirrorSnapshot.t). `rep` reserved for future rep-flux summary. */
 export interface MatchExtractPayload {
   senderId?: string;

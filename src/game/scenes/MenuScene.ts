@@ -434,9 +434,6 @@ export class MenuScene extends Phaser.Scene {
       }
     });
 
-    this.updateModeTabStyles();
-    this.updateLeaderboardViewStyles();
-
     // Divider line under tabs
     const divider = this.add.graphics().setDepth(uiDepth);
     divider.lineStyle(1, COLORS.HUD, 0.3);
@@ -475,6 +472,9 @@ export class MenuScene extends Phaser.Scene {
       color: gateColor,
       align: 'center',
     }).setOrigin(0.5).setDepth(uiDepth);
+
+    this.updateModeTabStyles();
+    this.updateLeaderboardViewStyles();
 
     this.createHowToPlayButton(uiDepth, compactMenu);
     this.createSettingsUi(uiDepth, veryCompactMenu);
@@ -1549,10 +1549,12 @@ export class MenuScene extends Phaser.Scene {
         this.statusText.setText(status);
         makeText(codeY, this.versusSession?.roomCode ?? '', codeSize, COLORS.SALVAGE, 1, TITLE_FONT);
         const peerText = makeText(peerY, this.formatVersusRoster(roster), statusSize, COLORS.HUD, 0.9);
+        // Top-anchor so 3-4 pilot stacked roster grows downward instead of bleeding up into the room code.
+        peerText.setOrigin(0.5, 0);
         const statusPx = parseInt(statusSize, 10) || (compactMenu ? 13 : 15);
         const extraH = Math.max(0, peerText.height - statusPx);
-        const hintShiftY = hintY + extraH / 2 + (extraH > 0 ? (compactMenu ? 6 : 8) : 0);
-        const buttonShiftY = buttonY + extraH / 2 + (extraH > 0 ? (compactMenu ? 6 : 8) : 0);
+        const hintShiftY = hintY + extraH + (extraH > 0 ? (compactMenu ? 8 : 12) : 0);
+        const buttonShiftY = buttonY + extraH + (extraH > 0 ? (compactMenu ? 8 : 12) : 0);
         makeText(
           hintShiftY,
           `PRESS READY WHEN ALL PILOTS ARE SET. ${roster.length}/${VERSUS_MAX_PLAYERS} SLOTS`,
@@ -1576,9 +1578,10 @@ export class MenuScene extends Phaser.Scene {
         this.statusText.setText('MATCH STARTING');
         makeText(codeY, this.versusSession?.roomCode ?? '', codeSize, COLORS.SALVAGE, 1, TITLE_FONT);
         const peerText = makeText(peerY, this.formatVersusRoster(this.versusSession?.getActivePlayers() ?? []), statusSize, COLORS.HUD, 0.9);
+        peerText.setOrigin(0.5, 0);
         const statusPx = parseInt(statusSize, 10) || (compactMenu ? 13 : 15);
         const extraH = Math.max(0, peerText.height - statusPx);
-        const buttonShiftY = buttonY + extraH / 2 + (extraH > 0 ? (compactMenu ? 6 : 8) : 0);
+        const buttonShiftY = buttonY + extraH + (extraH > 0 ? (compactMenu ? 8 : 12) : 0);
         this.makeVersusLobbyButton(centerX, buttonShiftY, buttonW, buttonH, 'CANCEL', () => this.cancelVersusRoom());
         break;
       }
