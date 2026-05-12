@@ -31,6 +31,9 @@ export const DRIFTER_MINING_POINTS_MAX = 30;   // pts/sec when hugging the aster
 export const ASTEROID_DESTROY_BONUS = 20;      // pts dropped when asteroid destroyed in collision
 export const ASTEROID_DESTROY_DROP_CHANCE = 0; // disabled: small asteroid bonus drops felt too inconsequential
 export const DRIFTER_MINEABLE_CHANCE = 0.35;   // share of asteroids that show a mining ring and can be mined
+export const DRIFTER_RARE_CHANCE = 0.08;       // among mineable spawns, share that roll cyan rare ore
+export const DRIFTER_RARE_MINING_MULT = 2.0;   // payout multiplier when mining a rare asteroid
+export const DRIFTER_RARE_FLOAT_INTERVAL_MS = 250; // floating-text cadence when mining rare ore (vs 600/350)
 export const DRIFTER_SPAWN_RATE_BASE = 600;
 
 // Hazards - Beam
@@ -149,11 +152,12 @@ export const WORMHOLE_POCKET_MINEABLE_CHANCE = 1.0;
 export const WORMHOLE_POCKET_RARE_SALVAGE_INTERVAL_MS = 2_200;
 export const WORMHOLE_POCKET_BONUS_INTERVAL_MS = 1_450;
 export const WORMHOLE_POCKET_BONUS_POINTS = 360;
-export const WORMHOLE_POCKET_BOUNDARY_END_RADIUS_MULT = 0.24;
 export const WORMHOLE_POCKET_BOUNDARY_BURN_MS = 650;
 export const WORMHOLE_POCKET_GATE_CYCLE_MS = 15_000;
 export const WORMHOLE_POCKET_GATE_PREVIEW_MS = 10_000;
 export const WORMHOLE_POCKET_GATE_DURATION_MS = 3_000;
+export const WORMHOLE_POCKET_FINAL_GATE_SPAWN_REMAINING_MS = 8_000;
+export const WORMHOLE_POCKET_FINAL_GATE_DURATION_MS = 10_000;
 export const WORMHOLE_POCKET_SIZE_POOL = [
   [0.9, 3],
   [1.4, 4],

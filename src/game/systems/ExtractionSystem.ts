@@ -132,11 +132,11 @@ export class ExtractionSystem {
     }
   }
 
-  forceGate(previewTime: number, extractDuration: number): void {
+  forceGate(previewTime: number, extractDuration: number, fixedPosition?: { x: number; y: number }): void {
     this.clearGateState();
     this.forcedGate = true;
     this.normalGateSuppressed = true;
-    this.gate = new ExitGate(this.scene, undefined, previewTime, extractDuration);
+    this.gate = new ExitGate(this.scene, fixedPosition, previewTime, extractDuration);
   }
 
   isPocketMode(): boolean {
@@ -163,6 +163,7 @@ export class ExtractionSystem {
     this.pocketMode = false;
     this.pocketGateTimer = 0;
     this.phaseTimer = this.savedPhaseTimer;
+    this.normalGateSuppressed = false;
     this.clearGateState();
   }
 

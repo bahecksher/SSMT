@@ -15,6 +15,7 @@ export class DrifterHazard {
   miningRadius: number;
   radiusScale: number;
   isMineable: boolean;
+  isRare = false;
   active = true;
   inverted = false;
 
@@ -47,12 +48,13 @@ export class DrifterHazard {
     return verts;
   }
 
-  constructor(scene: Phaser.Scene, speed: number, radiusScale = 1, isMineable = false) {
+  constructor(scene: Phaser.Scene, speed: number, radiusScale = 1, isMineable = false, isRare = false) {
     const layout = getLayout();
     this.radiusScale = radiusScale;
     this.radius = DRIFTER_RADIUS * radiusScale;
     this.miningRadius = this.radius * DRIFTER_MINING_RADIUS_MULT;
     this.isMineable = isMineable;
+    this.isRare = isRare && isMineable;
     this.maxHp = DRIFTER_MAX_HP * radiusScale;
     this.hp = this.maxHp;
     this.spinSpeed = Phaser.Math.FloatBetween(0.2, 0.6) * (Math.random() < 0.5 ? 1 : -1);
@@ -111,12 +113,14 @@ export class DrifterHazard {
     vy: number,
     radiusScale: number,
     isMineable = false,
+    isRare = false,
   ): DrifterHazard {
     const d = Object.create(DrifterHazard.prototype) as DrifterHazard;
     d.radiusScale = radiusScale;
     d.radius = DRIFTER_RADIUS * radiusScale;
     d.miningRadius = d.radius * DRIFTER_MINING_RADIUS_MULT;
     d.isMineable = isMineable;
+    d.isRare = isRare && isMineable;
     d.maxHp = DRIFTER_MAX_HP * radiusScale;
     d.hp = d.maxHp;
     d.depleted = false;
@@ -198,8 +202,10 @@ export class DrifterHazard {
     const r = this.radius;
     const mr = this.miningRadius;
 
-    const color = this.inverted ? 0x000000 : (this.isMineable ? COLORS.ASTEROID : COLORS.ASTEROID_INERT);
-    const miningColor = this.inverted ? 0x000000 : 0xffdd44;
+    const color = this.inverted
+      ? 0x000000
+      : (this.isRare ? 0x44ddff : (this.isMineable ? COLORS.ASTEROID : COLORS.ASTEROID_INERT));
+    const miningColor = this.inverted ? 0x000000 : (this.isRare ? 0x44ddff : 0xffdd44);
 
     if (this.isMineable && this.radiusScale >= 1.5) {
       // Mining zone - pulsing filled area

@@ -125,8 +125,9 @@ import {
   WORMHOLE_POCKET_BONUS_INTERVAL_MS,
   WORMHOLE_POCKET_BONUS_POINTS,
   WORMHOLE_POCKET_BOUNDARY_BURN_MS,
-  WORMHOLE_POCKET_BOUNDARY_END_RADIUS_MULT,
   WORMHOLE_POCKET_DURATION_MS,
+  WORMHOLE_POCKET_FINAL_GATE_DURATION_MS,
+  WORMHOLE_POCKET_FINAL_GATE_SPAWN_REMAINING_MS,
   WORMHOLE_POCKET_RARE_SALVAGE_INTERVAL_MS,
   WORMHOLE_POCKET_SALVAGE_MULT,
   WORMHOLE_SCHEDULED_RUN_CHANCE,
@@ -289,6 +290,7 @@ export class GameScene extends Phaser.Scene {
   private pocketActive = false;
   private pocketTimerMs = 0;
   private pocketEntryPhase = 1;
+  private pocketFinalGateSpawned = false;
   private pocketRareSalvageTimer = 0;
   private pocketBonusTimer = 0;
   private pocketBoundaryGraphic: Phaser.GameObjects.Graphics | null = null;
@@ -1065,9 +1067,7 @@ export class GameScene extends Phaser.Scene {
     // Check extraction — player can extract any time they enter the active gate
     if (this.pocketActive && gameplayActive) {
       this.pocketTimerMs = Math.max(0, this.pocketTimerMs - effectiveDelta);
-      if (this.pocketTimerMs <= 0) {
-        this.exitWormholePocket('timeout');
-      }
+      this.maybeSpawnPocketFinalGate();
     }
     if (this.updatePocketBoundary(effectiveDelta, gameplayActive, runFrozen, paused)) {
       return;
@@ -1433,9 +1433,28 @@ export class GameScene extends Phaser.Scene {
   private getPocketBoundaryRadius(): number {
     const layout = getLayout();
     const startRadius = Math.sqrt(layout.arenaWidth * layout.arenaWidth + layout.arenaHeight * layout.arenaHeight) * 0.58;
-    const endRadius = Math.min(layout.arenaWidth, layout.arenaHeight) * WORMHOLE_POCKET_BOUNDARY_END_RADIUS_MULT;
+    const endRadius = 0;
     const progress = 1 - Phaser.Math.Clamp(this.pocketTimerMs / WORMHOLE_POCKET_DURATION_MS, 0, 1);
     return Phaser.Math.Linear(startRadius, endRadius, progress);
+  }
+
+  private maybeSpawnPocketFinalGate(): void {
+    if (
+      !this.pocketActive ||
+      this.pocketFinalGateSpawned ||
+      this.pocketTimerMs > WORMHOLE_POCKET_FINAL_GATE_SPAWN_REMAINING_MS
+    ) {
+      return;
+    }
+
+    const layout = getLayout();
+    this.pocketFinalGateSpawned = true;
+    this.extractionSystem.forceGate(
+      0,
+      WORMHOLE_POCKET_FINAL_GATE_DURATION_MS,
+      { x: layout.centerX, y: layout.centerY },
+    );
+    this.tryShowGameplaySlick(getSlickLine('gateOpen'), 2600);
   }
 
   private drawPocketBoundary(): void {
@@ -1580,7 +1599,9 @@ export class GameScene extends Phaser.Scene {
   private getPostBossCollapseRadius(): number {
     const layout = getLayout();
     const startRadius = Math.sqrt(layout.arenaWidth * layout.arenaWidth + layout.arenaHeight * layout.arenaHeight) * 0.58;
-    const endRadius = Math.min(layout.arenaWidth, layout.arenaHeight) * WORMHOLE_POCKET_BOUNDARY_END_RADIUS_MULT;
+    // Unlike the wormhole pocket, the post-boss collapse must resolve the run
+    // if the player refuses the escape gate.
+    const endRadius = 0;
     const progress = 1 - Phaser.Math.Clamp(this.postBossCollapseTimerMs / POST_BOSS_COLLAPSE_DURATION_MS, 0, 1);
     return Phaser.Math.Linear(startRadius, endRadius, progress);
   }
@@ -5357,6 +5378,7 @@ export class GameScene extends Phaser.Scene {
     this.naturalWormholeSpawnedThisRun = true;
     this.pocketActive = true;
     this.pocketTimerMs = WORMHOLE_POCKET_DURATION_MS;
+    this.pocketFinalGateSpawned = false;
     this.pocketRareSalvageTimer = WORMHOLE_POCKET_RARE_SALVAGE_INTERVAL_MS;
     this.pocketBonusTimer = WORMHOLE_POCKET_BONUS_INTERVAL_MS;
     this.pocketBoundaryBurnMs = 0;
@@ -5386,6 +5408,7 @@ export class GameScene extends Phaser.Scene {
     const targetPhase = this.pickPostPocketPhase();
     this.pocketActive = false;
     this.pocketTimerMs = 0;
+    this.pocketFinalGateSpawned = false;
     this.pocketRareSalvageTimer = 0;
     this.pocketBonusTimer = 0;
     this.pocketBoundaryBurnMs = 0;

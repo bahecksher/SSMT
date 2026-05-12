@@ -13,6 +13,7 @@ import {
   BOMB_DROP_CHANCE,
   BOSS_DRIFTER_SPAWN_RATE_MULT,
   DRIFTER_MINEABLE_CHANCE,
+  DRIFTER_RARE_CHANCE,
   DRIFTER_SPEED_BASE,
   ENEMY_BONUS_POINTS,
   GUNSHIP_BOSS_DEBRIS_COUNT,
@@ -314,7 +315,8 @@ export class DifficultySystem {
       const sizeScale = pocketTuning ? pickPocketAsteroidSize(pocketTuning.maxAsteroidSize) : pickAsteroidSize(activeConfig.phaseNumber);
       const adjustedSpeed = speed * (1 / Math.sqrt(sizeScale)) * (pocketTuning?.speedMult ?? 1);
       const isMineable = Math.random() < (this.pocketActive ? WORMHOLE_POCKET_MINEABLE_CHANCE : DRIFTER_MINEABLE_CHANCE);
-      this.drifters.push(new DrifterHazard(this.scene, adjustedSpeed, sizeScale, isMineable));
+      const isRare = isMineable && sizeScale >= 1.5 && Math.random() < DRIFTER_RARE_CHANCE;
+      this.drifters.push(new DrifterHazard(this.scene, adjustedSpeed, sizeScale, isMineable, isRare));
       this.drifterTimer = 0;
     }
 
@@ -389,7 +391,8 @@ export class DifficultySystem {
     this.resolveEnemyDrifterCollisions();
     this.resolveNPCDrifterCollisions();
     this.resolveEnemyNPCCollisions();
-    this.resolveDrifterCollisions();
+    // EXPERIMENT: asteroid-vs-asteroid collisions disabled. Flip to true to restore.
+    if (false as boolean) this.resolveDrifterCollisions();
     this.resolveBeamEntityCollisions();
     this.resolveBossBeamEntityCollisions();
 

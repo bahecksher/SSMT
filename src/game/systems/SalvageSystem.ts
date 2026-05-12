@@ -3,6 +3,8 @@ import {
   SALVAGE_POINTS_PER_SECOND,
   DRIFTER_MINING_POINTS_MIN,
   DRIFTER_MINING_POINTS_MAX,
+  DRIFTER_RARE_MINING_MULT,
+  DRIFTER_RARE_FLOAT_INTERVAL_MS,
 } from '../data/tuning';
 import { COLORS, UI_FONT, readableFontSize } from '../constants';
 import type { Player } from '../entities/Player';
@@ -127,6 +129,7 @@ export class SalvageSystem {
     let miningCount = 0;
     let totalMiningPoints = 0;
     let dangerClose = false;
+    let hasRareMining = false;
 
     for (const drifter of drifters) {
       if (!drifter.active || !drifter.isMineable || drifter.radiusScale < 1.5) continue;
@@ -143,9 +146,11 @@ export class SalvageSystem {
         // Proximity multiplier: 0 at outer edge → 1 at asteroid body
         const proximity = 1 - (dist - drifter.radius) / (drifter.miningRadius - drifter.radius);
         const ptsPerSec = DRIFTER_MINING_POINTS_MIN + (DRIFTER_MINING_POINTS_MAX - DRIFTER_MINING_POINTS_MIN) * proximity * proximity;
-        totalMiningPoints += ptsPerSec * this.miningYieldMult * this.pocketYieldMult * this.bossYieldMult * dt;
+        const rareMult = drifter.isRare ? DRIFTER_RARE_MINING_MULT : 1;
+        totalMiningPoints += ptsPerSec * rareMult * this.miningYieldMult * this.pocketYieldMult * this.bossYieldMult * dt;
         miningCount++;
         if (proximity > 0.7) dangerClose = true;
+        if (drifter.isRare) hasRareMining = true;
 
         // Deplete asteroid HP
         drifter.hp -= dt;
@@ -163,16 +168,17 @@ export class SalvageSystem {
       this.scoreSystem.addUnbanked(totalMiningPoints);
       this.miningFloatPoints += totalMiningPoints;
 
-      // Floating text for mining — faster when danger-close
+      // Floating text for mining — faster when rare, then danger-close, else normal
       this.miningFloatTimer += delta;
-      const miningInterval = dangerClose ? 350 : 600;
+      const miningInterval = hasRareMining ? DRIFTER_RARE_FLOAT_INTERVAL_MS : (dangerClose ? 350 : 600);
       if (this.miningFloatTimer >= miningInterval) {
-        const fontSize = readableFontSize(dangerClose ? 17 : 13);
+        const fontSize = readableFontSize(hasRareMining ? 18 : (dangerClose ? 17 : 13));
+        const color = hasRareMining ? '#44ddff' : '#ffaa00';
         this.spawnFloatingText(
           `+${Math.max(1, Math.round(this.miningFloatPoints))}`,
-          '#ffaa00',
+          color,
           fontSize,
-          dangerClose,
+          hasRareMining || dangerClose,
         );
         this.miningFloatTimer -= miningInterval;
         this.miningFloatPoints = 0;
