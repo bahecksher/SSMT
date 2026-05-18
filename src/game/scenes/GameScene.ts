@@ -11,7 +11,7 @@ import {
 } from '../constants';
 import { GameState, CompanyId } from '../types';
 import type { ActiveMission, RunBoosts } from '../types';
-import { SALVAGE_RESPAWN_DELAY, PLAYER_RADIUS, PLAYER_SHIELD_BREAK_INVULN_MS, NPC_BUMP_RADIUS, NPC_BONUS_POINTS } from '../data/tuning';
+import { SALVAGE_RESPAWN_DELAY, PLAYER_RADIUS, PLAYER_SHIELD_BREAK_INVULN_MS, NPC_BUMP_RADIUS, NPC_BONUS_POINTS, RIVAL_CONTACT_RADIUS } from '../data/tuning';
 import { MissionSystem, loadOrGenerateMissions } from '../systems/MissionSystem';
 import { InputSystem } from '../systems/InputSystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
@@ -48,6 +48,7 @@ import { GeoSphere } from '../entities/GeoSphere';
 import { HologramOverlay } from '../ui/HologramOverlay';
 import { SlickComm } from '../ui/SlickComm';
 import { LiaisonComm } from '../ui/LiaisonComm';
+import { RivalComm } from '../ui/RivalComm';
 import {
   COMPANIES,
   getCompanyAffiliation,
@@ -63,6 +64,7 @@ import { getLiaisonLine } from '../data/liaisonLines';
 import { RegentComm } from '../ui/RegentComm';
 import { getSlickLine } from '../data/slickLines';
 import { getRegentLine } from '../data/regentLines';
+import { pickRivalLine, type RivalDef } from '../data/rivalData';
 import { getRenderTuningProfile, type RenderTuningProfile } from '../data/renderTuning';
 import { getLayout, isNarrowViewport, isShortViewport, setLayoutSize } from '../layout';
 import { getSettings, updateSettings } from '../systems/SettingsSystem';
@@ -195,7 +197,7 @@ interface MirrorLaserEcho {
   laser: MirrorLaserSnapshot;
   elapsed: number;
 }
-type CommSpeaker = 'slick' | 'regent' | 'liaison';
+type CommSpeaker = 'slick' | 'regent' | 'liaison' | 'rival';
 
 interface GameplayCommOptions {
   allowInterrupt?: boolean;
@@ -213,6 +215,7 @@ export class GameScene extends Phaser.Scene {
     slick: 5200,
     regent: 5600,
     liaison: 5400,
+    rival: 5000,
   } as const;
 
   private inputSystem!: InputSystem;
@@ -275,6 +278,8 @@ export class GameScene extends Phaser.Scene {
   private liaisonComm: LiaisonComm | null = null;
   private liaisonCompanyId: CompanyId | null = null;
   private liaisonRepLevel = 0;
+  private rivalComm: RivalComm | null = null;
+  private currentRivalDef: RivalDef | null = null;
   private playerDebris: ShipDebris[] = [];
   private invulnerableTimer = 0;
   private debugInvulnerable = false;
@@ -514,6 +519,7 @@ export class GameScene extends Phaser.Scene {
     this.extractionSystem = new ExtractionSystem(this);
     this.bankingSystem = new BankingSystem(this.player, this.scoreSystem, this.saveSystem);
     this.difficultySystem = new DifficultySystem(this, 1);
+    this.difficultySystem.setRivalsEnabled(this.runMode !== RunMode.VERSUS);
 
     // Carry over background entities from menu for seamless transition
     if (handoff.drifterState?.length) {
@@ -554,6 +560,8 @@ export class GameScene extends Phaser.Scene {
     this.liaisonComm = null;
     this.liaisonCompanyId = null;
     this.liaisonRepLevel = 0;
+    this.rivalComm = null;
+    this.currentRivalDef = null;
     const repSave = loadCompanyRep();
     const affiliatedCompanyId = this.runMode === RunMode.VERSUS
       ? null
@@ -1059,6 +1067,35 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    const rival = this.difficultySystem.getRival();
+    if (gameplayActive && rival?.active && (!invulnerable || this.player.hasShield || this.debugInvulnerable)) {
+      const dist = Phaser.Math.Distance.Between(rival.x, rival.y, this.player.x, this.player.y);
+      const hitRivalBody = dist < RIVAL_CONTACT_RADIUS;
+      const hitRivalLaser = rival.laserHits(this.player.x, this.player.y, PLAYER_RADIUS);
+      if (hitRivalBody || hitRivalLaser) {
+        this.missionSystem.trackDamageTaken();
+        if (this.player.hasShield || this.debugInvulnerable) {
+          if (this.player.hasShield) {
+            this.player.hasShield = false;
+            playSfx(this, 'shieldLoss');
+          }
+          this.invulnerableTimer = Math.max(this.invulnerableTimer, PLAYER_SHIELD_BREAK_INVULN_MS);
+          invulnerable = true;
+          if (hitRivalBody) {
+            const hitResult = rival.takeHit(1);
+            if (hitResult !== 'shield') {
+              this.spawnRivalDamageDebris(rival, hitResult === 'destroyed');
+            }
+          }
+          Overlays.shieldBreakFlash(this);
+          Overlays.screenShake(this, hitRivalLaser ? 0.009 : 0.012, 220);
+        } else {
+          this.handleDeath(hitRivalLaser ? 'laser' : 'enemy', `${rival.getDef().callsign} ${hitRivalLaser ? 'LASER' : 'RAM'}`);
+          return;
+        }
+      }
+    }
+
     // Spawn shields from dead NPCs — inherit NPC velocity so they drift
     if (!runFrozen) {
       this.spawnPendingDifficultyDrops();
@@ -1157,6 +1194,9 @@ export class GameScene extends Phaser.Scene {
         this.tryShowGameplaySlick(getSlickLine('bossDestroyed'), 3400);
         this.startPostBossEscapeSequence();
       }
+    }
+    if (!runFrozen && !paused) {
+      this.processRivalEvents();
     }
     this.updateBossStatusUi();
 
@@ -1894,6 +1934,37 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private tryShowGameplayRival(message: string, autoHideMs?: number): boolean {
+    return this.tryShowGameplayComm('rival', message, autoHideMs, {
+      allowInterrupt: true,
+      ignoreCooldown: true,
+    });
+  }
+
+  private processRivalEvents(): void {
+    const events = this.difficultySystem.consumeRivalEvents();
+    const activeRival = this.difficultySystem.getRival();
+    if (events.spawned && activeRival) {
+      this.currentRivalDef = activeRival.getDef();
+      this.rivalComm?.destroy();
+      this.rivalComm = new RivalComm(this, this.currentRivalDef, { width: getLayout().gameWidth });
+      this.rivalComm.setBottomPinnedLayout(2);
+      this.tryShowGameplayRival(pickRivalLine(this.currentRivalDef.comms.intro), 5200);
+    }
+    const rivalDef = activeRival?.getDef() ?? this.currentRivalDef;
+    if (!rivalDef) return;
+    if (events.abilityTell) {
+      this.tryShowGameplayRival(pickRivalLine(rivalDef.comms.abilityTell), 2600);
+    }
+    if (events.fleeing) {
+      this.tryShowGameplayRival(pickRivalLine(rivalDef.comms.flee), 3600);
+    }
+    if (events.escaped) {
+      this.tryShowGameplayRival(pickRivalLine(rivalDef.comms.escaped), 3600);
+      this.currentRivalDef = null;
+    }
+  }
+
   private tryShowGameplayComm(
     speaker: CommSpeaker,
     message: string,
@@ -1939,6 +2010,7 @@ export class GameScene extends Phaser.Scene {
     if (speaker === 'regent') {
       return this.regentIntroduced ? 3 : 2;
     }
+    if (speaker === 'rival') return 4;
     return speaker === 'slick' ? 2 : 1;
   }
 
@@ -1950,6 +2022,7 @@ export class GameScene extends Phaser.Scene {
     if (activeSpeaker !== 'slick') this.slickComm.hide();
     if (activeSpeaker !== 'regent') this.regentComm.hide();
     if (activeSpeaker !== 'liaison') this.liaisonComm?.hide();
+    if (activeSpeaker !== 'rival') this.rivalComm?.hide();
   }
 
   private clearCommState(): void {
@@ -1971,6 +2044,8 @@ export class GameScene extends Phaser.Scene {
       this.slickComm.show(message, duration);
     } else if (speaker === 'regent') {
       this.regentComm.show(message, duration);
+    } else if (speaker === 'rival') {
+      this.rivalComm?.show(message, duration);
     } else {
       this.liaisonComm?.show(message, duration);
     }
@@ -2052,6 +2127,9 @@ export class GameScene extends Phaser.Scene {
     this.regentComm.destroy();
     this.liaisonComm?.destroy();
     this.liaisonComm = null;
+    this.rivalComm?.destroy();
+    this.rivalComm = null;
+    this.currentRivalDef = null;
     this.hologramOverlay.destroy();
     this.cursor.destroy(this);
     this.geoSphere.destroy();
@@ -4184,6 +4262,7 @@ export class GameScene extends Phaser.Scene {
     this.slickComm.setBottomPinnedLayout(bottomInset);
     this.regentComm.setBottomPinnedLayout(bottomInset);
     this.liaisonComm?.setBottomPinnedLayout(bottomInset);
+    this.rivalComm?.setBottomPinnedLayout(bottomInset);
   }
 
   private clearResultUi(): void {
@@ -5344,6 +5423,40 @@ export class GameScene extends Phaser.Scene {
     this.bonusPickups.push(new BonusPickup(this, p.x, p.y, 500, 0, 0, 0));
   }
 
+  private spawnDebugRival(): void {
+    if (this.multiplayer || this.pocketActive) {
+      return;
+    }
+    if (this.state !== GameState.PLAYING && this.state !== GameState.PAUSED && this.state !== GameState.COUNTDOWN) {
+      return;
+    }
+
+    this.scoreRecordingBlocked = true;
+    this.difficultySystem.setRivalsEnabled(true);
+    if (this.difficultySystem.debugSpawnRival()) {
+      this.processRivalEvents();
+    } else {
+      this.tryShowGameplaySlick('DEBUG // RIVAL ALREADY ACTIVE', 1600);
+    }
+  }
+
+  private spawnRivalDamageDebris(rival: NonNullable<ReturnType<DifficultySystem['getRival']>>, destroyed: boolean): void {
+    const count = destroyed ? 3 : 1;
+    for (let i = 0; i < count; i++) {
+      const jitter = i === 0 ? 0 : Phaser.Math.FloatBetween(-8, 8);
+      this.playerDebris.push(new ShipDebris(
+        this,
+        rival.x + jitter,
+        rival.y + (i === 0 ? 0 : Phaser.Math.FloatBetween(-8, 8)),
+        rival.getVelocityX() * 0.55 + Phaser.Math.FloatBetween(-30, 30),
+        rival.getVelocityY() * 0.55 + Phaser.Math.FloatBetween(-30, 30),
+        rival.getDef().color,
+        destroyed ? rival.radius * 1.15 : rival.radius * 0.75,
+      ));
+    }
+    playSfx(this, 'playerDeath', { volumeScale: destroyed ? 0.8 : 0.45, rate: destroyed ? 1.05 : 1.35 });
+  }
+
   private isPlayerInvulnerable(): boolean {
     return this.debugInvulnerable || this.invulnerableTimer > 0;
   }
@@ -5529,6 +5642,10 @@ export class GameScene extends Phaser.Scene {
               event.preventDefault();
               this.spawnDebugBonus();
               return;
+            case 'KeyR':
+              event.preventDefault();
+              this.spawnDebugRival();
+              return;
             case 'KeyI':
               event.preventDefault();
               this.toggleDebugInvulnerable();
@@ -5551,6 +5668,7 @@ export class GameScene extends Phaser.Scene {
         bitpSpawnShield?: () => void;
         bitpSpawnBomb?: () => void;
         bitpSpawnBonus?: () => void;
+        bitpSpawnRival?: () => void;
         bitpToggleInvulnerable?: () => void;
       };
       debugWindow.bitpJumpToPhase = (n: number) => this.debugJumpToPhase(n);
@@ -5558,6 +5676,7 @@ export class GameScene extends Phaser.Scene {
       debugWindow.bitpSpawnShield = () => this.spawnDebugShield();
       debugWindow.bitpSpawnBomb = () => this.spawnDebugBomb();
       debugWindow.bitpSpawnBonus = () => this.spawnDebugBonus();
+      debugWindow.bitpSpawnRival = () => this.spawnDebugRival();
       debugWindow.bitpToggleInvulnerable = () => this.toggleDebugInvulnerable();
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -5568,6 +5687,7 @@ export class GameScene extends Phaser.Scene {
           bitpSpawnShield?: () => void;
           bitpSpawnBomb?: () => void;
           bitpSpawnBonus?: () => void;
+          bitpSpawnRival?: () => void;
           bitpToggleInvulnerable?: () => void;
         };
         delete debugWindow.bitpJumpToPhase;
@@ -5575,6 +5695,7 @@ export class GameScene extends Phaser.Scene {
         delete debugWindow.bitpSpawnShield;
         delete debugWindow.bitpSpawnBomb;
         delete debugWindow.bitpSpawnBonus;
+        delete debugWindow.bitpSpawnRival;
         delete debugWindow.bitpToggleInvulnerable;
       }
     });

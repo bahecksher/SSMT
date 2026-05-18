@@ -64,6 +64,31 @@ export const NPC_BUMP_RADIUS = 18;       // collision radius for player bump
 export const NPC_BONUS_DROP_CHANCE = 0.4;
 export const NPC_BONUS_POINTS = 210;
 
+// Rival ships (named elite NPC encounters)
+export const RIVAL_SPAWN_PHASE_MIN = 2;
+export const RIVAL_SPAWN_PHASE_MAX = 10;
+export const RIVAL_SPAWN_INTERVAL_MS = 18_000;
+export const RIVAL_SPAWN_CHANCE = 0.35;
+export const RIVAL_RADIUS = 17;
+export const RIVAL_SPEED = 104;
+export const RIVAL_FLEE_SPEED = 165;
+export const RIVAL_FLEE_CHANCE = 0.75;
+export const RIVAL_TURN_RATE = 2.8;
+export const RIVAL_CONTACT_RADIUS = 22;
+export const RIVAL_KITE_MIN_DISTANCE = 210;
+export const RIVAL_KITE_IDEAL_DISTANCE = 320;
+export const RIVAL_KITE_MAX_DISTANCE = 460;
+export const RIVAL_LASER_COOLDOWN_MS = 5_600;
+export const RIVAL_LASER_CHARGE_MS = 1_350;
+export const RIVAL_LASER_TRACK_MS = 520;
+export const RIVAL_LASER_ACTIVE_MS = 640;
+export const RIVAL_LASER_RANGE = 1_400;
+export const RIVAL_LASER_TRIGGER_RANGE = 620;
+export const RIVAL_LASER_WIDTH = 18;
+export const RIVAL_LASER_AIM_ERROR_DEG = 7;
+export const RIVAL_LASER_SWEEP_DEG_PER_SEC = 38;
+export const RIVAL_LASER_STRAFE_SPEED = 46;
+
 // Bonus point pickups
 export const BONUS_PICKUP_RADIUS = 12;
 export const BONUS_PICKUP_LIFETIME = 30000;

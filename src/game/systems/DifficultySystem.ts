@@ -24,6 +24,10 @@ import {
   POST_BOSS_ENEMY_SURGE_MAX_ENEMIES,
   POST_BOSS_BEAM_BURST_COUNT,
   POST_BOSS_BEAM_FREQUENCY_MULT,
+  RIVAL_SPAWN_CHANCE,
+  RIVAL_SPAWN_INTERVAL_MS,
+  RIVAL_SPAWN_PHASE_MAX,
+  RIVAL_SPAWN_PHASE_MIN,
   VERSUS_LASER_DROP_CHANCE_ENEMY,
   VERSUS_LASER_DROP_CHANCE_NPC,
   WORMHOLE_POCKET_COMPACT_DRIFTER_CAP_MULT,
@@ -44,6 +48,7 @@ import { DrifterHazard } from '../entities/DrifterHazard';
 import { BeamHazard } from '../entities/BeamHazard';
 import { EnemyShip } from '../entities/EnemyShip';
 import { NPCShip } from '../entities/NPCShip';
+import { RivalShip, type RivalEvents } from '../entities/RivalShip';
 import { SHIELD_PICKUP_RADIUS } from '../entities/ShieldPickup';
 import { ShipDebris } from '../entities/ShipDebris';
 import { GunshipBoss } from '../entities/GunshipBoss';
@@ -58,6 +63,7 @@ import {
   BOSS_SPAWN_WEIGHT_HAULER,
   BOSS_SPAWN_WEIGHT_SINGULARITY,
 } from '../data/tuning';
+import { pickRivalDef } from '../data/rivalData';
 import { Overlays } from '../ui/Overlays';
 import { getLayout, getArenaDensityScale, isNarrowViewport, isShortViewport } from '../layout';
 import { playSfx } from './SfxSystem';
@@ -82,11 +88,14 @@ export class DifficultySystem {
   private beams: BeamHazard[] = [];
   private enemies: EnemyShip[] = [];
   private npcs: NPCShip[] = [];
+  private rival: RivalShip | null = null;
+  private rivalEvents: RivalEvents = { spawned: false, abilityTell: false, fleeing: false, escaped: false };
   private shieldDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private bonusDropPositions: { x: number; y: number; vx: number; vy: number; points: number; miningBonus?: boolean }[] = [];
   private bombDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private versusLaserDropPositions: { x: number; y: number; vx: number; vy: number }[] = [];
   private versusLasersEnabled = false;
+  private rivalsEnabled = false;
   private shipDebris: ShipDebris[] = [];
   private boss: BossEntity | null = null;
   private bossDefeated = false;
@@ -103,6 +112,7 @@ export class DifficultySystem {
   private beamBurstTimer = 0;
   private enemyTimer = 0;
   private npcTimer = 0;
+  private rivalTimer = RIVAL_SPAWN_INTERVAL_MS * 0.55;
   private bonusDropChanceAdd = 0.0;
   private asteroidCollisionSfxCooldownMs = 0;
   private bossShieldDriftTimerMs = 0;
@@ -128,6 +138,7 @@ export class DifficultySystem {
       this.beamBurstTimer = 0;
       this.enemyTimer = 0;
       this.npcTimer = 0;
+      this.clearRival();
     }
   }
 
@@ -173,6 +184,10 @@ export class DifficultySystem {
     return this.npcs;
   }
 
+  getRival(): RivalShip | null {
+    return this.rival;
+  }
+
   getBoss(): BossEntity | null {
     return this.boss;
   }
@@ -203,6 +218,27 @@ export class DifficultySystem {
 
   setVersusLasersEnabled(enabled: boolean): void {
     this.versusLasersEnabled = enabled;
+  }
+
+  setRivalsEnabled(enabled: boolean): void {
+    this.rivalsEnabled = enabled;
+    if (!enabled) {
+      this.clearRival();
+    }
+  }
+
+  consumeRivalEvents(): RivalEvents {
+    const events = { ...this.rivalEvents };
+    this.rivalEvents = { spawned: false, abilityTell: false, fleeing: false, escaped: false };
+    return events;
+  }
+
+  debugSpawnRival(): boolean {
+    if (this.rival) {
+      return false;
+    }
+    this.spawnRival();
+    return true;
   }
 
   consumeBossEvents(): BossEvents {
@@ -279,8 +315,10 @@ export class DifficultySystem {
     this.bonusDropPositions = [];
     this.bombDropPositions = [];
     this.versusLaserDropPositions = [];
+    this.clearRival();
     this.bossDefeated = false;
     this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
+    this.rivalEvents = { spawned: false, abilityTell: false, fleeing: false, escaped: false };
     this.postBossSurgeActive = false;
     this.postBossSurgeTimerMs = 0;
     this.pocketActive = false;
@@ -290,6 +328,7 @@ export class DifficultySystem {
     this.beamBurstTimer = 0;
     this.enemyTimer = 0;
     this.npcTimer = 0;
+    this.rivalTimer = RIVAL_SPAWN_INTERVAL_MS * 0.55;
     this.config = getPhaseConfig(targetPhase);
     this.updateDensityScale();
 
@@ -358,6 +397,17 @@ export class DifficultySystem {
       }
     }
 
+    if (this.shouldUpdateRivals(activeConfig)) {
+      this.rivalTimer += delta;
+      if (!this.rival && this.rivalTimer >= RIVAL_SPAWN_INTERVAL_MS * this.scaledSpawnMult) {
+        if (Math.random() < RIVAL_SPAWN_CHANCE) {
+          this.spawnRival();
+        } else {
+          this.rivalTimer = 0;
+        }
+      }
+    }
+
     this.boss?.update(delta);
     this.updateBossShieldDrift(delta);
     if (this.boss?.consumeWarningPulse()) {
@@ -374,9 +424,11 @@ export class DifficultySystem {
     this.applyBossForceToDrifters(delta);
     for (const d of this.drifters) d.update(delta);
     for (const npc of this.npcs) npc.update(delta);
+    this.rival?.update(delta, playerX, playerY);
+    this.collectRivalEvents();
 
     for (const e of this.enemies) {
-      const npcTarget = this.findClosestNPC(e.x, e.y);
+      const npcTarget = this.findClosestSecondaryTarget(e.x, e.y);
       if (npcTarget) {
         const distToPlayer = Math.sqrt((playerX - e.x) ** 2 + (playerY - e.y) ** 2);
         const distToNpc = Math.sqrt((npcTarget.x - e.x) ** 2 + (npcTarget.y - e.y) ** 2);
@@ -391,6 +443,7 @@ export class DifficultySystem {
     this.resolveEnemyDrifterCollisions();
     this.resolveNPCDrifterCollisions();
     this.resolveEnemyNPCCollisions();
+    this.resolveEnemyRivalCollisions();
     // EXPERIMENT: asteroid-vs-asteroid collisions disabled. Flip to true to restore.
     if (false as boolean) this.resolveDrifterCollisions();
     this.resolveBeamEntityCollisions();
@@ -472,6 +525,13 @@ export class DifficultySystem {
       }
     }
 
+    if (this.rival && !this.rival.active) {
+      this.collectRivalEvents();
+      this.rival.destroy();
+      this.rival = null;
+      this.rivalTimer = 0;
+    }
+
     for (let i = this.beams.length - 1; i >= 0; i--) {
       const b = this.beams[i];
       b.update(delta);
@@ -495,9 +555,11 @@ export class DifficultySystem {
     this.boss?.update(delta);
     for (const d of this.drifters) d.update(delta);
     for (const npc of this.npcs) npc.update(delta);
+    this.rival?.update(delta, playerX, playerY);
+    this.collectRivalEvents();
 
     for (const e of this.enemies) {
-      const npcTarget = this.findClosestNPC(e.x, e.y);
+      const npcTarget = this.findClosestSecondaryTarget(e.x, e.y);
       if (npcTarget) {
         const distToPlayer = Math.sqrt((playerX - e.x) ** 2 + (playerY - e.y) ** 2);
         const distToNpc = Math.sqrt((npcTarget.x - e.x) ** 2 + (npcTarget.y - e.y) ** 2);
@@ -528,6 +590,13 @@ export class DifficultySystem {
         this.npcs[i].destroy();
         this.npcs.splice(i, 1);
       }
+    }
+
+    if (this.rival && !this.rival.active) {
+      this.collectRivalEvents();
+      this.rival.destroy();
+      this.rival = null;
+      this.rivalTimer = 0;
     }
 
     for (let i = this.beams.length - 1; i >= 0; i--) {
@@ -712,6 +781,19 @@ export class DifficultySystem {
     return closest;
   }
 
+  private findClosestSecondaryTarget(x: number, y: number): NPCShip | RivalShip | null {
+    let closest: NPCShip | RivalShip | null = this.findClosestNPC(x, y);
+    let bestDist = closest ? Math.sqrt((closest.x - x) ** 2 + (closest.y - y) ** 2) : Infinity;
+    if (this.rival?.active && !this.rival.isFleeing()) {
+      const rivalDist = Math.sqrt((this.rival.x - x) ** 2 + (this.rival.y - y) ** 2);
+      if (rivalDist < bestDist) {
+        bestDist = rivalDist;
+        closest = this.rival;
+      }
+    }
+    return closest;
+  }
+
   private resolveNPCDrifterCollisions(): void {
     for (const npc of this.npcs) {
       if (!npc.active) continue;
@@ -749,6 +831,29 @@ export class DifficultySystem {
             npc.killedByHazard = true;
           }
         }
+      }
+    }
+  }
+
+  private resolveEnemyRivalCollisions(): void {
+    if (!this.rival?.active) return;
+    for (const enemy of this.enemies) {
+      if (!enemy.active || !this.rival?.active) continue;
+      const dx = enemy.x - this.rival.x;
+      const dy = enemy.y - this.rival.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < enemy.radius + this.rival.radius) {
+        enemy.active = false;
+        const hitResult = this.rival.takeHit(1);
+        this.shipDebris.push(new ShipDebris(
+          this.scene,
+          this.rival.x,
+          this.rival.y,
+          this.rival.getVelocityX() * 0.55,
+          this.rival.getVelocityY() * 0.55,
+          this.rival.getDef().color,
+          hitResult === 'destroyed' ? this.rival.radius * 1.15 : this.rival.radius * 0.75,
+        ));
       }
     }
   }
@@ -1169,17 +1274,50 @@ export class DifficultySystem {
     );
   }
 
+  private shouldUpdateRivals(activeConfig: PhaseConfig): boolean {
+    return (
+      this.rivalsEnabled &&
+      !this.pocketActive &&
+      !this.postBossSurgeActive &&
+      activeConfig.phaseNumber >= RIVAL_SPAWN_PHASE_MIN &&
+      activeConfig.phaseNumber <= RIVAL_SPAWN_PHASE_MAX
+    );
+  }
+
+  private spawnRival(): void {
+    this.rival = new RivalShip(this.scene, pickRivalDef());
+    this.rivalTimer = 0;
+    this.collectRivalEvents();
+  }
+
+  private collectRivalEvents(): void {
+    if (!this.rival) return;
+    const events = this.rival.consumeEvents();
+    this.rivalEvents.spawned = this.rivalEvents.spawned || events.spawned;
+    this.rivalEvents.abilityTell = this.rivalEvents.abilityTell || events.abilityTell;
+    this.rivalEvents.fleeing = this.rivalEvents.fleeing || events.fleeing;
+    this.rivalEvents.escaped = this.rivalEvents.escaped || events.escaped;
+  }
+
+  private clearRival(): void {
+    this.rival?.destroy();
+    this.rival = null;
+    this.rivalTimer = 0;
+  }
+
   destroy(): void {
     for (const d of this.drifters) d.destroy();
     for (const b of this.beams) b.destroy();
     for (const e of this.enemies) e.destroy();
     for (const n of this.npcs) n.destroy();
+    this.rival?.destroy();
     for (const sd of this.shipDebris) sd.destroy();
     this.boss?.destroy();
     this.drifters = [];
     this.beams = [];
     this.enemies = [];
     this.npcs = [];
+    this.rival = null;
     this.shipDebris = [];
     this.boss = null;
     this.shieldDropPositions = [];
@@ -1187,5 +1325,6 @@ export class DifficultySystem {
     this.bombDropPositions = [];
     this.versusLaserDropPositions = [];
     this.bossEvents = { spawned: false, coreExposed: false, destroyed: false };
+    this.rivalEvents = { spawned: false, abilityTell: false, fleeing: false, escaped: false };
   }
 }
