@@ -499,6 +499,7 @@ export class GameScene extends Phaser.Scene {
 
     // Rotating geometric sphere behind the arena
     this.geoSphere = new GeoSphere(this);
+    this.geoSphere.setPhase(1);
 
     // Draw arena boundary (hologram style)
     this.arenaBorder = this.add.graphics().setDepth(0);
@@ -904,6 +905,7 @@ export class GameScene extends Phaser.Scene {
     if (!runFrozen && !paused && gameplayActive && currentPhase !== prevPhase) {
       this.missionSystem.trackPhaseReached(currentPhase);
       this.difficultySystem.setPhase(currentPhase);
+      this.geoSphere.setPhase(currentPhase);
       setGameplayMusicForPhase(this, currentPhase);
       if (currentPhase >= 5 && !this.enemyEntranceSfxPlayed) {
         this.enemyEntranceSfxPlayed = true;
@@ -1611,7 +1613,11 @@ export class GameScene extends Phaser.Scene {
         this.postBossCollapseActive = true;
         this.postBossCollapseTimerMs = POST_BOSS_COLLAPSE_DURATION_MS;
         this.pocketBoundaryBurnMs = 0;
-        this.extractionSystem.forceGate(0, POST_BOSS_ESCAPE_GATE_DURATION_MS);
+        this.extractionSystem.forceGate(
+          0,
+          POST_BOSS_ESCAPE_GATE_DURATION_MS,
+          { x: getLayout().centerX, y: getLayout().centerY },
+        );
         this.difficultySystem.startPostBossEscapeSurge();
         playSfx(this, 'enemyEntrance');
         Overlays.beamWarningFlash(this);
@@ -5436,7 +5442,7 @@ export class GameScene extends Phaser.Scene {
     if (this.difficultySystem.debugSpawnRival()) {
       this.processRivalEvents();
     } else {
-      this.tryShowGameplaySlick('DEBUG // RIVAL ALREADY ACTIVE', 1600);
+      this.tryShowGameplaySlick('DEBUG // RIVAL ALREADY SPAWNED', 1600);
     }
   }
 
@@ -5533,6 +5539,7 @@ export class GameScene extends Phaser.Scene {
     this.clearBoard(true, false);
     this.extractionSystem.debugSetPhase(targetPhase);
     this.difficultySystem.debugSetPhase(targetPhase);
+    this.geoSphere.setPhase(targetPhase);
     this.missionSystem.trackPhaseReached(targetPhase);
     this.regentIntroduced = targetPhase >= 3;
     this.regentEnemyAnnounced = targetPhase >= 5;
@@ -5713,6 +5720,7 @@ export class GameScene extends Phaser.Scene {
     this.destroyAllWormholes();
     this.extractionSystem.debugSetPhase(targetPhase);
     this.difficultySystem.debugSetPhase(targetPhase);
+    this.geoSphere.setPhase(targetPhase);
     this.lastGateActive = false;
     this.wormholeEventTimer = 0;
     this.wormholeEventPhase = targetPhase;

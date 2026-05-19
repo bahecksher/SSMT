@@ -118,6 +118,7 @@ export class DifficultySystem {
   private bossShieldDriftTimerMs = 0;
   private nextBossShieldDriftSpawnMs = 0;
   private pocketActive = false;
+  private rivalSpawnedThisRun = false;
 
   constructor(scene: Phaser.Scene, phase: number) {
     this.scene = scene;
@@ -234,7 +235,7 @@ export class DifficultySystem {
   }
 
   debugSpawnRival(): boolean {
-    if (this.rival) {
+    if (this.rival || this.rivalSpawnedThisRun) {
       return false;
     }
     this.spawnRival();
@@ -1277,6 +1278,7 @@ export class DifficultySystem {
   private shouldUpdateRivals(activeConfig: PhaseConfig): boolean {
     return (
       this.rivalsEnabled &&
+      !this.rivalSpawnedThisRun &&
       !this.pocketActive &&
       !this.postBossSurgeActive &&
       activeConfig.phaseNumber >= RIVAL_SPAWN_PHASE_MIN &&
@@ -1286,6 +1288,7 @@ export class DifficultySystem {
 
   private spawnRival(): void {
     this.rival = new RivalShip(this.scene, pickRivalDef());
+    this.rivalSpawnedThisRun = true;
     this.rivalTimer = 0;
     this.collectRivalEvents();
   }

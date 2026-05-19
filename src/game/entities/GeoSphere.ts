@@ -12,6 +12,8 @@ const RING_COLOR = 0xc7d2de;
 const RING_SCREEN_OFFSET_Y = -0.09;
 /** Global opacity multiplier so the ring reads as background, not gameplay. */
 const RING_ALPHA_MULT = 0.35;
+const PHASE_APPROACH_SCALE_PER_STEP = 0.055;
+const PHASE_APPROACH_SCALE_MAX = 1.5;
 
 interface Vec3 {
   x: number;
@@ -110,6 +112,8 @@ export class GeoSphere {
   private angleY = 0;
   private angleX = 0.35; // initial tilt
   private radius: number;
+  private visualScale = 1;
+  private targetVisualScale = 1;
   private readonly ringSegments: number;
   private readonly ringDebrisStep: number;
   private readonly frameMs: number;
@@ -144,6 +148,7 @@ export class GeoSphere {
     const dt = delta / 1000;
     this.angleY += SPIN_SPEED * dt;
     this.angleX = 0.35 + Math.sin(this.angleY * (TILT_SPEED / SPIN_SPEED)) * 0.15;
+    this.visualScale = Phaser.Math.Linear(this.visualScale, this.targetVisualScale, 1 - Math.pow(0.002, dt));
     this.redrawAccumMs += delta;
     if (this.redrawAccumMs < this.frameMs) {
       return;
@@ -156,11 +161,19 @@ export class GeoSphere {
     this.graphic.setVisible(visible);
   }
 
+  setPhase(phase: number): void {
+    const phaseStep = Phaser.Math.Clamp(Math.floor(phase) - 1, 0, 9);
+    this.targetVisualScale = Math.min(
+      PHASE_APPROACH_SCALE_MAX,
+      1 + phaseStep * PHASE_APPROACH_SCALE_PER_STEP,
+    );
+  }
+
   private draw(): void {
     const g = this.graphic;
     const cx = this.originX;
     const cy = this.originY;
-    const r = this.radius;
+    const r = this.radius * this.visualScale;
 
     g.clear();
 
