@@ -148,7 +148,7 @@ export class GeoSphere {
     const dt = delta / 1000;
     this.angleY += SPIN_SPEED * dt;
     this.angleX = 0.35 + Math.sin(this.angleY * (TILT_SPEED / SPIN_SPEED)) * 0.15;
-    this.visualScale = Phaser.Math.Linear(this.visualScale, this.targetVisualScale, 1 - Math.pow(0.002, dt));
+    this.visualScale = Phaser.Math.Linear(this.visualScale, this.targetVisualScale, 1 - Math.pow(0.8, dt));
     this.redrawAccumMs += delta;
     if (this.redrawAccumMs < this.frameMs) {
       return;
