@@ -58,7 +58,7 @@ const MUSIC_START_DELAY_S = 0.05;
 const MUSIC_FADE_MS = 700;
 const GAMEPLAY_FADE_MS = 900;
 const FULL_TRACK_FADE_MS = 1000;
-const FULL_TRACK_START_PHASE = 7;
+const FULL_TRACK_START_PHASE = 5;
 
 const SILENT_LAYERED_MIX: LayeredMix = {
   menuSynth: 0,
@@ -574,7 +574,7 @@ export function setGameplayMusicForPhase(scene: Phaser.Scene, phase: number): vo
 
   if (phase >= FULL_TRACK_START_PHASE) {
     if (!selectedLateGameTrack) {
-      selectedLateGameTrack = 'fullPhase2';
+      selectedLateGameTrack = Phaser.Utils.Array.GetRandom([...FULL_TRACKS]);
     }
 
     setMusicState(scene, {
